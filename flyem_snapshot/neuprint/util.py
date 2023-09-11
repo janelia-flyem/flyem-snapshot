@@ -1,16 +1,33 @@
+# For certain types, we need to ensure that 'long' is used in neo4j, not int.
+# Also, in some cases (e.g. 'group'), the column in our pandas DataFrame is
+# stored with float dtype because pandas uses NaN for missing values.
+# We want to emit actual ints in the CSV.
+NEUPRINT_TYPE_OVERRIDES = {
+    'bodyId': 'long',
+    'group': 'long',
+    'hemibrainBodyid': 'long',
+    'size': 'long',
+    'pre': 'int',
+    'post': 'int',
+    'upstream': 'int',
+    'downstream': 'int',
+    'synweight': 'int',
+    # 'halfbrainBody': 'long',
+}
 
-def _append_neo4j_type_suffixes(cfg, df, exclude=()):
+
+def append_neo4j_type_suffixes(cfg, df, exclude=()):
     """
     Return a renamed DataFrame wholes columns now have
     type suffixes such as ':float'.
     Only rename columns which DON'T ALREADY HAVE a
     colon (:) in the name.
     """
-    typed_renames = _neo4j_column_names(cfg, df, exclude)
+    typed_renames = neo4j_column_names(cfg, df, exclude)
     return df.rename(columns=typed_renames)
 
 
-def _neo4j_column_names(cfg, df, exclude=()):
+def neo4j_column_names(cfg, df, exclude=()):
     """
     Determine type suffixes such as ':float' for columns
     which DON'T ALREADY HAVE a colon (:) in the name.

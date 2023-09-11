@@ -1,12 +1,23 @@
+import os
+import shutil
+import warnings
+from functools import partial
+
+from neuclease import PrefixFilter
+from neuclease.util import timed, compute_parallel
+
+from .util import neo4j_column_names
+
+
 @PrefixFilter.with_context("Synapses")
-def _export_neuprint_synapses(cfg, point_df):
+def export_neuprint_synapses(cfg, point_df):
     synapse_dir = 'neuprint/Neuprint_Synapses'
     if os.path.exists(synapse_dir):
         shutil.rmtree(synapse_dir)
     os.makedirs(synapse_dir)
 
-    dataset = cfg['neuprint']['dataset']
-    roiset_names = list(cfg['neuprint']['roi-sets'].keys())
+    dataset = cfg['dataset']
+    roiset_names = list(cfg['roi-set-meta'].keys())
 
     point_df = point_df.reset_index()
     point_df[':Label'] = f'Synapse;{dataset}_Synapse'
@@ -20,7 +31,7 @@ def _export_neuprint_synapses(cfg, point_df):
 
     roi_syn_props = {
         roiset_name: rs['synapse-properties']
-        for roiset_name, rs in cfg['neuprint']['roi-sets'].items()
+        for roiset_name, rs in cfg['roi-set-meta'].items()
     }
     _export_fn = partial(_export_synapse_group_csv, roi_syn_props)
 
@@ -67,7 +78,7 @@ def _export_synapse_group_csv(roi_syn_props, i, group_rois, df):
     df[[f'{roi}:boolean' for roi in group_rois if roi != '<unspecified>']] = True
 
     # Give types to the extra properties, too.
-    typed_renames = _neo4j_column_names(None, df[extra_props])
+    typed_renames = neo4j_column_names(None, df[extra_props])
     df = df.rename(columns=typed_renames)
 
     # Only export the columns which we intend for neo4j (not x,y,z)
@@ -76,7 +87,7 @@ def _export_synapse_group_csv(roi_syn_props, i, group_rois, df):
 
 
 @timed("Writing Neuprint_Synapse_Connections.csv")
-def _export_neuprint_synapse_connections(partner_df):
+def export_neuprint_synapse_connections(partner_df):
     df = partner_df[['pre_id', 'post_id']]
     df.columns = [':START_ID(Syn-ID)', ':END_ID(Syn-ID)']
     df.to_csv('neuprint/Neuprint_Synapse_Connections.csv', index=False, header=True)

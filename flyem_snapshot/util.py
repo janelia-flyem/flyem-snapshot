@@ -1,3 +1,9 @@
+import os
+
+from bokeh.plotting import output_file, save as bokeh_save
+from bokeh.io import export_png
+
+
 def rm_f(path):
     try:
         os.unlink(path)
@@ -15,4 +21,3 @@ def export_bokeh(p, filename, title):
     rm_f(html_path)
     output_file(filename=html_path, title=title)
     bokeh_save(p)
-

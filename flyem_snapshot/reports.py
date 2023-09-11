@@ -3,13 +3,9 @@ Export a connectivity snapshot from a DVID segmentation,
 along with other denormalizations.
 """
 import os
-import sys
 import json
-import shutil
 import logging
-import warnings
-from functools import cache, partial
-from argparse import ArgumentParser
+from functools import cache
 
 import requests
 import numpy as np
@@ -17,34 +13,18 @@ import pandas as pd
 import pyarrow.feather as feather
 import holoviews as hv
 import hvplot.pandas
-from bokeh.plotting import output_file, save as bokeh_save
-from bokeh.io import export_png
-from confiddler import load_config, dump_config, dump_default_config
 
-
-from neuclease import configure_default_logging, PrefixFilter
-from neuclease.util import (
-    switch_cwd, Timer, timed, encode_coords_to_uint64, decode_coords_from_uint64,
-    extract_labels_from_volume, compute_parallel, tqdm_proxy,
-    snakecase_to_camelcase, dump_json, iter_batches
-)
-from neuclease.dvid import set_default_dvid_session_timeout
-from neuclease.dvid.node import fetch_instance_info
-from neuclease.dvid.voxels import fetch_volume_box
-from neuclease.dvid.roi import fetch_combined_roi_volume
-from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES, fetch_body_annotations
-from neuclease.dvid.annotation import fetch_all_elements
-from neuclease.dvid.labelmap import (
-    resolve_snapshot_tag, fetch_mutations, fetch_complete_mappings,
-    fetch_bodies_for_many_points, fetch_labelmap_voxels_chunkwise,
-    fetch_labels_batched, compute_affected_bodies, fetch_sizes
-)
+from neuclease import PrefixFilter
+from neuclease.util import Timer
+from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES
 from neuclease.misc.neuroglancer import format_nglink
 from neuclease.misc.completeness import (
     completeness_forecast,
     plot_categorized_connectivity_forecast,
     variable_width_hbar,
 )
+
+from .util import export_bokeh
 
 _ = hvplot.pandas  # linting
 
@@ -127,15 +107,19 @@ ReportsSchema = {
     }
 }
 
+
 @PrefixFilter.with_context('Report')
-def _export_reports(cfg, point_df, partner_df, ann):
+def export_reports(cfg, point_df, partner_df, ann):
     if len(cfg['reports']) == 0:
         logger.info("No reports requested.")
         return
 
+    os.makedirs("png", exist_ok=True)
+    os.makedirs("html", exist_ok=True)
+
     # TODO: It's a little weird that this works
     #       differently here than the neuprint case
-    #       (i.e. xpecting 'roi' to be pre-loaded onto point_df).
+    #       (i.e. expecting 'roi' to be pre-loaded onto point_df).
     if 'roi' not in partner_df.columns:
         partner_df = partner_df.drop('roi', errors='ignore')
         partner_df = partner_df.merge(point_df['roi'].rename_axis('post_id'), 'left', on='post_id')
@@ -394,15 +378,3 @@ def _export_downstream_capture(cfg, partner_df, *, name):
         f"{_name}-downstream-capture-{snapshot_tag}.html",
         f"{name} downstream-capture-{snapshot_tag}"
     )
-
-
-def export_bokeh(p, filename, title):
-    path = os.path.splitext(filename)[0]
-    png_path = f"png/{path}.png"
-    rm_f(png_path)
-    export_png(p, filename=png_path)
-
-    html_path = f"html/{path}.html"
-    rm_f(html_path)
-    output_file(filename=html_path, title=title)
-    bokeh_save(p)

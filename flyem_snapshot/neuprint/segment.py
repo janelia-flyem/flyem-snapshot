@@ -1,12 +1,91 @@
+import os
+import json
+import shutil
+import logging
+from functools import partial
+
+import numpy as np
+import pandas as pd
+import pyarrow.feather as feather
+
+from neuclease import PrefixFilter
+from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
+
+from .util import append_neo4j_type_suffixes
+
+logger = logging.getLogger(__name__)
+
+# For most fields, we formulaically convert from snake_case to camelCase,
+# but for some fields the terminology isn't translated by that formula.
+# This list provides explicit translations for the special cases.
+# Also, to exclude a DVID/clio body annotation field from neuprint entirely,
+# list it here and map it to "".
+CLIO_TO_NEUPRINT_PROPERTIES = {
+    'bodyid': 'bodyId',
+    'status': 'statusLabel',
+    'hemibrain_bodyid': 'hemibrainBodyId',
+
+    # Make sure these never appear in neuprint.
+    'last_modified_by': '',
+    'old_bodyids': '',
+    'reviewer': '',
+    'to_review': '',
+    'typing_notes': '',
+    'user': '',
+    'notes': '',
+    'halfbrainBody': '',
+
+    # These generally won't be sourced from Clio anyway;
+    # they should be sourced from the appropriate DVID annotation instance.
+    'soma_position': 'somaLocation',
+    'tosoma_position': 'tosomaLocation',
+    'root_position': 'rootLocation',
+}
+
+# Note any 'statusLabel' (DVID status) that isn't
+# listed here will appear in neuprint unchanged.
+NEUPRINT_STATUSLABEL_TO_STATUS = {
+    'Unimportant':              'Unimportant',  # noqa
+    'Glia':                     'Glia',         # noqa
+    'Hard to trace':            'Orphan',       # noqa
+    'Orphan-artifact':          'Orphan',       # noqa
+    'Orphan':                   'Orphan',       # noqa
+    'Orphan hotknife':          'Orphan',       # noqa
+
+    'Out of scope':             '',             # noqa
+    'Not examined':             '',             # noqa
+    '':                         '',             # noqa
+
+    '0.5assign':                '0.5assign',    # noqa
+
+    'Anchor':                   'Anchor',       # noqa
+    'Cleaved Anchor':           'Anchor',       # noqa
+    'Sensory Anchor':           'Anchor',       # noqa
+    'Cervical Anchor':          'Anchor',       # noqa
+    'Soma Anchor':              'Anchor',       # noqa
+    'Primary Anchor':           'Anchor',       # noqa
+    'Partially traced':         'Anchor',       # noqa
+
+    'Leaves':                   'Traced',       # noqa
+    'PRT Orphan':               'Traced',       # noqa
+    'Prelim Roughly traced':    'Traced',       # noqa
+    'RT Orphan':                'Traced',       # noqa
+    'Roughly traced':           'Traced',       # noqa
+    'Traced in ROI':            'Traced',       # noqa
+    'Traced':                   'Traced',       # noqa
+    'Finalized':                'Traced',       # noqa
+}
+
+
 @PrefixFilter.with_context("Neuron")
-def _export_neuprint_neurons(cfg, point_df, partner_df, ann):
+def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     """
     Two issues:
     - efficiently set the ROI boolean properties
     - efficiently compute the roiInfo
     """
     ann = ann.query('body != 0')
-    ann = _neuprint_neuron_annotations(cfg, ann)
+    ann = _neuprint_neuron_annotations(ann)
 
     # Filter out low-confidence PSDs before computing weights.
     balanced_confidence = cfg['neuprint']['postHighAccuracyThreshold']
@@ -25,13 +104,13 @@ def _export_neuprint_neurons(cfg, point_df, partner_df, ann):
     # fixative or whatever and intended to be excluded from our work.
     neuron_df = body_stats.merge(ann, 'left', on='body')
     neuron_df = neuron_df.merge(roi_info_df, 'left', on='body')
-    _load_neuron_sizes(cfg, neuron_df)
-    _assign_neuron_label(cfg, neuron_df)
+    neuron_df = neuron_df.merge(body_sizes, 'left', on='body')
+    _assign_segment_label(cfg, neuron_df)
 
     # We include bodyId as a property AND as the node ID column for neo4j ingestion.
     neuron_df['bodyId'] = neuron_df.index
     neuron_df = neuron_df.rename_axis(':ID(Body-ID)').reset_index()
-    neuron_df = _append_neo4j_type_suffixes(cfg, neuron_df, exclude=['roiset_hash'])
+    neuron_df = append_neo4j_type_suffixes(cfg, neuron_df, exclude=['roiset_hash'])
 
     _export_neuron_csvs(cfg, neuron_df, cfg['processes'])
 
@@ -197,12 +276,11 @@ def _make_roi_infos(batch_df):
 
 
 @PrefixFilter.with_context("annotations")
-def _neuprint_neuron_annotations(cfg, ann):
+def _neuprint_neuron_annotations(ann):
     # Fetch all clio annotations
     # Translate to neuprint terms
     # If config mentions nuclei, use them.
     #
-    dvid_seg = cfg['dvid-seg']
     renames = {c: snakecase_to_camelcase(c.replace(' ', '_')) for c in ann.columns}
     renames.update(CLIO_TO_NEUPRINT_PROPERTIES)
 
@@ -224,32 +302,11 @@ def _neuprint_neuron_annotations(cfg, ann):
                 for (x,y,z) in ann.loc[valid, [*'xyz']].values
             ]
 
-    # Anything mentioned in the point-annotations config
-    # will override what's in Clio if the name conflicts.
-    for pa in cfg['neuprint']['point-annotations']:
-        property_name = pa['property-name']
-        with PrefixFilter.context(property_name):
-            df = fetch_all_elements(*dvid_seg[:2], pa['instance'], format='pandas')
-            df = df.sort_values([*'zyx'])
-            df['body'] = fetch_labels_batched(
-                *dvid_seg,
-                df[[*'zyx']].values,
-                processes=cfg['processes']
-            )
-            df[property_name] = [f"{{x:{x}, y:{y}, z:{z}}}"
-                                 for (x,y,z) in df[[*'xyz']].values]
-
-            # Append this column to the annotation DataFrame, overwriting the column if necessary.
-            # (Even if the column exists in Clio, we're overriding it with the data from DVID.)
-            # Note: If more than one point lands on the same body, we drop duplicates.
-            ann.drop(columns=[property_name], errors='ignore', inplace=True)
-            ann[property_name] = df.drop_duplicates('body').set_index('body')[property_name]
-
     return ann
 
 
 @timed("Assigning :Segment/:Neuron labels")
-def _assign_neuron_label(cfg, neuron_df):
+def _assign_segment_label(cfg, neuron_df):
     dataset = cfg['neuprint']['dataset']
     crit = cfg['neuprint']['neuron-label-criteria']
     crit_props = crit['properties']
@@ -342,9 +399,8 @@ def _export_neurons_with_shared_roiset(neuron_dir, total_batches, batch_index, n
     neuron_df.to_csv(p, index=False, header=True)
 
 
-
 @PrefixFilter.with_context("connections")
-def _export_neuprint_neuron_connections(cfg, partner_df):
+def export_neuprint_segment_connections(cfg, partner_df):
     """
     Export the CSV file for Neuron -[:ConnectsTo]-> Neuron
     """
@@ -419,7 +475,7 @@ def _export_neuprint_neuron_connections(cfg, partner_df):
             'body_post': ':END_ID(Body-ID)',
         })
     )
-    neo4j_connectome = _append_neo4j_type_suffixes(cfg, neo4j_connectome)
+    neo4j_connectome = append_neo4j_type_suffixes(cfg, neo4j_connectome)
 
     with Timer("Writing Neuprint_Neuron_Connections.feather", logger):
         feather.write_feather(
@@ -485,4 +541,3 @@ def _make_connection_roi_infos(batch_df):
     roi_info_df = pd.DataFrame(body_pairs, columns=['body_pre', 'body_post'])
     roi_info_df['roiInfo'] = roi_infos
     return roi_info_df
-

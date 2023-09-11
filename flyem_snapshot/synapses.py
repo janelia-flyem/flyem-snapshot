@@ -3,48 +3,17 @@ Export a connectivity snapshot from a DVID segmentation,
 along with other denormalizations.
 """
 import os
-import sys
-import json
-import shutil
 import logging
-import warnings
-from functools import cache, partial
-from argparse import ArgumentParser
 
-import requests
 import numpy as np
-import pandas as pd
 import pyarrow.feather as feather
-import holoviews as hv
-import hvplot.pandas
-from bokeh.plotting import output_file, save as bokeh_save
-from bokeh.io import export_png
-from confiddler import load_config, dump_config, dump_default_config
+
+from neuclease import PrefixFilter
+from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
+from neuclease.dvid.labelmap import fetch_mutations, fetch_complete_mappings, fetch_bodies_for_many_points
 
 
-from neuclease import configure_default_logging, PrefixFilter
-from neuclease.util import (
-    switch_cwd, Timer, timed, encode_coords_to_uint64, decode_coords_from_uint64,
-    extract_labels_from_volume, compute_parallel, tqdm_proxy,
-    snakecase_to_camelcase, dump_json, iter_batches
-)
-from neuclease.dvid import set_default_dvid_session_timeout
-from neuclease.dvid.node import fetch_instance_info
-from neuclease.dvid.voxels import fetch_volume_box
-from neuclease.dvid.roi import fetch_combined_roi_volume
-from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES, fetch_body_annotations
-from neuclease.dvid.annotation import fetch_all_elements
-from neuclease.dvid.labelmap import (
-    resolve_snapshot_tag, fetch_mutations, fetch_complete_mappings,
-    fetch_bodies_for_many_points, fetch_labelmap_voxels_chunkwise,
-    fetch_labels_batched, compute_affected_bodies, fetch_sizes
-)
-from neuclease.misc.neuroglancer import format_nglink
-from neuclease.misc.completeness import (
-    completeness_forecast,
-    plot_categorized_connectivity_forecast,
-    variable_width_hbar,
-)
+logger = logging.getLogger(__name__)
 
 MALECNS_VNC_CUTOFF_Z = 45056
 
@@ -63,7 +32,7 @@ LabelmapSchema = {
         "server": {
             "description": "DVID server",
             "type": "string",
-            # No default
+            "default": "",
         },
         "uuid": {
             "description": "Use ':master' for the current HEAD node, or ':master~1' for it's parent node.",
@@ -78,10 +47,9 @@ LabelmapSchema = {
     }
 }
 
-ConfigSchema = {
+SnapshotSynapsesSchema = {
     "properties": {
-       "snapshot": LabelmapSchema,
-       "syndir": {
+        "syndir": {
             "description":
                 "Optional. This value can be used within format strings in the other synapse settings.",
             "type": "string",
@@ -89,7 +57,8 @@ ConfigSchema = {
         },
         "synapse-points": {
             "description":
-                "A feather file containing the synapse points, with columns for sv and roi",
+                "A feather file containing the synapse points, with a 'body' column.\n"
+                "If an 'sv' column is also present, it can be used to much more efficiently update the body column if needed.\n",
             "type": "string",
             # NO DEFAULT
         },
@@ -99,9 +68,21 @@ ConfigSchema = {
             "type": "string",
             # NO DEFAULT
         },
-        "zone": {
+        "update-to": {
+            "oneOf": [
+                LabelmapSchema,
+                {"type": "null"}
+            ],
+            "default": {},
             "description":
-                "Specifically for the male CNS. Whether to process the brain only, vnc only, or whole cns",
+                "DVID labelmap instance to use for updating the synapse body IDs.\n"
+                "If not provided, the synapse point_df table must include a 'body' column,\n"
+                "which will be used without modifications.\n",
+        },
+        "zone": {
+            # TODO: Eliminate the 'zone' feature in favor of more flexibility in defining report ROIs.
+            "description":
+                "Specifically for the male CNS. Whether to PRE-FILTER the synapses to include the brain only, vnc only, or whole cns",
             "type": "string",
             "enum": ["brain", "vnc", ""],
             "default": "",
@@ -115,27 +96,61 @@ ConfigSchema = {
             "maximum": 1.0,
             "default": 0.0,
         },
+        "processes": {
+            "description":
+                "How many processes should be used to update synapse labels?\n"
+                "If not specified, default to the top-level config setting.\n",
+            "type": ["integer", "null"],
+            "default": None
+        },
     }
 }
 
+
 @PrefixFilter.with_context('Loading Synapses')
-def _load_synapses(cfg):
-    snapshot_tag = cfg['snapshot-tag']
-    output_dir = cfg['output-dir']
+def load_synapses(cfg, snapshot_tag):
+    os.makedirs('tables', exist_ok=True)
 
     # Do the files already exist for this snapshot?
     # If so, just load those and return.
-    # FIXME: I'm specifying these file names in two different places,
-    #        and they must agree.
     if os.path.exists(f'tables/partner_df-{snapshot_tag}.feather'):
-        logger.info(f"Loading previously-written synapse files from {output_dir}")
-        partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
-        point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
+        logger.info("Loading previously-written synapse files")
+        partner_df = feather.read_feather('tables/partner_df.feather')
+        point_df = feather.read_feather('tables/point_df.feather').set_index('point_id')
         return point_df, partner_df
 
     point_df, partner_df = _load_raw_synapses(cfg)
-    mutations, mapping = _fetch_and_export_complete_mappings(cfg)
-    point_df, partner_df = _update_synapses(cfg, point_df, partner_df, mutations, mapping)
+
+    if cfg['update-to']:
+        dvid_seg = (
+            cfg['update-to']['server'],
+            cfg['update-to']['uuid'],
+            cfg['update-to']['instance'],
+        )
+        mutations, mapping = _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag)
+        with Timer(f"Updating supervoxels/bodies for UUID {dvid_seg[1][:6]}", logger):
+            # This adds/updates 'sv' and 'body' columns to point_df
+            fetch_bodies_for_many_points(*dvid_seg, point_df, mutations, mapping, processes=cfg['processes'])
+
+    if 'body' not in point_df.columns:
+        raise RuntimeError(
+            "point_df must contain a 'body' column or you "
+            "must provide a dvid segmentation for 'update-to'")
+
+    with Timer("Adding columns to partner table for body_pre, body_post", logger):
+        partner_df = partner_df.drop(columns=['body_pre', 'body_post'], errors='ignore')
+        partner_df = partner_df.merge(point_df['body'], 'left', left_on='pre_id', right_index=True)
+        partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
+
+    with Timer("Exporting filtered/updated synapse tables", logger):
+        feather.write_feather(
+            point_df.reset_index(),
+            'tables/point_df.feather'
+        )
+        feather.write_feather(
+            partner_df,
+            f'tables/partner_df-{snapshot_tag}.feather'
+        )
     return point_df, partner_df
 
 
@@ -146,10 +161,29 @@ def _load_raw_synapses(cfg):
     with Timer("Loading synapses from disk", logger):
         point_df = feather.read_feather(points_path).set_index('point_id')
         partner_df = feather.read_feather(partners_path)
+
+    if 'point_id' not in point_df.columns and not {*'zyx'} <= {*point_df.columns}:
+        raise RuntimeError("Synapse point table doesn't have coordinates or point_id")
+
+    # If point_df is missing either point_id or zyx columns,
+    # then use one to generate the other.
+    if not ({*'zyx'} <= {*point_df.columns}):
+        point_df[[*'zyx']] = decode_coords_from_uint64(point_df['point_id'].values)
+    if 'point_df' not in point_df.columns:
+        point_df['point_id'] = encode_coords_to_uint64(point_df[[*'zyx']].values)
+
+    if not {'point_id', *'zyx', 'kind', 'conf'} <= {*point_df.columns}:
+        raise RuntimeError(f"Synapse point table does not have all required columns. Found: {point_df.columns}")
+
+    if not {'pre_id', 'post_id'} <= {*partner_df.columns}:
+        raise RuntimeError(f"Synpase partner table does not have the required columns. Found: {partner_df.columns}")
+
+    point_df = point_df.set_index('point_id')
     logger.info(f"Loaded {len(point_df)} points and {len(partner_df)} partners")
 
     with Timer("Dropping unecessary columns and narrowing dtypes", logger):
-        if (point_df[['sv', 'body']] <= 2**32).all().all():
+        id_cols = {'sv', 'body'} & set(point_df.columns)
+        if id_cols and (point_df[[*id_cols]] <= 2**32).all().all():
             label_dtype = np.uint32
         else:
             label_dtype = np.uint64
@@ -215,10 +249,14 @@ def _load_raw_synapses(cfg):
     return point_df, partner_df
 
 
-def _fetch_and_export_complete_mappings(cfg):
-    dvid_seg = cfg['dvid-seg']
-    snapshot_tag = cfg['snapshot-tag']
-    mutations = fetch_mutations(*cfg['dvid-seg'])
+def _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag):
+    # FIXME:
+    #   Unless the snapshot uses a locked DVID node, there is a race condition
+    #   here between the mutations and mapping.
+    #   In principle, it's possible to fetch the mappings from the most recent
+    #   locked node and then update them according to the most recent mutations,
+    #   but that requires tracking the supervoxel movements across merges and cleaves.
+    mutations = fetch_mutations(*dvid_seg)
 
     # Fetching the 'complete' mappings takes 2x as long as the minimal mappings,
     # but it's more useful because it
@@ -230,28 +268,3 @@ def _fetch_and_export_complete_mappings(cfg):
     )
 
     return mutations, mapping
-
-
-def _update_synapses(cfg, point_df, partner_df, mutations, mapping):
-    dvid_seg = cfg['dvid-seg']
-    snapshot_tag = cfg['snapshot-tag']
-
-    with Timer(f"Updating supervoxels/bodies for UUID {dvid_seg[1][:6]}", logger):
-        fetch_bodies_for_many_points(*dvid_seg, point_df, mutations, mapping, processes=cfg['processes'])
-
-    with Timer("Adding columns to partner table for body_pre, body_post", logger):
-        partner_df = partner_df.drop(columns=['body_pre', 'body_post'], errors='ignore')
-        partner_df = partner_df.merge(point_df['body'], 'left', left_on='pre_id', right_index=True)
-        partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
-
-    with Timer("Exporting filtered/updated synapse tables", logger):
-        feather.write_feather(
-            point_df.reset_index(),
-            f'tables/point_df-{snapshot_tag}.feather'
-        )
-        feather.write_feather(
-            partner_df,
-            f'tables/partner_df-{snapshot_tag}.feather'
-        )
-    return point_df, partner_df
-

@@ -1,6 +1,16 @@
+import logging
+
+import pandas as pd
+
+from neuclease import PrefixFilter
+from neuclease.util import timed, Timer, iter_batches, compute_parallel
+
+logger = logging.getLogger(__name__)
+
+
 @PrefixFilter.with_context("SynapseSet")
 @timed
-def _export_synapsesets(cfg, partner_df, connectome):
+def export_synapsesets(cfg, partner_df, connectome):
     body_pairs_df = connectome.reset_index()[['body_pre', 'body_post']]
     batches = iter_batches(body_pairs_df, 10_000)
     body_pairs_dfs = compute_parallel(_synset_ids, batches, processes=cfg['processes'], leave_progress=True)
