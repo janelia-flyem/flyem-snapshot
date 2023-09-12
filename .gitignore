@@ -1,0 +1,13 @@
+.project
+.pydevproject
+.settings
+
+__pycache__/
+*.pyc
+*~
+
+.cache
+logs
+.test-data
+*.egg-info
+.vscode/

@@ -1,10 +1,6 @@
-"""
-Generate connectome exports, neuprint databases and reports from flat files and DVID checkpoints.
-"""
 import os
 import sys
 import logging
-import argparse
 from collections.abc import Mapping
 
 from confiddler import dump_default_config, load_config, dump_config
@@ -38,7 +34,7 @@ ConfigSchema = {
     "additionalProperties": False,
     "properties": {
         "inputs": {
-            "type": "object",
+            "description": "Input files and specs to use for constructing the snapshot denormalizations and reports.",
             "default": {},
             "properties": {
                 "synapses": SnapshotSynapsesSchema,
@@ -48,7 +44,7 @@ ConfigSchema = {
             }
         },
         "outputs": {
-            "type": "object",
+            "description": "Specs for the exports/reports to produce from the snapshot data.\n",
             "default": {},
             "properties": {
                 "flat-connectome": FlatConnectomeSchema,
@@ -57,7 +53,7 @@ ConfigSchema = {
             }
         },
         "job-settings": {
-            "type": "object",
+            "description": "General settings.\n",
             "default": {},
             "properties": {
                 "snapshot-tag": {
@@ -78,7 +74,8 @@ ConfigSchema = {
                 },
                 "processes": {
                     "description":
-                        "For steps which benefit from multiprocessing, how many processes should be used?",
+                        "For steps which benefit from multiprocessing, how many processes should be used?\n"
+                        "This can be overridden for certain steps of the pipeline.  See the config subsections for inputs/outputs.",
                     "type": "integer",
                     "default": 16,
                 },
@@ -93,22 +90,7 @@ ConfigSchema = {
 }
 
 
-def main():
-    DEBUG = False
-    if DEBUG and len(sys.argv) == 1:
-        sys.stderr.write("DEBUGGING WITH ARTIFICAL ARGS\n")
-        sys.argv.extend(['-c', 'neuprint-small-test.yaml'])
-
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-c', '--config')
-    parser.add_argument('-y', '--dump-default-yaml', action='store_true')
-    parser.add_argument('-v', '--dump-verbose-yaml', action='store_true')
-    args = parser.parse_args()
-
-    if sum((bool(args.config), bool(args.dump_default_yaml), bool(args.dump_verbose_yaml))) > 1:
-        sys.exit("You can't provide more than one of these options: -c, -y, -v")
-
+def main(args):
     if args.dump_default_yaml:
         dump_default_config(ConfigSchema, sys.stdout, 'yaml')
         return

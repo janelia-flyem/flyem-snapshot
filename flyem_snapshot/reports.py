@@ -67,7 +67,7 @@ ReportSchema = {
 }
 
 ReportsSchema = {
-    "type": "object",
+    "description": "Specs for connectivity reports to generate from the snapshot data.\n",
     "default": {},
     "properties": {
         "reports": {

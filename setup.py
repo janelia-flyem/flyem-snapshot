@@ -15,7 +15,7 @@ setup(
     packages=find_packages(),
     entry_points={
         'console_scripts': [
-            'flyem-snapshot = flyem_snapshot.flyem_snapshot:main'
+            'flyem-snapshot = flyem_snapshot.bin.flyem_snapshot_entrypoint:main'
         ]
     }
 )
