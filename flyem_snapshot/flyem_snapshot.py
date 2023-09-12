@@ -25,43 +25,69 @@ logger = logging.getLogger(__name__)
 
 ConfigSchema = {
     "description": "Configuration for exporting connectomic denormalizations from DVID",
+
+    # Note:
+    #   Throughout this schema, we use 'default: {}' for complex objects.
+    #   When using jsonschema/confiddler, this essentially means "don't override my children's defaults."
+    #   This enables confiddler to construct fully-nested default values for objects with nested sub-objects.
+    #   See the 'hint' in the jsonschema FAQ on this point:
+    #   https://python-jsonschema.readthedocs.io/en/latest/faq/#why-doesn-t-my-schema-s-default-property-set-the-default-on-my-instance
     "default": {},
+
     "required": ["snapshot", "synapse-points", "synapse-partners"],
     "additionalProperties": False,
     "properties": {
-        "snapshot-tag": {
-            "description":
-                "A suffix to add to export filenames.\n"
-                "By default, a tag is automatically chosen which incorporates the\n"
-                "snapshot date, uuid, and uuid commit status.",
-            "type": "string",
-            "default": "",
+        "inputs": {
+            "type": "object",
+            "default": {},
+            "properties": {
+                "synapses": SnapshotSynapsesSchema,
+                "annotations": AnnotationsSchema,
+                "rois": RoisSchema,
+                "body-sizes": BodySizesSchema,
+            }
         },
-        "output-dir": {
-            "description":
-                "Where to write output files.\n"
-                "Relative paths here are interpreted from the directory in which this config file is stored.\n"
-                "If not specified, a reasonable default is chosen IN THE SAME DIRECTORY AS THIS CONFIG FILE.\n",
-            "type": "string",
-            "default": "",
+        "outputs": {
+            "type": "object",
+            "default": {},
+            "properties": {
+                "flat-connectome": FlatConnectomeSchema,
+                "neuprint": NeuprintSchema,
+                "reports": ReportsSchema,
+            }
         },
-        "synapses": SnapshotSynapsesSchema,
-        "annotations": AnnotationsSchema,
-        "rois": RoisSchema,
-        "body-sizes": BodySizesSchema,
-        "flat-connectome": FlatConnectomeSchema,
-        "neuprint": NeuprintSchema,
-        "reports": ReportsSchema,
-        "processes": {
-            "description":
-                "For steps which benefit from multiprocessing, how many processes should be used?",
-            "type": "integer",
-            "default": 16,
-        },
-        "dvid-timeout": {
-            "description": "Timeout for dvid requests, in seconds. Used for both 'connect' and 'read' timeout.",
-            "type": "number",
-            "default": 180.0,
+        "job-settings": {
+            "type": "object",
+            "default": {},
+            "properties": {
+                "snapshot-tag": {
+                    "description":
+                        "A suffix to add to export filenames.\n"
+                        "By default, a tag is automatically chosen which incorporates the\n"
+                        "snapshot date, uuid, and uuid commit status.",
+                    "type": "string",
+                    "default": "",
+                },
+                "output-dir": {
+                    "description":
+                        "Where to write output files.\n"
+                        "Relative paths here are interpreted from the directory in which this config file is stored.\n"
+                        "If not specified, a reasonable default is chosen IN THE SAME DIRECTORY AS THIS CONFIG FILE.\n",
+                    "type": "string",
+                    "default": "",
+                },
+                "processes": {
+                    "description":
+                        "For steps which benefit from multiprocessing, how many processes should be used?",
+                    "type": "integer",
+                    "default": 16,
+                },
+                "dvid-timeout": {
+                    "description": "Timeout for dvid requests, in seconds. Used for both 'connect' and 'read' timeout.",
+                    "type": "number",
+                    "default": 180.0,
+                }
+            }
         }
     }
 }
@@ -106,74 +132,92 @@ def export_all(cfg, config_dir):
     # Output dir is created in the cwd (if output-dir is a relative path).
     _finalize_config_and_output_dir(cfg, config_dir)
 
-    dvid_seg = (
-        cfg['synapses']['update-to']['server'],
-        cfg['synapses']['update-to']['uuid'],
-        cfg['synapses']['update-to']['instance'],
-    )
-    snapshot_tag = cfg['snapshot-tag']
-    min_conf = cfg['synapses']['min-confidence']
+    # These config settings are needed by stages other than
+    # the stage that "owns" the config setting,
+    # so we pass them via args instead of via the config.
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
+    min_conf = cfg['inputs']['synapses']['min-confidence']
+    update_seg = cfg['inputs']['synapses']['update-to']
+    dvid_seg = (update_seg['server'], update_seg['uuid'], update_seg['instance'])
 
     # All subsequent processing occurs from within the output-dir
-    with switch_cwd(cfg['output-dir']):
+    with switch_cwd(cfg['job-settings']['output-dir']):
         # Load inputs
-        point_df, partner_df = load_synapses(cfg['synapses'], snapshot_tag)
-        ann = load_annotations(cfg['annotations'], dvid_seg, snapshot_tag)
-        point_df, partner_df = load_rois(cfg['rois'], point_df, partner_df)
-        body_sizes = load_body_sizes(cfg['body-sizes'], dvid_seg, point_df, snapshot_tag)
+        ann = load_annotations(cfg['inputs']['annotations'], dvid_seg, snapshot_tag)
+        point_df, partner_df = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
+        point_df, partner_df = load_rois(cfg['inputs']['rois'], point_df, partner_df)
+        body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvid_seg, point_df, snapshot_tag)
 
-        # Produce exports
-        export_neuprint(cfg['neuprint'], point_df, partner_df, ann, body_sizes)
-        export_reports(cfg['reports'], point_df, partner_df, ann)
-        export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_conf)
+        # Produce outputs
+        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes)
+        export_reports(cfg['outputs']['reports'], point_df, partner_df, ann)
+        export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
 
 
 def _finalize_config_and_output_dir(cfg, config_dir):
-    uuid, snapshot_tag = resolve_snapshot_tag(
-        cfg['snapshot']['server'],
-        cfg['snapshot']['uuid'],
-        cfg['snapshot']['instance']
-    )
-    cfg['snapshot']['uuid'] = uuid
-    snapshot_tag = cfg['snapshot-tag'] = (cfg['snapshot-tag'] or snapshot_tag)
+    syncfg = cfg['inputs']['synapses']
+    jobcfg = cfg['job-settings']
+
+    snapshot_tag = None
+    if syncfg['update-to']:
+        uuid, snapshot_tag = resolve_snapshot_tag(
+            syncfg['update-to']['server'],
+            syncfg['update-to']['uuid'],
+            syncfg['update-to']['instance']
+        )
+        # Overwrite config UUID ref with the resolved (explicit) UUID
+        syncfg['update-to']['uuid'] = uuid
+        snapshot_tag = jobcfg['snapshot-tag'] = (jobcfg['snapshot-tag'] or snapshot_tag)
+
+    if not snapshot_tag:
+        msg = (
+            "Since your synapses config does not refer to a DVID "
+            "snapshot UUID in the 'update-to' setting, you must supply "
+            "an explicit snapshot-tag to use in output file names."
+        )
+        raise RuntimeError(msg)
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.
-    for subcfg in cfg.values():
+    for subcfg in [*cfg['inputs'].values(), cfg['outputs'].values()]:
         if isinstance(subcfg, Mapping) and 'processes' in subcfg and subcfg['processes'] is None:
-            subcfg['processes'] = cfg['processes']
+            subcfg['processes'] = jobcfg['processes']
 
-    # Convert synapse and size paths to absolute (if necessary).
+    # Convert file paths to absolute (if necessary).
     # Relative paths are interpreted w.r.t. to the config file, not the cwd.
+    # Overwrite the paths with their absolute versions so subsequent functions
+    # don't have to worry about relative paths.
     with switch_cwd(config_dir):
-        cfg['syndir'] = os.path.abspath(cfg['syndir'])
-        if not cfg['synapse-points'].startswith('{syndir}'):
-            cfg['synapse-points'] = os.path.abspath(cfg['synapse-points'])
-        if not cfg['synapse-partners'].startswith('{syndir}'):
-            cfg['synapse-partners'] = os.path.abspath(cfg['synapse-partners'])
-        if cfg['body-sizes']['file']:
-            cfg['body-sizes']['file'] = os.path.abspath(cfg['body-size-cache']['file'])
+        syncfg['syndir'] = os.path.abspath(syncfg['syndir'])
+        if not syncfg['synapse-points'].startswith('{syndir}'):
+            syncfg['synapse-points'] = os.path.abspath(syncfg['synapse-points'])
+        if not syncfg['synapse-partners'].startswith('{syndir}'):
+            syncfg['synapse-partners'] = os.path.abspath(syncfg['synapse-partners'])
 
-    for report in cfg['reports']:
+        if cfg['body-sizes']['cache-file']:
+            cfg['body-sizes']['cache-file'] = os.path.abspath(cfg['body-sizes']['cache-file'])
+
+        output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'] or snapshot_tag)
+
+    # If any report is un-named, auto-name it
+    # according to the zone and/or ROI list.
+    for report in cfg['outputs']['reports']:
         if report['name']:
             continue
-        if cfg['zone'] == 'brain':
-            report['name'] = 'brain'
-        if cfg['zone'] == 'vnc':
-            report['name'] = 'vnc'
-        elif not report['rois']:
-            report['name'] = 'all'
-            continue
-        else:
+        if report['rois']:
             report['name'] = '-'.join(report['rois'])
+        elif syncfg['zone'] == 'brain':
+            report['name'] = 'brain'
+        elif syncfg['zone'] == 'vnc':
+            report['name'] = 'vnc'
+        else:
+            report['name'] = 'all'
 
-    output_dir = cfg['output-dir'] = os.path.abspath(cfg['output-dir'] or snapshot_tag)
-
-    os.makedirs(output_dir, exist_ok=True)
+    # Ensure output directories exist.
     os.makedirs(f"{output_dir}/tables", exist_ok=True)
-    os.makedirs(f"{output_dir}/png", exist_ok=True)
-    os.makedirs(f"{output_dir}/html", exist_ok=True)
-    os.makedirs(f"{output_dir}/volumes", exist_ok=True)
+
+    # Dump the updated config so it's clear what modifications
+    # we made and how the UUID was resolved.
     dump_config(cfg, f"{output_dir}/final-config.yaml")
 
 

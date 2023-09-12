@@ -251,7 +251,7 @@ def _load_raw_synapses(cfg):
 
 def _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag):
     # FIXME:
-    #   Unless the snapshot uses a locked DVID node, there is a race condition
+    #   In the case of an unlocked DVID node, there is a race condition
     #   here between the mutations and mapping.
     #   In principle, it's possible to fetch the mappings from the most recent
     #   locked node and then update them according to the most recent mutations,
