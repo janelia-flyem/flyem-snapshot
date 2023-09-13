@@ -112,7 +112,6 @@ def export_all(cfg, config_dir):
     timeout = cfg['job-settings']['dvid-timeout']
     set_default_dvid_session_timeout(timeout, timeout)
 
-    # Output dir is created in the cwd (if output-dir is a relative path).
     _finalize_config_and_output_dir(cfg, config_dir)
 
     # These config settings are needed by stages other than
@@ -139,6 +138,7 @@ def export_all(cfg, config_dir):
 
 def _finalize_config_and_output_dir(cfg, config_dir):
     syncfg = cfg['inputs']['synapses']
+    roicfg = cfg['inputs']['rois']
     jobcfg = cfg['job-settings']
 
     snapshot_tag = None
@@ -151,6 +151,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         # Overwrite config UUID ref with the resolved (explicit) UUID
         syncfg['update-to']['uuid'] = uuid
         snapshot_tag = jobcfg['snapshot-tag'] = (jobcfg['snapshot-tag'] or snapshot_tag)
+
+        # By default, the ROI config uses the same server/uuid as the synapses.
+        roicfg['dvid']['server'] = roicfg['dvid']['server'] or syncfg['update-to']['server']
+        roicfg['dvid']['uuid'] = roicfg['dvid']['server'] or uuid
 
     if not snapshot_tag:
         msg = (

@@ -3,10 +3,10 @@ import json
 import logging
 
 import numpy as np
+import pandas as pd
 import pyarrow.feather as feather
 
-from neuclease.util import Timer, extract_labels_from_volume, dump_json
-from neuclease.dvid.node import fetch_instance_info
+from neuclease.util import Timer, extract_labels_from_volume, dump_json, narrowest_dtype
 from neuclease.dvid.voxels import fetch_volume_box
 from neuclease.dvid.labelmap import fetch_labelmap_voxels_chunkwise
 from neuclease.dvid.roi import fetch_combined_roi_volume
@@ -42,11 +42,20 @@ RoiSetSchema = {
                 }
             ]
         },
+        "source": {
+            "description":
+                "Whether to load the ROIs from DVID or to use a column in the synapse point table input,\n"
+                "in which case your input synapses must already have the appropriate column.\n",
+            "type": "string",
+            "enum": ["dvid-rois", "dvid-labelmap", "synapse-point-table"],
+            "default": "dvid-rois"
+        },
         "labelmap": {
             "description":
                 "Optional. If provided, ROI segments will be loaded from the given\n"
                 "labelmap in DVID instead of from individual 'roi' instances in DVID.\n"
-                "The mapping between segment IDs and ROI names is determined from the 'rois' mapping.",
+                "The mapping between segment IDs and ROI names is determined from the 'rois' mapping.\n"
+                "Note: The ROI volume MUST have exactly 32x lower resolution than the full neuron resolution.",
             "type": "string",
             "default": ""
         }
@@ -60,8 +69,23 @@ RoisSchema = {
     "additionalProperties": False,
     "required": ["roi-sets"],
     "properties": {
+        "dvid": {
+            "description":
+                "Which DVID server to use for reading ROIs.\n"
+                "If not specified here, the settings from the 'synapses.update-to' setting will be used.\n",
+            "default": {},
+            "properties": {
+                "server": {
+                    "type": "string",
+                    "default": ""
+                },
+                "uuid": {
+                    "type": "string",
+                    "default": ""
+                }
+            }
+        },
         "roi-sets": {
-            "type": "object",
             "additionalProperties": RoiSetSchema,
             "default": {},
         },
@@ -92,8 +116,13 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
             roi_ids = dict(zip(roi_ids, range(1, len(roi_ids)+1)))
         assert isinstance(roi_ids, dict)
 
-        roi_vol, roi_box = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], cfg['dvid-seg'], cfg['processes'])
-        extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
+        if roiset_cfg['source'] == "synapse-point-table":
+            _load_roi_col(roiset_name, roi_ids, point_df)
+        else:
+            if bool(roiset_cfg['labelmap']) != (roiset_cfg['source'] == 'dvid-labelmap'):
+                raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
+            roi_vol, roi_box = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], cfg['dvid'], cfg['processes'])
+            extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
 
     # Merge those extracted ROI values onto the partner_df, too.
     # Note that we use the 'post' side when defining the location of a synapse connection.
@@ -117,7 +146,47 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
     return point_df, partner_df
 
 
-def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, snapshot_seg, processes):
+def _load_roi_col(roiset_name, roi_ids, point_df):
+    """
+    For a given roiset, ensure that point_df contains
+    a column for the ROI names (a categorical) AND the ROI integer IDs (the 'label').
+    For example:
+        - primary_roi (categorical strings)
+        - primary_roi_label (integers)
+    """
+    expected_cols = {roiset_name, f'{roiset_name}_label'}
+    if not (expected_cols & {*point_df.columns}):
+        msg = (
+            f"Since your config specifies that the ROI column '{roiset_name}' "
+            "will be supplied by your synapse table, you must supply at least one "
+            "of the following columns in the synapse point table:\n"
+            f"- {roiset_name} (a column of strings or categories)"
+            f"{roiset_name}_label (a column of integer IDs)"
+        )
+        raise RuntimeError(msg)
+
+    # Ensure that the string column is categorical
+    if not isinstance(point_df[roiset_name].dtype, pd.CategoricalDtype):
+        point_df[roiset_name] = point_df[roiset_name].astype('category')
+
+    if expected_cols <= {*point_df.columns}:
+        # Necessary columns are already present
+        return
+
+    if f'{roiset_name}_label' not in point_df.columns:
+        # Produce integers from names according to roi_ids
+        dtype = narrowest_dtype(max(roi_ids.values()), signed=False)
+        point_df[f'{roiset_name}_label'] = point_df[roiset_name].map(roi_ids).astype(dtype)
+
+    if roiset_name not in point_df.columns:
+        # Produce names from integers according to (reversed) roi_ids
+        reverse_ids = {v:k for k,v in roi_ids.items()}
+        if len(roi_ids) != len(reverse_ids):
+            logger.warning("ROI IDs are not unique; precise mapping of ROI labels to ROI names is undefined.")
+        point_df[roiset_name] = point_df[f'{roiset_name}_label'].map(reverse_ids)
+
+
+def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
     """
     Load an ROI volume, either from a list of DVID 'roi' instances,
     or from a single low-res DVID labelmap instance.
@@ -137,6 +206,12 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, snapshot_seg, process
     Returns:
         roi_vol, roi_box (both in scale-5 resolution)
     """
+    dvid_node = (dvid_cfg['server'], dvid_cfg['uuid'])
+    if not all(dvid_node):
+        raise RuntimeError(
+            f"Can't read {roiset_name} ROIs from DVID. "
+            "You didn't supply DVID server/uuid to read from.")
+
     vol_cache_name = f'volumes/{roiset_name}-vol.npy'
     box_cache_name = f'volumes/{roiset_name}-box.json'
     ids_cache_name = f'volumes/{roiset_name}-ids.json'
@@ -151,25 +226,25 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, snapshot_seg, process
                 return roi_vol, roi_box
 
     if roi_labelmap_name:
-        roi_seg = (*snapshot_seg[:2], roi_labelmap_name)
-        neuron_res = fetch_instance_info(*snapshot_seg)['Extended']['VoxelSize']
-        roi_res = fetch_instance_info(*roi_seg)['Extended']['VoxelSize']
-        if (np.array(roi_res) / neuron_res != 2**5).any():
-            msg = f"{roi_labelmap_name}: ROI volumes must be 32x lower resolution than the full-res segmentation"
-            raise RuntimeError(msg)
+        roi_seg = (*dvid_node, roi_labelmap_name)
+
+        # It would be nice to add this check back in, but currently
+        # the snapshot_seg is not passed to this function.
+        # neuron_res = fetch_instance_info(*snapshot_seg)['Extended']['VoxelSize']
+        # roi_res = fetch_instance_info(*roi_seg)['Extended']['VoxelSize']
+        # if (np.array(roi_res) / neuron_res != 2**5).any():
+        #     msg = f"{roi_labelmap_name}: ROI volumes must be 32x lower resolution than the full-res segmentation"
+        #     raise RuntimeError(msg)
 
         roi_box = np.array(fetch_volume_box(*roi_seg))
         with Timer(f"Fetching ROI volume: {roi_labelmap_name}"):
             roi_vol = fetch_labelmap_voxels_chunkwise(*roi_seg, roi_box, progress=False)
     else:
-        roi_vol, roi_box, _ = fetch_combined_roi_volume(
-            *snapshot_seg[:2],
-            roi_ids,
-            processes=processes
-        )
+        roi_vol, roi_box, _ = fetch_combined_roi_volume(*dvid_node, roi_ids, processes=processes)
 
     with Timer(f"Writing {vol_cache_name}", logger):
         np.save(vol_cache_name, roi_vol)
         dump_json(roi_box, box_cache_name, unsplit_int_lists=True)
         dump_json(roi_ids, ids_cache_name)
+
     return roi_vol, roi_box
