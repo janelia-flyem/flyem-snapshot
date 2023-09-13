@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+
 # For certain types, we need to ensure that 'long' is used in neo4j, not int.
 # Also, in some cases (e.g. 'group'), the column in our pandas DataFrame is
 # stored with float dtype because pandas uses NaN for missing values.
