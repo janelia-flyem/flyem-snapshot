@@ -48,6 +48,10 @@ LabelmapSchema = {
 }
 
 SnapshotSynapsesSchema = {
+    "description":
+        "The synapse tables to use, and optionally a DVID UUID\n"
+        "to which the coresponding body IDs should be updated.\n",
+    "default": {},
     "properties": {
         "syndir": {
             "description":

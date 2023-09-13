@@ -69,7 +69,9 @@ NeuprintSchema = {
             "default": {},
         },
         "neuron-label-criteria": {
-            "type": "object",
+            "description":
+                "In neuprint, all synaptic bodies are :Segment nodes, but only 'important' ones also become :Neuron nodes.\n"
+                "The following settings determine which criteria will promote a :Segment to a :Neuron\n",
             "default": {},
             "properties": {
                 "synweight": {
@@ -93,19 +95,18 @@ NeuprintSchema = {
             }
         },
         # TODO Move this into a larger sub-structure for all :Meta info
-        "postHPThreshold": {
-            "description": "Which confidence threshold to use when calculating each connection's weightHP\n",
-            "type": "number",
-            "default": 0.0
-            # Note: On both hemibrain and MANC, we used 0.7
-        },
-
-        # TODO Move this into a larger sub-structure for all :Meta info
         "postHighAccuracyThreshold": {
             "description": "Which confidence threshold to use when calculating each connection's standard 'weight'\n",
             "type": "number",
             "default": 0.0
             # Note: On both hemibrain we used 0.5, on MANC we used 0.4
+        },
+        # TODO Move this into a larger sub-structure for all :Meta info
+        "postHPThreshold": {
+            "description": "Which confidence threshold to use when calculating each connection's weightHP\n",
+            "type": "number",
+            "default": 0.0
+            # Note: On both hemibrain and MANC, we used 0.7
         },
         "processes": {
             "description":

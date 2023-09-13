@@ -30,7 +30,7 @@ ConfigSchema = {
     #   https://python-jsonschema.readthedocs.io/en/latest/faq/#why-doesn-t-my-schema-s-default-property-set-the-default-on-my-instance
     "default": {},
 
-    "required": ["snapshot", "synapse-points", "synapse-partners"],
+    "required": ["inputs", "outputs"],
     "additionalProperties": False,
     "properties": {
         "inputs": {
@@ -49,7 +49,7 @@ ConfigSchema = {
             "properties": {
                 "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
-                "reports": ReportsSchema,
+                "connectivity-reports": ReportsSchema,
             }
         },
         "job-settings": {
@@ -109,7 +109,8 @@ def main(args):
 
 
 def export_all(cfg, config_dir):
-    set_default_dvid_session_timeout(cfg['dvid-timeout'], cfg['dvid-timeout'])
+    timeout = cfg['job-settings']['dvid-timeout']
+    set_default_dvid_session_timeout(timeout, timeout)
 
     # Output dir is created in the cwd (if output-dir is a relative path).
     _finalize_config_and_output_dir(cfg, config_dir)
@@ -176,14 +177,15 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         if not syncfg['synapse-partners'].startswith('{syndir}'):
             syncfg['synapse-partners'] = os.path.abspath(syncfg['synapse-partners'])
 
-        if cfg['body-sizes']['cache-file']:
-            cfg['body-sizes']['cache-file'] = os.path.abspath(cfg['body-sizes']['cache-file'])
+        bscfg = cfg['inputs']['body-sizes']
+        if bscfg['cache-file']:
+            bscfg['cache-file'] = os.path.abspath(bscfg['cache-file'])
 
         output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'] or snapshot_tag)
 
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
-    for report in cfg['outputs']['reports']:
+    for report in cfg['outputs']['connectivity-reports']['reports']:
         if report['name']:
             continue
         if report['rois']:
@@ -197,11 +199,9 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
     # Ensure output directories exist.
     os.makedirs(f"{output_dir}/tables", exist_ok=True)
+    os.makedirs(f"{output_dir}/png", exist_ok=True)
+    os.makedirs(f"{output_dir}/html", exist_ok=True)
 
     # Dump the updated config so it's clear what modifications
     # we made and how the UUID was resolved.
     dump_config(cfg, f"{output_dir}/final-config.yaml")
-
-
-if __name__ == "__main__":
-    main()

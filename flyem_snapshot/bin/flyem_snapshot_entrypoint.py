@@ -8,8 +8,10 @@ import argparse
 def main():
     DEBUG = False
     if DEBUG and len(sys.argv) == 1:
+        import os
         sys.stderr.write("DEBUGGING WITH ARTIFICAL ARGS\n")
-        sys.argv.extend(['-c', 'neuprint-small-test.yaml'])
+        p = os.path.split(__file__)[0] + '/../../neuprint-small-test.yaml'
+        sys.argv.extend(['-c', p])
 
     parser = argparse.ArgumentParser(
         description=__doc__,

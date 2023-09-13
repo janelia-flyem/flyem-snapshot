@@ -41,14 +41,19 @@ AnnotationsSchema = {
     "description": "",
     "type": "object",
     "default": {},
-    "required": ["body-annotations"],
+    "required": [],
     "properties": {
         "body-annotations-table": {
             "type": "string",
             "default": ""  # By default, we read from DVID.
         },
         "point-annotations": {
-            "type":"array",
+            "description":
+                "Point annotation datasets to use for populating properties on the :Neuron nodes.\n"
+                "Each item should look something like this:\n"
+                "- instance: <dvid-instance-name>\n"
+                "  property-name: <neuprint-property-name>\n",
+            "type": "array",
             "items": PointAnnotationSchema,
             "default": []
         },
@@ -81,7 +86,7 @@ def load_annotations(cfg, dvid_seg, snapshot_tag):
         del ann['json']
 
     feather.write_feather(
-        ann.reset_index().drop(columns=['json']),
+        ann.reset_index(),
         f'tables/body-annotations-{snapshot_tag}.feather'
     )
 

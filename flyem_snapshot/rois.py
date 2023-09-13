@@ -58,7 +58,7 @@ RoisSchema = {
     "type": "object",
     "default": {},
     "additionalProperties": False,
-    "required": ["rois"],
+    "required": ["roi-sets"],
     "properties": {
         "roi-sets": {
             "type": "object",

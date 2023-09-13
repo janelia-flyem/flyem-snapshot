@@ -87,7 +87,8 @@ ReportsSchema = {
             "description":
                 "A json file containing neuroglancer state.\n"
                 "You can provide a local path or a remote https:// or gs:// path.\n"
-                "The neuron segmentation MUST be the currently selected layer in the state.\n"
+                "The neuron segmentation MUST be the currently selected layer in the state.\n",
+            "default": ""
         },
         "capture-statuses": {
             "description":
