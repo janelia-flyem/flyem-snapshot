@@ -119,8 +119,8 @@ def load_synapses(cfg, snapshot_tag):
     # If so, just load those and return.
     if os.path.exists(f'tables/partner_df-{snapshot_tag}.feather'):
         logger.info("Loading previously-written synapse files")
-        partner_df = feather.read_feather('tables/partner_df.feather')
-        point_df = feather.read_feather('tables/point_df.feather').set_index('point_id')
+        partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
+        point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
         return point_df, partner_df
 
     point_df, partner_df = _load_raw_synapses(cfg)
@@ -149,7 +149,7 @@ def load_synapses(cfg, snapshot_tag):
     with Timer("Exporting filtered/updated synapse tables", logger):
         feather.write_feather(
             point_df.reset_index(),
-            'tables/point_df.feather'
+            f'tables/point_df-{snapshot_tag}.feather'
         )
         feather.write_feather(
             partner_df,
