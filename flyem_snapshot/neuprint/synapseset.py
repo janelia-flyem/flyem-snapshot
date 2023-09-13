@@ -45,7 +45,7 @@ def export_synapsesets(cfg, partner_df, connectome):
     assert synset_ids.columns.tolist() == ['body', 'synset_id']
 
     with Timer("Writing Neuprint_SynapseSet.csv", logger):
-        dataset = cfg['neuprint']['dataset']
+        dataset = cfg['dataset']
         label = f"SynapseSet;{dataset}_SynapseSet"
         (
             synset_ids.assign(label=label)

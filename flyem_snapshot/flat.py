@@ -29,8 +29,6 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     Also export the full body-to-body weighted connectome, and also
     the abridged body-to-body weighted connectome for only 'primary' bodies.
     """
-    snapshot_tag = cfg['snapshot-tag']
-
     if not cfg['export-connectome']:
         return
 

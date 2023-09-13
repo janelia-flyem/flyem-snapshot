@@ -147,7 +147,7 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes):
         logger.info("Not generating neuprint snapshot.")
         return
 
-    if not cfg['neuprint']['dataset']:
+    if not cfg['dataset']:
         raise RuntimeError("Please define a dataset name in neuprint:dataset")
 
     # Drop body 0 entirely.

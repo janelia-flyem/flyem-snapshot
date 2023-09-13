@@ -128,12 +128,12 @@ def export_all(cfg, config_dir):
         # Load inputs
         ann = load_annotations(cfg['inputs']['annotations'], dvid_seg, snapshot_tag)
         point_df, partner_df = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
-        point_df, partner_df = load_rois(cfg['inputs']['rois'], point_df, partner_df)
+        point_df, partner_df = load_rois(cfg['inputs']['rois'], snapshot_tag, point_df, partner_df)
         body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvid_seg, point_df, snapshot_tag)
 
         # Produce outputs
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes)
-        export_reports(cfg['outputs']['reports'], point_df, partner_df, ann)
+        export_reports(cfg['outputs']['reports'], point_df, partner_df, ann, snapshot_tag)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
 
 

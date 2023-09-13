@@ -110,7 +110,7 @@ ReportsSchema = {
 
 
 @PrefixFilter.with_context('Report')
-def export_reports(cfg, point_df, partner_df, ann):
+def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
     if len(cfg['reports']) == 0:
         logger.info("No reports requested.")
         return
@@ -158,6 +158,7 @@ def export_reports(cfg, point_df, partner_df, ann):
 
         syncounts, status_stats = _export_report(
             cfg,
+            snapshot_tag,
             report_point_df,
             report_partner_df,
             ann,
@@ -171,7 +172,7 @@ def export_reports(cfg, point_df, partner_df, ann):
 
 
 @PrefixFilter.with_context('{name}')
-def _export_report(cfg, report_point_df, report_partner_df, ann, roi, *, name):
+def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, roi, *, name):
     syncounts = (
         report_point_df['kind']
         .value_counts()
@@ -183,6 +184,7 @@ def _export_report(cfg, report_point_df, report_partner_df, ann, roi, *, name):
 
     status_stats = _completeness_forecast(
         cfg,
+        snapshot_tag,
         report_point_df,
         report_partner_df,
         ann,
@@ -192,6 +194,7 @@ def _export_report(cfg, report_point_df, report_partner_df, ann, roi, *, name):
 
     _export_downstream_capture(
         cfg,
+        snapshot_tag,
         report_partner_df,
         name=name
     )
@@ -284,8 +287,7 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
 
 
 @PrefixFilter.with_context("capture forecast")
-def _completeness_forecast(cfg, point_df, partner_df, ann, roi, *, name):
-    snapshot_tag = cfg['snapshot-tag']
+def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *, name):
     stop_at_rank = int(cfg['stop-at-rank'])
     selection_link = _get_neuroglancer_base_link(cfg['neuroglancer-base-state'])
     _name = '-'.join(name.split())
@@ -347,8 +349,7 @@ def _get_neuroglancer_base_link(state_path):
 
 
 @PrefixFilter.with_context("downstream capture")
-def _export_downstream_capture(cfg, partner_df, *, name):
-    snapshot_tag = cfg['snapshot-tag']
+def _export_downstream_capture(cfg, snapshot_tag, partner_df, *, name):
     _name = '-'.join(name.split())
 
     # We're only interested in the downstream capture of

@@ -88,7 +88,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     ann = _neuprint_neuron_annotations(ann)
 
     # Filter out low-confidence PSDs before computing weights.
-    balanced_confidence = cfg['neuprint']['postHighAccuracyThreshold']
+    balanced_confidence = cfg['postHighAccuracyThreshold']
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
 
@@ -138,7 +138,7 @@ def _body_roi_synstats(cfg, point_df, partner_df):
     """
     Per-body-per-ROI stats
     """
-    roiset_names = list(cfg['neuprint']['roi-sets'].keys())
+    roiset_names = list(cfg['roi-sets'].keys())
 
     roiset_dfs = []
     for i, roiset_name in enumerate(tqdm_proxy(roiset_names)):
@@ -307,8 +307,8 @@ def _neuprint_neuron_annotations(ann):
 
 @timed("Assigning :Segment/:Neuron labels")
 def _assign_segment_label(cfg, neuron_df):
-    dataset = cfg['neuprint']['dataset']
-    crit = cfg['neuprint']['neuron-label-criteria']
+    dataset = cfg['dataset']
+    crit = cfg['neuron-label-criteria']
     crit_props = crit['properties']
     crit_props = set(neuron_df.columns) & set(crit_props)
 
@@ -321,7 +321,6 @@ def _assign_segment_label(cfg, neuron_df):
 
 
 def _export_neuron_csvs(cfg, neuron_df, processes):
-    snapshot_tag = cfg['snapshot-tag']
     neuron_dir = 'neuprint/Neuprint_Neurons'
     if os.path.exists(neuron_dir):
         shutil.rmtree(neuron_dir)
@@ -329,7 +328,7 @@ def _export_neuron_csvs(cfg, neuron_df, processes):
 
     feather.write_feather(
         neuron_df,
-        f'neuprint/Neuprint_Neurons-{snapshot_tag}.feather'
+        'neuprint/Neuprint_Neurons.feather'
     )
 
     batches = [
@@ -404,8 +403,8 @@ def export_neuprint_segment_connections(cfg, partner_df):
     """
     Export the CSV file for Neuron -[:ConnectsTo]-> Neuron
     """
-    balanced_confidence = cfg['neuprint']['postHighAccuracyThreshold']
-    hp_confidence = cfg['neuprint']['postHPThreshold']
+    balanced_confidence = cfg['postHighAccuracyThreshold']
+    hp_confidence = cfg['postHPThreshold']
 
     partner_df = partner_df.query('body_pre != 0 and body_post != 0').copy()
     partner_df['conf_cat'] = 'low'
@@ -430,7 +429,7 @@ def export_neuprint_segment_connections(cfg, partner_df):
     # Neuprint defines the location of synapse connection
     # weights according to the 'post' side.
 
-    roiset_names = list(cfg['neuprint']['roi-sets'].keys())
+    roiset_names = list(cfg['roi-sets'].keys())
     roiset_conns = []
     for i, roiset_name in enumerate(roiset_names):
         df = partner_df

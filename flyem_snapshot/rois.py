@@ -76,16 +76,15 @@ RoisSchema = {
 }
 
 
-def load_rois(cfg, point_df, partner_df):
+def load_rois(cfg, snapshot_tag, point_df, partner_df):
     """
     For each named ROI set in the config,
     add a column to point_df for the ROI of the PostSyn side.
     """
     os.makedirs("volumes", exist_ok=True)
 
-    snapshot_tag = cfg['snapshot-tag']
     point_df = point_df.copy()
-    for roiset_name, roiset_cfg in cfg['neuprint']['roi-sets'].items():
+    for roiset_name, roiset_cfg in cfg['roi-sets'].items():
         roi_ids = roiset_cfg['rois']
         if isinstance(roi_ids, str):
             roi_ids = json.load(open(roi_ids, 'r'))
@@ -101,7 +100,7 @@ def load_rois(cfg, point_df, partner_df):
     # The post side is used consistently for definining aggregate per-ROI synapse strengths
     # such as 'weight', 'synweight', 'upstream', 'downstream', 'weight'.
     with Timer("Adding roi columns to partner table", logger):
-        roiset_names = [*cfg['neuprint']['roi-sets'].keys()]
+        roiset_names = [*cfg['roi-sets'].keys()]
         partner_df = partner_df.drop(columns=roiset_names, errors='ignore')
         partner_df = partner_df.merge(point_df[roiset_names].rename_axis('post_id'), 'left', on='post_id')
 

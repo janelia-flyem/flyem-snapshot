@@ -38,7 +38,7 @@ def neo4j_column_names(cfg, df, exclude=()):
     else:
         point_properties = [
             pa['property-name']
-            for pa in cfg['neuprint']['point-annotations']
+            for pa in cfg['point-annotations']
         ]
 
     typed_renames = {}
