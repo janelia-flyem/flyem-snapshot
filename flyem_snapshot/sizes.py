@@ -86,16 +86,17 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
 
     # Note: Using 1 parenthesis and 1 bracket to indicate
     #       exclusive/inclusive mutation range: (a,b]
-    snapshot_uuid = dvid_seg[1]
+    server, snapshot_uuid, instance = dvid_seg
     delta_range = f"({cache_uuid}, {snapshot_uuid}]"
-    muts = fetch_mutations(dvid_seg[0], delta_range, dvid_seg[1])
+    muts = fetch_mutations(server, delta_range, instance)
     effects = compute_affected_bodies(muts)
     outofdate_bodies = np.concatenate((effects.changed_bodies, effects.new_bodies))
     if len(outofdate_bodies) == 0:
         return cached_sizes
 
     with Timer("Fetching non-cached neuron sizes", logger):
-        new_sizes = fetch_sizes(*dvid_seg, outofdate_bodies, outofdate_bodies, processes=cfg['processes'])
+        new_sizes = fetch_sizes(*dvid_seg, outofdate_bodies, processes=cfg['processes'])
+
     combined_sizes = (
         new_sizes.to_frame()
         .combine_first(cached_sizes.to_frame())['size']

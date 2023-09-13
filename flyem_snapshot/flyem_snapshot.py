@@ -91,6 +91,7 @@ ConfigSchema = {
 
 
 def main(args):
+    # See argument definitions in bin/flyem_snapshot_entrypoint.py
     if args.dump_default_yaml:
         dump_default_config(ConfigSchema, sys.stdout, 'yaml')
         return
