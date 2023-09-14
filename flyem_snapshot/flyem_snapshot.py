@@ -168,7 +168,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.
-    for subcfg in [*cfg['inputs'].values(), cfg['outputs'].values()]:
+    for subcfg in [*cfg['inputs'].values(), *cfg['outputs'].values()]:
         if isinstance(subcfg, Mapping) and 'processes' in subcfg and subcfg['processes'] is None:
             subcfg['processes'] = jobcfg['processes']
 
