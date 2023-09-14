@@ -110,7 +110,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     # We include bodyId as a property AND as the node ID column for neo4j ingestion.
     neuron_df['bodyId'] = neuron_df.index
     neuron_df = neuron_df.rename_axis(':ID(Body-ID)').reset_index()
-    neuron_df = append_neo4j_type_suffixes(cfg, neuron_df, exclude=['roiset_hash'])
+    neuron_df = append_neo4j_type_suffixes(neuron_df, exclude=['roiset_hash'])
 
     _export_neuron_csvs(neuron_df, cfg['processes'])
 
@@ -473,7 +473,7 @@ def export_neuprint_segment_connections(cfg, partner_df):
             'body_post': ':END_ID(Body-ID)',
         })
     )
-    neo4j_connectome = append_neo4j_type_suffixes(cfg, neo4j_connectome)
+    neo4j_connectome = append_neo4j_type_suffixes(neo4j_connectome)
 
     with Timer("Writing Neuprint_Neuron_Connections.feather", logger):
         feather.write_feather(

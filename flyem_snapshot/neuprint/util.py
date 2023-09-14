@@ -19,36 +19,28 @@ NEUPRINT_TYPE_OVERRIDES = {
 }
 
 
-def append_neo4j_type_suffixes(cfg, df, exclude=()):
+def append_neo4j_type_suffixes(df, exclude=()):
     """
     Return a renamed DataFrame wholes columns now have
     type suffixes such as ':float'.
     Only rename columns which DON'T ALREADY HAVE a
     colon (:) in the name.
     """
-    typed_renames = neo4j_column_names(cfg, df, exclude)
+    typed_renames = neo4j_column_names(df, exclude)
     return df.rename(columns=typed_renames)
 
 
-def neo4j_column_names(cfg, df, exclude=()):
+def neo4j_column_names(df, exclude=()):
     """
     Determine type suffixes such as ':float' for columns
     which DON'T ALREADY HAVE a colon (:) in the name.
     Returns a dict of columns to rename.
     """
-    if not cfg:
-        point_properties = []
-    else:
-        point_properties = [
-            pa['property-name']
-            for pa in cfg['point-annotations']
-        ]
-
     typed_renames = {}
     for col, col_dtype in df.dtypes.items():
         if col in exclude or ':' in col:
             continue
-        if 'location' in col.lower() or 'position' in col.lower() or col in point_properties:
+        if 'location' in col.lower() or 'position' in col.lower():
             # The weird srid:9157 means 'cartesian-3d' according to the neo4j docs.
             # https://neo4j.com/docs/cypher-manual/current/values-and-types/spatial/#spatial-values-crs-cartesian
             typed_renames[col] = col + ':point{srid:9157}'

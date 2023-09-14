@@ -73,7 +73,7 @@ def _export_synapse_group_csv(roi_syn_props, i, group_rois, df):
     df[[f'{roi}:boolean' for roi in group_rois if roi != '<unspecified>']] = True
 
     # Give types to the extra properties, too.
-    typed_renames = neo4j_column_names(None, df[extra_props])
+    typed_renames = neo4j_column_names(df[extra_props])
     df = df.rename(columns=typed_renames)
 
     # Only export the columns which we intend for neo4j (not x,y,z)
