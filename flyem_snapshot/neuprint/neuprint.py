@@ -134,7 +134,7 @@ NeuprintSchema = {
 }
 
 
-@PrefixFilter.with_context('Neuprint')
+@PrefixFilter.with_context('neuprint')
 def export_neuprint(cfg, point_df, partner_df, ann, body_sizes):
     """
     Export CSV files for each of the following:

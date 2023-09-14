@@ -9,7 +9,7 @@ from neuclease.util import timed, compute_parallel
 from .util import neo4j_column_names
 
 
-@PrefixFilter.with_context("Synapses")
+@PrefixFilter.with_context("Synapse")
 def export_neuprint_synapses(cfg, point_df):
     synapse_dir = 'neuprint/Neuprint_Synapses'
     if os.path.exists(synapse_dir):

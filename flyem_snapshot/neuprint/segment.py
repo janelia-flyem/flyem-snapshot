@@ -77,7 +77,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 }
 
 
-@PrefixFilter.with_context("Neuron")
+@PrefixFilter.with_context("Segment")
 def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     """
     Two issues:
@@ -203,7 +203,7 @@ def _roisyn_for_roiset(point_df, partner_df, roiset_name):
     return roi_syn
 
 
-@PrefixFilter.with_context("Neuron.roiInfo")
+@PrefixFilter.with_context("Segment.roiInfo")
 def _neuprint_neuron_roi_infos(roisyn_df, processes):
     # Testing shows that there's a steep penalty to pickling
     # a DataFrame if it has a non-trivial index,
@@ -295,6 +295,7 @@ def _neuprint_neuron_annotations(cfg, ann):
     ann['status'] = ann['statusLabel'].replace(NEUPRINT_STATUSLABEL_TO_STATUS)
 
     # Points must be converted to neo4j spatial points.
+    # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
     for col in ann.columns:
         if 'location' in col.lower() or 'position' in col.lower():
             valid = ann[col].notnull()
@@ -399,7 +400,7 @@ def _export_neurons_with_shared_roiset(neuron_dir, total_batches, batch_index, n
     neuron_df.to_csv(p, index=False, header=True)
 
 
-@PrefixFilter.with_context("connections")
+@PrefixFilter.with_context("ConnectsTo")
 def export_neuprint_segment_connections(cfg, partner_df):
     """
     Export the CSV file for Neuron -[:ConnectsTo]-> Neuron
@@ -489,7 +490,7 @@ def export_neuprint_segment_connections(cfg, partner_df):
     return connectome
 
 
-@PrefixFilter.with_context("Neuron:ConnectsTo.roiInfo")
+@PrefixFilter.with_context("roiInfo")
 def _neuron_connection_roi_infos(roi_conn, processes):
     with Timer("Grouping into batches"):
         # In the connection roiInfo, the weight is named 'post'.

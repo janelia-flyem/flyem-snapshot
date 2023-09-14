@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.feather as feather
 
+from neuclease import PrefixFilter
 from neuclease.util import Timer, extract_labels_from_volume, dump_json, narrowest_dtype
 from neuclease.dvid.voxels import fetch_volume_box
 from neuclease.dvid.labelmap import fetch_labelmap_voxels_chunkwise
@@ -100,6 +101,7 @@ RoisSchema = {
 }
 
 
+@PrefixFilter.with_context('rois')
 def load_rois(cfg, snapshot_tag, point_df, partner_df):
     """
     For each named ROI set in the config,

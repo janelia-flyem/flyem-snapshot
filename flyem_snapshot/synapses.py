@@ -111,7 +111,7 @@ SnapshotSynapsesSchema = {
 }
 
 
-@PrefixFilter.with_context('Loading Synapses')
+@PrefixFilter.with_context('synapses')
 def load_synapses(cfg, snapshot_tag):
     os.makedirs('tables', exist_ok=True)
 

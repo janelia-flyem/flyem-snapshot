@@ -77,6 +77,7 @@ AnnotationsSchema = {
 }
 
 
+@PrefixFilter.with_context('annotations')
 def load_annotations(cfg, dvid_seg, snapshot_tag):
     """
     Load body annotations, either from a feather file or from DVID.

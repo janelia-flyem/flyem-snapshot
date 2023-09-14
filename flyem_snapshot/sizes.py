@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import pyarrow.feather as feather
 
+from neuclease import PrefixFilter
 from neuclease.util import Timer
 from neuclease.dvid.labelmap import fetch_sizes, fetch_mutations, compute_affected_bodies
 
@@ -43,6 +44,7 @@ BodySizesSchema = {
 }
 
 
+@PrefixFilter.with_context('body-sizes')
 def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
     if not cfg['load-sizes']:
         logger.info("Body sizes will not be emitted due to load-sizes: false")
