@@ -301,7 +301,7 @@ def _neuprint_neuron_annotations(cfg, ann):
             valid = ann[col].notnull()
             ann.loc[valid, col] = [
                 f"{{x:{x}, y:{y}, z:{z}}}"
-                for (x,y,z) in ann.loc[valid, [*'xyz']].values
+                for (x,y,z) in ann.loc[valid, col].values
             ]
 
     return ann
