@@ -15,10 +15,11 @@ _ = hvplot.pandas  # for linting
 logger = logging.getLogger(__name__)
 
 PointAnnotationSchema = {
-    "description": "Settings to describe a source of point annotations in DVID which should be loaded into neuprint",
+    "description": "Settings to describe a source of point annotations in DVID which should be associated with each body.",
     "type": "object",
     "default": {},
-    "required": ['instance', 'property-name'],
+    "required": ['instance', 'column-name'],
+    "additionalProperties": False,
     "properties": {
         "instance": {
             "description":
@@ -26,13 +27,16 @@ PointAnnotationSchema = {
                 "Note: If more than one annotation point falls on the same body,\n"
                 "      only one will be used, and the others simply dropped.\n"
                 "Example: 'nuclei-centroids'\n",
-            "type": "string",
+            "type": "string"
             # no default
         },
-        "neuprint-property-name": {
-            "description": "The name of the property as it will appear on :Segment/:Neuron nodes in Neuprint",
+        "column-name": {
+            "description":
+                "The name of the column in the annotations dataframe and feather file.\n"
+                "(If you plan to export to neuprint, you can override this name specifically\n"
+                "for neuprint in the neuprint portion of the config settings.)\n",
             "type": "string",
-            # no default
+            "default": ""
         }
     }
 }
@@ -52,10 +56,15 @@ AnnotationsSchema = {
                 "Point annotation datasets to use for populating properties on the :Neuron nodes.\n"
                 "Each item should look something like this:\n"
                 "- instance: <dvid-instance-name>\n"
-                "  property-name: <neuprint-property-name>\n",
+                "  column-name: <name>\n",
             "type": "array",
             "items": PointAnnotationSchema,
-            "default": []
+            "default": [
+                {
+                    "instance": "nuclei-centroids",
+                    "column-name": "soma_position"
+                }
+            ]
         },
         "processes": {
             "description":
@@ -109,8 +118,8 @@ def load_annotations(cfg, dvid_seg, snapshot_tag):
     # Anything mentioned in the point-annotations config
     # will override what's in Clio if the name conflicts.
     for pa in cfg['point-annotations']:
-        property_name = pa['property-name']
-        with PrefixFilter.context(property_name):
+        col = pa['column-name'] or pa['instance']
+        with PrefixFilter.context(pa['instance']):
             df = fetch_all_elements(*dvid_seg[:2], pa['instance'], format='pandas')
             df = df.sort_values([*'zyx'])
             df['body'] = fetch_labels_batched(
@@ -118,12 +127,12 @@ def load_annotations(cfg, dvid_seg, snapshot_tag):
                 df[[*'zyx']].values,
                 processes=cfg['processes']
             )
-            df[property_name] = df[[*'xyz']].values.tolist()
+            df[col] = df[[*'xyz']].values.tolist()
 
             # Append this column to the annotation DataFrame, overwriting the column if necessary.
             # (Even if the column exists in Clio, we're overriding it with the data from DVID.)
             # Note: If more than one point lands on the same body, we drop duplicates.
-            ann.drop(columns=[property_name], errors='ignore', inplace=True)
-            ann[property_name] = df.drop_duplicates('body').set_index('body')[property_name]
+            ann.drop(columns=[col], errors='ignore', inplace=True)
+            ann[col] = df.drop_duplicates('body').set_index('body')[col]
 
     return ann

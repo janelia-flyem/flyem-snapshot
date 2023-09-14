@@ -85,7 +85,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     - efficiently compute the roiInfo
     """
     ann = ann.query('body != 0')
-    ann = _neuprint_neuron_annotations(ann)
+    ann = _neuprint_neuron_annotations(cfg, ann)
 
     # Filter out low-confidence PSDs before computing weights.
     balanced_confidence = cfg['postHighAccuracyThreshold']
@@ -112,7 +112,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     neuron_df = neuron_df.rename_axis(':ID(Body-ID)').reset_index()
     neuron_df = append_neo4j_type_suffixes(cfg, neuron_df, exclude=['roiset_hash'])
 
-    _export_neuron_csvs(cfg, neuron_df, cfg['processes'])
+    _export_neuron_csvs(neuron_df, cfg['processes'])
 
 
 @timed
@@ -275,14 +275,15 @@ def _make_roi_infos(batch_df):
     return roi_info_df
 
 
-@PrefixFilter.with_context("annotations")
-def _neuprint_neuron_annotations(ann):
+def _neuprint_neuron_annotations(cfg, ann):
     # Fetch all clio annotations
     # Translate to neuprint terms
     # If config mentions nuclei, use them.
     #
-    renames = {c: snakecase_to_camelcase(c.replace(' ', '_')) for c in ann.columns}
+    renames = {c: snakecase_to_camelcase(c.replace(' ', '_'), False) for c in ann.columns}
+    renames.update({c: c.replace('Position', 'Location') for c in renames})
     renames.update(CLIO_TO_NEUPRINT_PROPERTIES)
+    renames.update(cfg['annotation-property-names'])
 
     # Drop the ones that map to ""
     renames = {k:v for k,v in renames.items() if (k in ann) and v}
@@ -320,7 +321,7 @@ def _assign_segment_label(cfg, neuron_df):
     neuron_df.loc[is_neuron, ':LABEL'] = f'Segment;{dataset}_Segment;Neuron;{dataset}_Neuron'
 
 
-def _export_neuron_csvs(cfg, neuron_df, processes):
+def _export_neuron_csvs(neuron_df, processes):
     neuron_dir = 'neuprint/Neuprint_Neurons'
     if os.path.exists(neuron_dir):
         shutil.rmtree(neuron_dir)

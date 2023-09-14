@@ -108,6 +108,15 @@ NeuprintSchema = {
             "default": 0.0
             # Note: On both hemibrain and MANC, we used 0.7
         },
+        "annotation-property-names": {
+            "description":
+                "Mapping from annotation columns to neuprint property names.\n"
+                "Any columns NOT mentioned here will be translated to property names according to predefined rules.\n",
+            "additionalProperties": {
+                "type": "string"
+            },
+            "default": {},
+        },
         "processes": {
             "description":
                 "For steps specifically in the neuprint build process which could\n"
