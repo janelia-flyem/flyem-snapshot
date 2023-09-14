@@ -17,7 +17,6 @@ def export_neuprint_synapses(cfg, point_df):
     os.makedirs(synapse_dir)
 
     dataset = cfg['dataset']
-    roiset_names = list(cfg['roi-set-meta'].keys())
 
     point_df = point_df.reset_index()
     point_df[':Label'] = f'Synapse;{dataset}_Synapse'
@@ -29,15 +28,11 @@ def export_neuprint_synapses(cfg, point_df):
         'conf': 'confidence:float',
     })
 
-    roi_syn_props = {
-        roiset_name: rs['synapse-properties']
-        for roiset_name, rs in cfg['roi-set-meta'].items()
-    }
-    _export_fn = partial(_export_synapse_group_csv, roi_syn_props)
+    _export_fn = partial(_export_synapse_group_csv, cfg['roi-synapse-properties'])
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", ".*groupby with a grouper equal to a list of length 1.*")
-        groups = point_df.groupby(roiset_names, dropna=False, observed=True)
+        groups = point_df.groupby(cfg['roi-set-names'], dropna=False, observed=True)
         batches = ((i, group_rois, df) for i, (group_rois, df) in enumerate(groups))
         compute_parallel(
             _export_fn,

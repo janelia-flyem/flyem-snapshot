@@ -11,35 +11,23 @@ from .synapseset import export_synapsesets
 
 logger = logging.getLogger(__name__)
 
-RoiSetMetaFieldsSchema = {
-    "description":
-        "Special neuprint settings related to the roi-sets (roi columns)\n"
-        "that were loaded for the currently processing snapshot.\n",
-    "type": "object",
+RoiSynapsePropertiesSchema = {
+    "description": "Synapse properties derived from the roi values in a single roi-set (roi column).",
     "default": {},
-    "additionalProperties": False,
-    "properties": {
-        "primary": {
-            "description": "Set to true if this is the 'primary' roi set.",
-            "type": "boolean",
-            "default": False
-        },
-        "synapse-properties": {
-            "type": "object",
-            "default": {},
+    "additionalProperties": {
+        "default": {},
+        "description":
+            "In some cases, the values of the ROI segment IDs are semantically meaningful.\n"
+            "If that's the case, you may wish to add related properties to the synapse nodes.\n"
+            "Here, we allow you to specify such properties, calculated via formula from the segment IDs.\n",
+        "additionalProperties": {
+            "type": "string",
             "description":
-                "In some cases, the values of the ROI segment IDs are semantically meaningful.\n"
-                "If that's the case, you may wish to add related properties to the synapse nodes.\n"
-                "Here, we allow you to specify such properties, calculated via formula from the segment IDs.\n",
-            "additionalProperties": {
-                "type": "string",
-                "description":
-                    "A Python expression in which the roi segment ID 'x'\n"
-                    "is used to produce a property value for each synapse.\n",
+                "A Python expression in which the roi segment ID 'x'\n"
+                "is used to produce a property value for each synapse.\n",
 
-                # By default, the synapse property is assigned the value of the ROI segment ID itself.
-                "default": "x"
-            }
+            # By default, the synapse property is assigned the value of the ROI segment ID itself.
+            "default": "x"
         }
     }
 }
@@ -63,9 +51,20 @@ NeuprintSchema = {
             "type": "string",
             "default": ""
         },
-        "roi-set-meta": {
-            "type": "object",
-            "additionalProperties": RoiSetMetaFieldsSchema,
+        "roi-set-names": {
+            "default": None,
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "roi-synapse-properties": {
+            "additionalProperties": RoiSynapsePropertiesSchema,
             "default": {},
         },
         "neuron-label-criteria": {

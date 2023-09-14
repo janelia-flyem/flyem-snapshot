@@ -140,6 +140,7 @@ def export_all(cfg, config_dir):
 def _finalize_config_and_output_dir(cfg, config_dir):
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
+    neuprintcfg = cfg['outputs']['neuprint']
     jobcfg = cfg['job-settings']
 
     snapshot_tag = None
@@ -187,6 +188,11 @@ def _finalize_config_and_output_dir(cfg, config_dir):
             bscfg['cache-file'] = os.path.abspath(bscfg['cache-file'])
 
         output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'] or snapshot_tag)
+
+    # If the user didn't specify an explicit subset
+    #  of roi-sets to include in neuprint, include them all.
+    if neuprintcfg['roi-set-names'] is None:
+        neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
