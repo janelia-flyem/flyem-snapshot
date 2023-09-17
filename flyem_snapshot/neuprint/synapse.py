@@ -16,7 +16,7 @@ def export_neuprint_synapses(cfg, point_df):
         shutil.rmtree(synapse_dir)
     os.makedirs(synapse_dir)
 
-    dataset = cfg['dataset']
+    dataset = cfg['meta']['dataset']
 
     point_df = point_df.reset_index()
     point_df[':Label'] = f'Synapse;{dataset}_Synapse'

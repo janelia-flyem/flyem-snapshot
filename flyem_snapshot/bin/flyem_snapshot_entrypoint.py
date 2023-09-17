@@ -19,7 +19,9 @@ def main():
     )
     parser.add_argument('-c', '--config')
     parser.add_argument('-y', '--dump-default-yaml', action='store_true')
-    parser.add_argument('-v', '--dump-verbose-yaml', action='store_true')
+    parser.add_argument('-Y', '--dump-verbose-yaml', action='store_true')
+    parser.add_argument('-m', '--dump-neuprint-default-meta', action='store_true')
+    parser.add_argument('-M', '--dump-verbose-neuprint-default-meta', action='store_true')
     args = parser.parse_args()
 
     if sum((bool(args.config), bool(args.dump_default_yaml), bool(args.dump_verbose_yaml))) > 1:

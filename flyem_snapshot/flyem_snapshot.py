@@ -15,6 +15,7 @@ from .rois import RoisSchema, load_rois
 from .flat import FlatConnectomeSchema, export_flat_connectome
 from .sizes import BodySizesSchema, load_body_sizes
 from .neuprint import NeuprintSchema, export_neuprint
+from .neuprint.meta import NeuprintMetaSchema
 from .reports import ReportsSchema, export_reports
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,14 @@ def main(args):
         dump_default_config(ConfigSchema, sys.stdout, 'yaml-with-comments')
         return
 
+    if args.dump_neuprint_default_meta:
+        dump_default_config(NeuprintMetaSchema, sys.stdout, 'yaml')
+        return
+
+    if args.dump_verbose_neuprint_default_meta:
+        dump_default_config(NeuprintMetaSchema, sys.stdout, 'yaml-with-comments')
+        return
+
     configure_default_logging()
     cfg = load_config(args.config, ConfigSchema)
     config_dir = os.path.dirname(args.config)
@@ -127,12 +136,12 @@ def export_all(cfg, config_dir):
     with switch_cwd(cfg['job-settings']['output-dir']):
         # Load inputs
         ann = load_annotations(cfg['inputs']['annotations'], dvid_seg, snapshot_tag)
-        point_df, partner_df = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
+        point_df, partner_df, last_mutation = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
         point_df, partner_df = load_rois(cfg['inputs']['rois'], snapshot_tag, point_df, partner_df)
         body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvid_seg, point_df, snapshot_tag)
 
         # Produce outputs
-        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes)
+        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes, last_mutation)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
 
@@ -187,12 +196,15 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         if bscfg['cache-file']:
             bscfg['cache-file'] = os.path.abspath(bscfg['cache-file'])
 
+        neuprintcfg['meta'] = os.path.abspath(neuprintcfg['meta'])
         output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'] or snapshot_tag)
 
     # If the user didn't specify an explicit subset
     #  of roi-sets to include in neuprint, include them all.
-    if neuprintcfg['roi-set-names'] is None:
-        neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
+
+    if neuprintcfg['export-neuprint-snapshot']:
+        if neuprintcfg['roi-set-names'] is None:
+            neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
@@ -216,3 +228,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # Dump the updated config so it's clear what modifications
     # we made and how the UUID was resolved.
     dump_config(cfg, f"{output_dir}/final-config.yaml")
+
+    # We keep the neuprint :Meta node configuraton in a separate file.
+    # It will be loaded later, during the meta ingestion,
+    # but we load it here just for a quick schema validation.
+    if neuprintcfg['export-neuprint-snapshot']:
+        metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)
+        dump_config(metacfg, os.path.basename(neuprintcfg['meta']))

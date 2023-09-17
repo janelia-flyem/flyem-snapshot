@@ -80,15 +80,17 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 @PrefixFilter.with_context("Segment")
 def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     """
-    Two issues:
-    - efficiently set the ROI boolean properties
-    - efficiently compute the roiInfo
     """
+    # TODO:
+    #   Consider moving annotation translation into a separate
+    #   function that can be called before exporting segments.
+    #   Then it would be possible to validate the Meta config before
+    #   the rest of the export, catching config errors earlier.
     ann = ann.query('body != 0')
     ann = _neuprint_neuron_annotations(cfg, ann)
 
     # Filter out low-confidence PSDs before computing weights.
-    balanced_confidence = cfg['postHighAccuracyThreshold']
+    balanced_confidence = cfg['meta']['postHighAccuracyThreshold']
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
 
@@ -114,6 +116,16 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
 
     _export_neuron_csvs(neuron_df, cfg['processes'])
 
+    # While we've got this data handy, compute total pre/post
+    # in each ROI and also the whole dataset.
+    roi_totals = roi_syn_df.groupby(level='roi')[['pre', 'post']].sum()
+    dataset_totals = point_df['kind'].value_counts()
+    dataset_totals.index = dataset_totals.index.map({'PreSyn': 'pre', 'PostSyn': 'post'})
+
+    neuron_prop_splits = [name.split(':') for name in neuron_df.columns]
+    neuron_prop_names = [ps[0] for ps in neuron_prop_splits if ps[0] and len(ps) > 1]
+    return neuron_prop_names, dataset_totals, roi_totals, ann
+
 
 @timed
 def _body_synstats(point_df, partner_df):
@@ -125,11 +137,15 @@ def _body_synstats(point_df, partner_df):
     upstream, downstream = upstream.align(downstream, fill_value=0)
     upstream, downstream = upstream.astype(np.int32), downstream.astype(np.int32)
     synweight = (upstream + downstream).rename('synweight')
-    body_syn = pd.concat((prepost, upstream, downstream, synweight), axis=1)
+    body_syn = pd.concat((prepost, downstream, upstream, synweight), axis=1)
     body_syn = body_syn.fillna(0).astype(np.int32)
     body_syn = body_syn.query('body != 0')
 
+    logger.info("Writing body_syn.feather")
     feather.write_feather(body_syn.reset_index(), 'neuprint/body_syn.feather')
+
+    assert body_syn.index.name == 'body'
+    assert body_syn.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
     return body_syn
 
 
@@ -165,6 +181,9 @@ def _body_roi_synstats(cfg, point_df, partner_df):
 
     logger.info("Writing roi_syn.feather")
     feather.write_feather(roi_syn.reset_index(), 'neuprint/roi_syn.feather')
+
+    assert roi_syn.index.names == ['body_batch', 'body', 'roi']
+    assert roi_syn.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
     return roi_syn
 
 
@@ -307,7 +326,7 @@ def _neuprint_neuron_annotations(cfg, ann):
 
 @timed("Assigning :Segment/:Neuron labels")
 def _assign_segment_label(cfg, neuron_df):
-    dataset = cfg['dataset']
+    dataset = cfg['meta']['dataset']
     crit = cfg['neuron-label-criteria']
     crit_props = crit['properties']
     crit_props = set(neuron_df.columns) & set(crit_props)
@@ -388,7 +407,7 @@ def _export_neurons_with_shared_roiset(neuron_dir, total_batches, batch_index, n
     rois = list(json.loads(neuron_df['roiInfo:string'].iloc[0]).keys())
 
     # This awkward way of assigning the new columns is a way to work around
-    # this warning from pands: "PerformanceWarning: DataFrame is highly fragmented".
+    # this warning from pandas: "PerformanceWarning: DataFrame is highly fragmented".
     # https://stackoverflow.com/a/76344743/162094
     flags = pd.DataFrame([[True]*len(rois)], columns=[f'{roi}:boolean' for roi in rois], index=neuron_df.index)
     neuron_df = pd.concat((neuron_df, flags), axis=1)
@@ -403,14 +422,16 @@ def export_neuprint_segment_connections(cfg, partner_df):
     """
     Export the CSV file for Neuron -[:ConnectsTo]-> Neuron
     """
-    balanced_confidence = cfg['postHighAccuracyThreshold']
-    hp_confidence = cfg['postHPThreshold']
+    balanced_confidence = cfg['meta']['postHighAccuracyThreshold']
+    hp_confidence = cfg['meta']['postHPThreshold']
 
     partner_df = partner_df.query('body_pre != 0 and body_post != 0').copy()
     partner_df['conf_cat'] = 'low'
     partner_df['conf_cat'] = pd.Categorical(partner_df['conf_cat'], ['low', 'med', 'high'])
     partner_df.loc[partner_df['conf_post'] >= balanced_confidence, 'conf_cat'] = 'med'
     partner_df.loc[partner_df['conf_post'] >= hp_confidence, 'conf_cat'] = 'high'
+
+    # Connection weights by category (low/med/high)
     connectome = (
         partner_df[['body_pre', 'body_post', 'conf_cat']]
         .value_counts()
@@ -425,7 +446,7 @@ def export_neuprint_segment_connections(cfg, partner_df):
     connectome['weightHP'] = connectome['high']
     connectome = connectome.drop(columns=['low', 'med', 'high'])
 
-    # Note that partner_df['roi'] was created using roi_post.
+    # Note that partner_df[roiset_name] was created using roi_post.
     # Neuprint defines the location of synapse connection
     # weights according to the 'post' side.
 

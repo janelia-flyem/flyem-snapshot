@@ -3,13 +3,14 @@ Export a connectivity snapshot from a DVID segmentation,
 along with other denormalizations.
 """
 import os
+import json
 import logging
 
 import numpy as np
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
+from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64, dump_json
 from neuclease.dvid.labelmap import fetch_mutations, fetch_complete_mappings, fetch_bodies_for_many_points
 
 
@@ -121,9 +122,11 @@ def load_synapses(cfg, snapshot_tag):
         logger.info("Loading previously-written synapse files")
         partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
         point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
-        return point_df, partner_df
+        last_mutation = json.load(open('tables-last-mutation.json', 'r'))
+        return point_df, partner_df, last_mutation
 
     point_df, partner_df = _load_raw_synapses(cfg)
+    last_mutation = {}
 
     if cfg['update-to']:
         dvid_seg = (
@@ -147,6 +150,12 @@ def load_synapses(cfg, snapshot_tag):
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
 
     with Timer("Exporting filtered/updated synapse tables", logger):
+        if len(mutations) > 0:
+            last_mutation = mutations.iloc[-1].to_dict()
+            dump_json(last_mutation, 'tables/last-mutation.json')
+        else:
+            dump_json({}, 'tables/last-mutation.json')
+
         feather.write_feather(
             point_df.reset_index(),
             f'tables/point_df-{snapshot_tag}.feather'
@@ -155,7 +164,7 @@ def load_synapses(cfg, snapshot_tag):
             partner_df,
             f'tables/partner_df-{snapshot_tag}.feather'
         )
-    return point_df, partner_df
+    return point_df, partner_df, last_mutation
 
 
 def _load_raw_synapses(cfg):

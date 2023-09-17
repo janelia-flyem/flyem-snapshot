@@ -8,6 +8,7 @@ from neuclease import PrefixFilter
 from .synapse import export_neuprint_synapses, export_neuprint_synapse_connections
 from .segment import export_neuprint_segments, export_neuprint_segment_connections
 from .synapseset import export_synapsesets
+from .meta import export_neuprint_meta
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ RoiSynapsePropertiesSchema = {
                 "A Python expression in which the roi segment ID 'x'\n"
                 "is used to produce a property value for each synapse.\n",
 
-            # By default, the synapse property is assigned the value of the ROI segment ID itself.
+            # By default, the synapse property is assigned
+            # the value of the ROI segment ID itself.
             "default": "x"
         }
     }
@@ -37,21 +39,24 @@ NeuprintSchema = {
     "type": "object",
     "default": {},
     "additionalProperties": False,
-    "required": ["dataset"],
+    "required": [],
     "properties": {
         "export-neuprint-snapshot": {
             "description": "If true, export CSV files needed to construct a neo4j neuprint database.",
             "type": "boolean",
-            "default": True,
+            "default": False,
         },
-        "dataset": {
+        "meta": {
             "description":
-                "The name of the dataset in neuprint, e.g. 'cns'\n"
-                "Do NOT include the version here (such as cns:v1.0)\n",
+                "File path to a separate config file describing the Neuprint :Meta info.\n"
+                "See the command-line argument: flyem-snapshot -M\n",
             "type": "string",
             "default": ""
         },
         "roi-set-names": {
+            "description":
+                "The set of ROI sets (ROI column names) from the input synapse\n"
+                "table to actually copy into neuprint as ROIs.\n",
             "default": None,
             "oneOf": [
                 {
@@ -72,6 +77,7 @@ NeuprintSchema = {
                 "In neuprint, all synaptic bodies are :Segment nodes, but only 'important' ones also become :Neuron nodes.\n"
                 "The following settings determine which criteria will promote a :Segment to a :Neuron\n",
             "default": {},
+            "additionalProperties": False,
             "properties": {
                 "synweight": {
                     "description": "Segments with this synweight (or more) will also be labeled as Neurons.\n",
@@ -92,20 +98,6 @@ NeuprintSchema = {
                     "default": ["Traced", "Anchor"],
                 }
             }
-        },
-        # TODO Move this into a larger sub-structure for all :Meta info
-        "postHighAccuracyThreshold": {
-            "description": "Which confidence threshold to use when calculating each connection's standard 'weight'\n",
-            "type": "number",
-            "default": 0.0
-            # Note: On both hemibrain we used 0.5, on MANC we used 0.4
-        },
-        # TODO Move this into a larger sub-structure for all :Meta info
-        "postHPThreshold": {
-            "description": "Which confidence threshold to use when calculating each connection's weightHP\n",
-            "type": "number",
-            "default": 0.0
-            # Note: On both hemibrain and MANC, we used 0.7
         },
         "annotation-property-names": {
             "description":
@@ -130,12 +122,14 @@ NeuprintSchema = {
         # TODO: weightHP, and get rid of weightHR (a failed experiment, I think.)
         #       If I don't get rid if it, then I need to avoid pre-filtering by min-confidence,
         #       and apply that filter before neuron/weight export (but not synapse export).
+
+        # TODO: Optionally update ROI meshes in DVID...
     }
 }
 
 
 @PrefixFilter.with_context('neuprint')
-def export_neuprint(cfg, point_df, partner_df, ann, body_sizes):
+def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, last_mutation):
     """
     Export CSV files for each of the following:
 
@@ -151,13 +145,12 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes):
         - Neuron -[:ConnectsTo]-> Neuron
         - SynapseSet -[:ConnectsTo]-> SynapseSet
         - Synapse -[:SynapsesTo]-> Synapse
+
+    TODO: Mito
     """
     if not cfg['export-neuprint-snapshot']:
         logger.info("Not generating neuprint snapshot.")
         return
-
-    if not cfg['dataset']:
-        raise RuntimeError("Please define a dataset name in neuprint:dataset")
 
     # Drop body 0 entirely.
     point_df = point_df.loc[point_df['body'] != 0]
@@ -166,8 +159,11 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes):
     # with Timer("Decoding zyx coordinates from post_id"):
     #     partner_df[[*'zyx']] = decode_coords_from_uint64(partner_df['post_id'].values)
 
-    export_neuprint_synapses(cfg, point_df)
-    export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes)
+    neuron_prop_names, dataset_totals, roi_totals, neuprint_ann, = export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes)
+    export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, roi_totals, neuprint_ann)
+
     connectome = export_neuprint_segment_connections(cfg, partner_df)
     export_synapsesets(cfg, partner_df, connectome)
+
+    export_neuprint_synapses(cfg, point_df)
     export_neuprint_synapse_connections(partner_df)
