@@ -229,9 +229,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # we made and how the UUID was resolved.
     dump_config(cfg, f"{output_dir}/final-config.yaml")
 
-    # We keep the neuprint :Meta node configuraton in a separate file.
-    # It will be loaded later, during the meta ingestion,
-    # but we load it here just for a quick schema validation.
+    # We load the neuprint :Meta node configuraton in a separate file,
+    # but we insert its loaded contents into the main config for all neuprint steps to use.
     if neuprintcfg['export-neuprint-snapshot']:
         metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)
-        dump_config(metacfg, os.path.basename(neuprintcfg['meta']))
+        p = os.path.basename(neuprintcfg['meta'])
+        dump_config(metacfg, f"{output_dir}/{p}")
+        neuprintcfg['meta'] = metacfg
