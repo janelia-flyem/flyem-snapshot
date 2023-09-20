@@ -42,7 +42,7 @@ def neo4j_column_names(df, exclude=()):
     Returns a dict of columns to rename.
     """
     typed_renames = {}
-    for col, series in df:
+    for col, series in df.items():
         if col in exclude or ':' in col:
             continue
         suffix = neo4j_type_suffix(series)
