@@ -122,7 +122,7 @@ def load_synapses(cfg, snapshot_tag):
         logger.info("Loading previously-written synapse files")
         partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
         point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
-        last_mutation = json.load(open('tables-last-mutation.json', 'r'))
+        last_mutation = json.load(open('tables/last-mutation.json', 'r'))
         return point_df, partner_df, last_mutation
 
     point_df, partner_df = _load_raw_synapses(cfg)
