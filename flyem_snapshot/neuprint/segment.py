@@ -106,7 +106,8 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     # fixative or whatever and intended to be excluded from our work.
     neuron_df = body_stats.merge(ann, 'left', on='body')
     neuron_df = neuron_df.merge(roi_info_df, 'left', on='body')
-    neuron_df = neuron_df.merge(body_sizes, 'left', on='body')
+    if body_sizes is not None:
+        neuron_df = neuron_df.merge(body_sizes, 'left', on='body')
     _assign_segment_label(cfg, neuron_df)
 
     # We include bodyId as a property AND as the node ID column for neo4j ingestion.
