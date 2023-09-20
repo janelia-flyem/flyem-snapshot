@@ -25,7 +25,8 @@ RoiSetSchema = {
             "description": "Either a list of ROI names or a mapping of ROI names to integers.\n",
             "oneOf": [
                 {
-                    # Optionally provide a path to a JSON file from which the ROI set will be read
+                    # Optionally provide a path to a '.json' from which the ROI set will be read,
+                    # OR a python expression which produces an ROI name from an ROI segment ID.
                     "type": "string",
                 },
                 {
@@ -112,18 +113,32 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
     point_df = point_df.copy()
     for roiset_name, roiset_cfg in cfg['roi-sets'].items():
         roi_ids = roiset_cfg['rois']
-        if isinstance(roi_ids, str):
+        if isinstance(roi_ids, str) and roi_ids.endswith('.json'):
             roi_ids = json.load(open(roi_ids, 'r'))
-        if isinstance(roi_ids, list):
+        elif isinstance(roi_ids, list):
             roi_ids = dict(zip(roi_ids, range(1, len(roi_ids)+1)))
-        assert isinstance(roi_ids, dict)
+
+        if isinstance(roi_ids, str):
+            # If roi_ids is still a string, it must be a valid python expression,
+            # and it shouldn't give the same result for ID 0 as ID 1
+            assert eval(roi_ids.format(x=1)) != eval(roi_ids.format(x=0))  # pylint: disable=eval-used
+        else:
+            assert isinstance(roi_ids, dict)
 
         if roiset_cfg['source'] == "synapse-point-table":
             _load_roi_col(roiset_name, roi_ids, point_df)
         else:
             if bool(roiset_cfg['labelmap']) != (roiset_cfg['source'] == 'dvid-labelmap'):
                 raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
+
             roi_vol, roi_box = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], cfg['dvid'], cfg['processes'])
+            if isinstance(roi_ids, str):
+                # Now we can compute the mapping from name to label
+                unique_ids = pd.unique(roi_vol.reshape(-1))
+                roi_ids = {
+                    eval(roi_ids.format(x=x)): x  # pylint: disable=eval-used
+                    for x in unique_ids if x != 0
+                }
             extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
 
     # Merge those extracted ROI values onto the partner_df, too.
@@ -150,12 +165,27 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
 
 def _load_roi_col(roiset_name, roi_ids, point_df):
     """
-    For a given roiset, ensure that point_df contains
-    a column for the ROI names (a categorical) AND the ROI integer IDs (the 'label').
+    For a given roiset, ensure that point_df contains a column for
+    the ROI names (a categorical) AND the ROI integer IDs (the 'label').
+
     For example:
         - primary_roi (categorical strings)
         - primary_roi_label (integers)
+
+    If it contains only one or the other, then we calculate the missing one using roi_ids.
     """
+    if isinstance(roi_ids, str):
+        if f'{roiset_name}_label' not in point_df.columns:
+            raise RuntimeError(
+                f"If you are specifying {roiset_name} roi_ids via a python expression, "
+                f"then you must supply the {roiset_name}_label column.")
+        unique_ids = point_df[f'{roiset_name}'].unique()
+        roi_ids = {
+            eval(roi_ids.format(x=x)): x  # pylint: disable=eval-used
+            for x in unique_ids if x != 0
+        }
+
+    assert isinstance(roi_ids, dict)
     expected_cols = {roiset_name, f'{roiset_name}_label'}
     if not (expected_cols & {*point_df.columns}):
         msg = (
@@ -199,7 +229,8 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
         roiset_name:
             The name of an ROI set from the config
         roi_ids:
-            The dict of {roi: id} for the ROIs in the set.
+            The dict of {roi: id} for the ROIs in the set,
+            or a python expression which can produce a string for each unique ID in a labelmap volume.
         roi_labelmap_name:
             The name of a low-res (256nm) segmentation that has the ROI segments.
         snapshot_seg:
@@ -242,6 +273,11 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
         with Timer(f"Fetching ROI volume: {roi_labelmap_name}"):
             roi_vol = fetch_labelmap_voxels_chunkwise(*roi_seg, roi_box, progress=False)
     else:
+        if isinstance(roi_ids, str):
+            raise RuntimeError(
+                f"If you didn't supply a labelmap volume from which to fetch the {roiset_name} "
+                "ROIs, then you must supply a list of ROI instance names to fetch from DVID."
+            )
         roi_vol, roi_box, _ = fetch_combined_roi_volume(*dvid_node, roi_ids, processes=processes)
 
     with Timer(f"Writing {vol_cache_name}", logger):
