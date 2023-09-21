@@ -102,8 +102,8 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     # bodies which have no synapses whatsoever, even if there is annotation
     # data for the body.
     # One reason not to use such bodies is that the annotations can (sadly)
-    # contain stale body IDs, and also 'Unimportant' bodies which are just
-    # fixative or whatever and intended to be excluded from our work.
+    # contain stale body IDs. Also, 'Unimportant' bodies which are just
+    # fixative or whatever should generally be excluded from results.
     neuron_df = body_stats.merge(ann, 'left', on='body')
     neuron_df = neuron_df.merge(roi_info_df, 'left', on='body')
     if body_sizes is not None:
@@ -303,10 +303,14 @@ def _neuprint_neuron_annotations(cfg, ann):
     renames.update(CLIO_TO_NEUPRINT_PROPERTIES)
     renames.update(cfg['annotation-property-names'])
 
-    # Drop the ones that map to ""
+    # Drop the columns that map to ""
     renames = {k:v for k,v in renames.items() if (k in ann) and v}
     ann = ann[[*renames.keys()]]
     ann = ann.rename(columns=renames)
+
+    # Erase any values which are just "".
+    # Better to leave them null.
+    ann = ann.replace('', None)
 
     # Neuprint uses 'simplified' status choices,
     # referring to the original (dvid) status as 'statusLabel'.
