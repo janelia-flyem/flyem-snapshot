@@ -46,6 +46,7 @@ AnnotationsSchema = {
     "type": "object",
     "default": {},
     "required": [],
+    "additionalProperties": False,
     "properties": {
         "body-annotations-table": {
             "type": "string",

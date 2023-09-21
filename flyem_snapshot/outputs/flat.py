@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 FlatConnectomeSchema = {
     "type": "object",
     "default": {},
+    "additionalProperties": False,
     "properties": {
         "export-connectome": {
             "description": "If true, export the connectome in heavy but easy-to-use flat feather files.",

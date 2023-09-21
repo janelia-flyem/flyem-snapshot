@@ -38,6 +38,7 @@ ConfigSchema = {
         "inputs": {
             "description": "Input files and specs to use for constructing the snapshot denormalizations and reports.",
             "default": {},
+            "additionalProperties": False,
             "properties": {
                 "synapses": SnapshotSynapsesSchema,
                 "annotations": AnnotationsSchema,
@@ -48,6 +49,7 @@ ConfigSchema = {
         "outputs": {
             "description": "Specs for the exports/reports to produce from the snapshot data.\n",
             "default": {},
+            "additionalProperties": False,
             "properties": {
                 "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
@@ -57,6 +59,7 @@ ConfigSchema = {
         "job-settings": {
             "description": "General settings.\n",
             "default": {},
+            "additionalProperties": False,
             "properties": {
                 "snapshot-tag": {
                     "description":

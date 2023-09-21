@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 NeuroglancerInfoLayerSchema = {
     "default": {},
+    "additionalProperties": False,
     "properties": {
         "host": {
             "description": "DVID server",
@@ -53,6 +54,7 @@ NeuroglancerInfoSchema = {
     # neuroglancer's own JSON structure.
     "default": {},
     "description": "neuroglancer settings for segmentation and grayscale layers\n",
+    "additionalProperties": False,
     "properties": {
         "segmentation": NeuroglancerInfoLayerSchema,
         "grayscalejpeg": NeuroglancerInfoLayerSchema,
@@ -65,6 +67,7 @@ NeuroglancerMetaLayerSchema = {
     # It's also not clear why we don't just use precisely the same
     # keys and values that are used within neuroglancer's own JSON structure.
     "default": {},
+    "additionalProperties": False,
     "properties": {
         "name": {
             "type": "string",
@@ -191,6 +194,7 @@ RoiHierarchySchema = {
 NeuronColumnSchema = {
     "type": "object",
     "default": {},
+    "additionalProperties": False,
     "properties": {
         "name": {
             "description": "human-readable name",
@@ -259,6 +263,7 @@ NeuprintMetaSchema = {
     "definitions": {
         "rh-def-recursive": RoiHierarchyDefinition
     },
+    "additionalProperties": False,
     "properties": {
         "dataset": {
             "description":

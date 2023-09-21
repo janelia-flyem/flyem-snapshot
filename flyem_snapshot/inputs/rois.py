@@ -76,6 +76,7 @@ RoisSchema = {
                 "Which DVID server to use for reading ROIs.\n"
                 "If not specified here, the settings from the 'synapses.update-to' setting will be used.\n",
             "default": {},
+            "additionalProperties": False,
             "properties": {
                 "server": {
                     "type": "string",
