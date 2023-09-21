@@ -5,10 +5,11 @@ along with other denormalizations.
 import logging
 from neuclease import PrefixFilter
 
-from .synapse import export_neuprint_synapses, export_neuprint_synapse_connections
-from .segment import export_neuprint_segments, export_neuprint_segment_connections
-from .synapseset import export_synapsesets
+from .annotations import neuprint_segment_annotations
 from .meta import export_neuprint_meta
+from .segment import export_neuprint_segments, export_neuprint_segment_connections
+from .synapse import export_neuprint_synapses, export_neuprint_synapse_connections
+from .synapseset import export_synapsesets
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,8 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, last_mutation):
     # with Timer("Decoding zyx coordinates from post_id"):
     #     partner_df[[*'zyx']] = decode_coords_from_uint64(partner_df['post_id'].values)
 
-    neuron_prop_names, dataset_totals, roi_totals, neuprint_ann, = export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes)
+    neuprint_ann = neuprint_segment_annotations(cfg, ann)
+    neuron_prop_names, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
     export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, roi_totals, neuprint_ann)
 
     connectome = export_neuprint_segment_connections(cfg, partner_df)

@@ -9,85 +9,19 @@ import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
+from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy
 
 from .util import append_neo4j_type_suffixes
 
 logger = logging.getLogger(__name__)
-
-# For most fields, we formulaically convert from snake_case to camelCase,
-# but for some fields the terminology isn't translated by that formula.
-# This list provides explicit translations for the special cases.
-# Also, to exclude a DVID/clio body annotation field from neuprint entirely,
-# list it here and map it to "".
-CLIO_TO_NEUPRINT_PROPERTIES = {
-    'bodyid': 'bodyId',
-    'status': 'statusLabel',
-    'hemibrain_bodyid': 'hemibrainBodyId',
-
-    # Make sure these never appear in neuprint.
-    'last_modified_by': '',
-    'old_bodyids': '',
-    'reviewer': '',
-    'to_review': '',
-    'typing_notes': '',
-    'user': '',
-    'notes': '',
-    'halfbrainBody': '',
-
-    # These generally won't be sourced from Clio anyway;
-    # they should be sourced from the appropriate DVID annotation instance.
-    'soma_position': 'somaLocation',
-    'tosoma_position': 'tosomaLocation',
-    'root_position': 'rootLocation',
-}
-
-# Note any 'statusLabel' (DVID status) that isn't
-# listed here will appear in neuprint unchanged.
-NEUPRINT_STATUSLABEL_TO_STATUS = {
-    'Unimportant':              'Unimportant',  # noqa
-    'Glia':                     'Glia',         # noqa
-    'Hard to trace':            'Orphan',       # noqa
-    'Orphan-artifact':          'Orphan',       # noqa
-    'Orphan':                   'Orphan',       # noqa
-    'Orphan hotknife':          'Orphan',       # noqa
-
-    'Out of scope':             '',             # noqa
-    'Not examined':             '',             # noqa
-    '':                         '',             # noqa
-
-    '0.5assign':                '0.5assign',    # noqa
-
-    'Anchor':                   'Anchor',       # noqa
-    'Cleaved Anchor':           'Anchor',       # noqa
-    'Sensory Anchor':           'Anchor',       # noqa
-    'Cervical Anchor':          'Anchor',       # noqa
-    'Soma Anchor':              'Anchor',       # noqa
-    'Primary Anchor':           'Anchor',       # noqa
-    'Partially traced':         'Anchor',       # noqa
-
-    'Leaves':                   'Traced',       # noqa
-    'PRT Orphan':               'Traced',       # noqa
-    'Prelim Roughly traced':    'Traced',       # noqa
-    'RT Orphan':                'Traced',       # noqa
-    'Roughly traced':           'Traced',       # noqa
-    'Traced in ROI':            'Traced',       # noqa
-    'Traced':                   'Traced',       # noqa
-    'Finalized':                'Traced',       # noqa
-}
 
 
 @PrefixFilter.with_context("Segment")
 def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     """
     """
-    # TODO:
-    #   Consider moving annotation translation into a separate
-    #   function that can be called before exporting segments.
-    #   Then it would be possible to validate the Meta config before
-    #   the rest of the export, catching config errors earlier.
-    ann = ann.query('body != 0')
-    ann = _neuprint_neuron_annotations(cfg, ann)
+    assert ann.index.name == 'body'
+    assert 0 not in ann.index
 
     # Filter out low-confidence PSDs before computing weights.
     balanced_confidence = cfg['meta']['postHighAccuracyThreshold']
@@ -125,7 +59,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
 
     neuron_prop_splits = [name.split(':') for name in neuron_df.columns]
     neuron_prop_names = [ps[0] for ps in neuron_prop_splits if ps[0] and len(ps) > 1]
-    return neuron_prop_names, dataset_totals, roi_totals, ann
+    return neuron_prop_names, dataset_totals, roi_totals
 
 
 @timed
@@ -291,42 +225,6 @@ def _make_roi_infos(batch_df):
     ).rename_axis('body')
 
     return roi_info_df
-
-
-def _neuprint_neuron_annotations(cfg, ann):
-    # Fetch all clio annotations
-    # Translate to neuprint terms
-    # If config mentions nuclei, use them.
-    #
-    renames = {c: snakecase_to_camelcase(c.replace(' ', '_'), False) for c in ann.columns}
-    renames.update({c: c.replace('Position', 'Location') for c in renames})
-    renames.update(CLIO_TO_NEUPRINT_PROPERTIES)
-    renames.update(cfg['annotation-property-names'])
-
-    # Drop the columns that map to ""
-    renames = {k:v for k,v in renames.items() if (k in ann) and v}
-    ann = ann[[*renames.keys()]]
-    ann = ann.rename(columns=renames)
-
-    # Erase any values which are just "".
-    # Better to leave them null.
-    ann = ann.replace('', None)
-
-    # Neuprint uses 'simplified' status choices,
-    # referring to the original (dvid) status as 'statusLabel'.
-    ann['status'] = ann['statusLabel'].replace(NEUPRINT_STATUSLABEL_TO_STATUS)
-
-    # Points must be converted to neo4j spatial points.
-    # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
-    for col in ann.columns:
-        if 'location' in col.lower() or 'position' in col.lower():
-            valid = ann[col].notnull()
-            ann.loc[valid, col] = [
-                f"{{x:{x}, y:{y}, z:{z}}}"
-                for (x,y,z) in ann.loc[valid, col].values
-            ]
-
-    return ann
 
 
 @timed("Assigning :Segment/:Neuron labels")
