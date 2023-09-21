@@ -9,14 +9,15 @@ from neuclease.util import Timer, switch_cwd
 from neuclease.dvid import set_default_dvid_session_timeout
 from neuclease.dvid.labelmap import resolve_snapshot_tag
 
-from .synapses import SnapshotSynapsesSchema, load_synapses
-from .annotations import AnnotationsSchema, load_annotations
-from .rois import RoisSchema, load_rois
-from .flat import FlatConnectomeSchema, export_flat_connectome
-from .sizes import BodySizesSchema, load_body_sizes
-from .neuprint import NeuprintSchema, export_neuprint
-from .neuprint.meta import NeuprintMetaSchema
-from .reports import ReportsSchema, export_reports
+from .inputs.synapses import SnapshotSynapsesSchema, load_synapses
+from .inputs.annotations import AnnotationsSchema, load_annotations
+from .inputs.rois import RoisSchema, load_rois
+from .inputs.sizes import BodySizesSchema, load_body_sizes
+
+from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
+from .outputs.neuprint import NeuprintSchema, export_neuprint
+from .outputs.neuprint.meta import NeuprintMetaSchema
+from .outputs.reports import ReportsSchema, export_reports
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,6 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
     # If the user didn't specify an explicit subset
     #  of roi-sets to include in neuprint, include them all.
-
     if neuprintcfg['export-neuprint-snapshot']:
         if neuprintcfg['roi-set-names'] is None:
             neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
