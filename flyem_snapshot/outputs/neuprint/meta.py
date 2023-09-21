@@ -21,96 +21,6 @@ from .util import append_neo4j_type_suffixes, NEUPRINT_TYPE_OVERRIDES
 
 logger = logging.getLogger(__name__)
 
-NeuroglancerInfoLayerSchema = {
-    "default": {},
-    "additionalProperties": False,
-    "properties": {
-        "host": {
-            "description": "DVID server",
-            "type": "string",
-            "default": ""
-        },
-        "uuid": {
-            "description": "",
-            "type": "string",
-            "default": ""
-        },
-        "dataType": {
-            "description":
-                "I have no idea what this is for.\n"
-                "It does not directly correspond to anything in the neuroglancer JSON.\n"
-                "Choices: 'segmentation' or 'grayscalejpeg'",
-            "type": "string",
-            "enum": ["segmentation", "grayscalejpeg"]
-            # no default
-        },
-    }
-}
-
-NeuroglancerInfoSchema = {
-    # I am not clear on why some neuroglancer settings are
-    # in 'neuroglancerInfo' and others are in 'neuroglancerMeta'.
-    # Neither one of them has a 1-to-1 correspondence with
-    # neuroglancer's own JSON structure.
-    "default": {},
-    "description": "neuroglancer settings for segmentation and grayscale layers\n",
-    "additionalProperties": False,
-    "properties": {
-        "segmentation": NeuroglancerInfoLayerSchema,
-        "grayscalejpeg": NeuroglancerInfoLayerSchema,
-    }
-}
-
-NeuroglancerMetaLayerSchema = {
-    # It's not clear which of these properties is always necessary,
-    # aside from 'name', 'source' and (perhaps) 'dataType'.
-    # It's also not clear why we don't just use precisely the same
-    # keys and values that are used within neuroglancer's own JSON structure.
-    "default": {},
-    "additionalProperties": False,
-    "properties": {
-        "name": {
-            "type": "string",
-            # no default
-        },
-        "source": {
-            "type": "string",
-            # no default
-        },
-        "dataType": {
-            "description": "In the neuroglancer layer JSON, this is just called 'type'.\n",
-            "type": "string",
-            "enum": ["image", "segmentation", "annotation"],
-            # no default
-        },
-        "host": {
-            "description": "DVID server",
-            "type": "string",
-            "default": ""
-        },
-        "dataInstance": {
-            "type": "string",
-            "default": ""
-        },
-        # FIXME: In the MANC neuprint :Meta, this is a boolean,
-        # but that makes no sense from neuroglancer's point of view.
-        "linkedSegmentationLayer": {
-            "description":
-                "Normally, this neuroglancer setting refers to which\n"
-                "segmentation layer is associated with an annotation layer.\n"
-                "It's not clear why we have a boolean here.\n",
-            "type": "boolean",
-            # no default
-        },
-    }
-}
-
-NeuroglancerMetaSchema = {
-    "type": "array",
-    "items": NeuroglancerMetaLayerSchema,
-    "default": []
-}
-
 _ = StatusDefinitionsSchema = {
     # This is what the hemibrain/MANC neuprint repos had stored:
     # These are not 'status' values, but rather 'statusLabel', and this list is incomplete.
@@ -207,8 +117,11 @@ NeuronColumnSchema = {
             "type": "string",
             # no default
         },
+        # The 'visible' property is inserted into the meta,
+        # but we don't ask for it in this part of the config.
+        # Instead, the config has a separate list for neuronColumnsVisible,
+        # which is used to auto-populate the 'visible' flag for each column.
         # "visible": {
-        #     "description": "This is redundant with the 'neuronColumnsVisible' config setting.",
         #     "type": "boolean",
         #     "default": False
         # },
@@ -359,8 +272,6 @@ NeuprintMetaSchema = {
             "type": "string",
             "default": ""
         },
-        "neuroglancerInfo": NeuroglancerInfoSchema,
-        "neuroglancerMeta": NeuroglancerMetaSchema,
 
         "neuronColumns": NeuronColumnsSchema,
 
@@ -372,18 +283,6 @@ NeuprintMetaSchema = {
             "items": {"type": "string"},
             "default": ["bodyId", "type", "status"]
         },
-
-        # # I think this isn't actually used,
-        # # so I'm omitting it for now...
-        # # See https://github.com/janelia-flyem/flyem-recon/issues/110
-        # "neuronFilter": {
-        #     "description": {
-        #         "List of neuron properties to include in the neuron filters UI.\n",
-        #     "type": "array",
-        #     "items": {"type": "string"},
-        #     "default": ["bodyId", "type", "status"]
-        #     }
-        # },
 
         "primaryRois": {
             "type": "array",
@@ -427,19 +326,12 @@ NeuprintMetaSchema = {
         # "Ov(L)": {
         #   "description": "Ovoid (left)",
         #   "excludeFromOverview": false,
-        #   "hasROI": true,
         #   "isNerve": false,
         #   "isPrimary": true,
         #   "parent": "ventral nerve core",
         #   "post": 1352587,
         #   "pre": 193036,
-        #   "showHierarchy": true
         # }
-        #
-        # Note:
-        #   I can find no references to hasROI or showHierarchy
-        #   in neuPrintHTTP or neuPrintExplorer(Plugins),
-        #   so I'm going to INGORE them.
 
         "roiDescriptions": {
             "description": "dict of {roi: description}",
@@ -457,15 +349,6 @@ NeuprintMetaSchema = {
             "default": []
         },
 
-        # #   I have no idea what this field is used for.
-        # #   If it's not used, let's drop it.
-        # "neuropilRois": {
-        #     "description": "The list of ROIs which are neuropil compartments.\n",
-        #     "type": "array",
-        #     "items": {"type": "string"},
-        #     "default": []
-        # },
-
         "excludeFromOverview": {
             "description":
                 "The list of ROIs which should not be included in\n"
@@ -475,12 +358,6 @@ NeuprintMetaSchema = {
             "items": {"type": "string"},
             "default": []
         },
-
-        # I can't find any references to either hasROI or showHierarchy
-        # anywhere in neuprintExplorer or neuprintHTTP
-        # I'm going to ignore these for now.
-        # "showHierarchy": {},
-        # "hasROI": {},
 
         # This will be automatically populated using the properties we wrote into :Segment nodes.
         # "neuronProperties",
@@ -570,7 +447,6 @@ META_PROPERTIES = [
     'dataset', 'tag',
     'voxelSize', 'voxelUnits',
     'info', 'logo', 'meshHost',
-    'neuroglancerInfo', 'neuroglancerMeta',
     'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
     'totalPreCount', 'totalPostCount',
     'superLevelRois',
@@ -582,18 +458,12 @@ META_PROPERTIES = [
 
     'uuid', 'latestMutationId', 'lastDatabaseEdit',
 
-    # 'objectProperties', -- needed?
-
-    # obsolete, I think:
-    # 'nerveRois', 'neuropilRois',
-    # 'statusDefinitions',
-    # 'neuronFilter',
+    # 'nerveRois'  # <-- used in the config above, but not copied verbatim to meta.
 ]
 
 
 def export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, roi_totals, neuprint_ann):
     """
-    TODO: objectProperties?
     """
     metacfg = cfg['meta']
 
@@ -605,7 +475,6 @@ def export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, 
         'dataset', 'tag',
         'voxelSize', 'voxelUnits',
         'info', 'logo', 'meshHost',
-        'neuroglancerInfo', 'neuroglancerMeta',
         'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
         # 'totalPreCount', 'totalPostCount',
         # 'superLevelRois',
@@ -619,11 +488,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, 
         # These will be used if the user gave them, but overwritten otherwise.
         'uuid', 'latestMutationId', 'lastDatabaseEdit',
 
-        # obsolete, I think:
-        # 'nerveRois',  # <-- used by config, but not copied verbatim to meta
-        # 'neuropilRois',
-        # 'statusDefinitions',
-        # 'neuronFilter',
+        # 'nerveRois',
     )
     for k in verbatim_keys:
         meta[k] = metacfg[k]
@@ -697,14 +562,6 @@ def _load_roi_info(metacfg, roi_totals, roi_hierarchy):
         entry['post'] = row.post
         entry['pre'] = row.pre
 
-        # Note:
-        #   I can find no references to 'hasROI' or 'showHierarchy'
-        #   in neuPrintHTTP or neuPrintExplorer(Plugins),
-        #   so I'm going to ignore them.
-        #
-        # entry['hasROI'] = ???
-        # entry['showHierarchy'] = ???
-
     return roi_info
 
 
@@ -735,7 +592,6 @@ def _export_meta_as_csv(meta):
             meta[key] = json.dumps(meta[key])
 
     # And these are JSON strings, too.
-    meta['neuroglancerMeta'] = json.dumps(meta['neuroglancerMeta'])
     meta['neuronColumns'] = json.dumps(meta['neuronColumns'])
     meta['neuronColumnsVisible'] = json.dumps(meta['neuronColumnsVisible'])
 
