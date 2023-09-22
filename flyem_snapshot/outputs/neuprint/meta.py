@@ -10,6 +10,7 @@ the generated CSV file will have only one row.
 import copy
 import json
 import logging
+from textwrap import dedent
 from collections.abc import Sequence, Mapping
 
 import pandas as pd
@@ -285,6 +286,22 @@ NeuprintMetaSchema = {
         },
 
         "primaryRois": {
+            "description": dedent("""\
+                A typical neuprint dataset includes ROIs which may overlap with one another.
+                For example, most datasets define an ROI hierarchy, in which 'parent' ROIs
+                encompass child ROIs.  (Obviously, parents and their children overlap.)
+                Another example is the CNS optic lobe, which defines intersecting 'layer' and 'column' ROIs.
+
+                Since ROIs can overlap, then certain queries will return duplicate synapses and/or inflate
+                the apparent synaptic weight of a connection or neuron, if the user were to naively
+                aggregate synapse weights across all ROIs.
+
+                One way to avoid such double-counting is to restrict a query to 'primary' ROIs only.
+                The 'primary' ROIs are a specific subset of ROIs -- not necessarily at the bottom of the
+                hierarchy, which are guaranteed not to overlap with each other and guaranteed to cover all
+                other ROIs.  Every synapse is either included in exactly one primary ROI or not included in
+                _any_ ROI at all (primary or otherwise).
+                """),
             "type": "array",
             "items": {"type": "string"},
             # no default
