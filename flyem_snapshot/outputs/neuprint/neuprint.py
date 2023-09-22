@@ -7,6 +7,7 @@ from neuclease import PrefixFilter
 
 from .annotations import neuprint_segment_annotations
 from .meta import export_neuprint_meta
+from .neuroglancer import NeuroglancerSettingsSchema, export_neuroglancer_json_state
 from .segment import export_neuprint_segments, export_neuprint_segment_connections
 from .synapse import export_neuprint_synapses, export_neuprint_synapse_connections
 from .synapseset import export_synapsesets
@@ -54,6 +55,7 @@ NeuprintSchema = {
             "type": "string",
             "default": ""
         },
+        "neuroglancer": NeuroglancerSettingsSchema,
         "roi-set-names": {
             "description":
                 "The set of ROI sets (ROI column names) from the input synapse\n"
@@ -157,12 +159,10 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, last_mutation):
     point_df = point_df.loc[point_df['body'] != 0]
     partner_df = partner_df.loc[(partner_df['body_pre'] != 0) & (partner_df['body_post'] != 0)]
 
-    # with Timer("Decoding zyx coordinates from post_id"):
-    #     partner_df[[*'zyx']] = decode_coords_from_uint64(partner_df['post_id'].values)
-
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
     neuron_prop_names, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
     export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, roi_totals, neuprint_ann)
+    export_neuroglancer_json_state(cfg, last_mutation)
 
     connectome = export_neuprint_segment_connections(cfg, partner_df)
     export_synapsesets(cfg, partner_df, connectome)

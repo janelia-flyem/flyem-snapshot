@@ -151,6 +151,28 @@ def export_all(cfg, config_dir):
 
 
 def _finalize_config_and_output_dir(cfg, config_dir):
+    """
+    This function encapsulates all logic related to overwriting the user's
+    config after it has been loaded and populated with default values from the schema.
+
+    - All relative file paths throughout the config are converted to absolute paths,
+      assuming the paths were relative to the directory of the original config file.
+
+    - In some cases, we fill in values that the user declined to set explicitly.
+        - snapshot-tag
+        - output-dir
+
+    - In some cases, those default values come from OTHER sections in the config.
+        - processes
+        - uuid
+        - roi server
+        - roi-set-names
+        - report names
+
+    FIXME: This function has gotten a little out of hand.
+           It was nice to have all config-manipulation in one place, but at this point
+           we should probably move some of this logic into the relevant pipeline steps.
+    """
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
@@ -201,6 +223,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
             bscfg['cache-file'] = os.path.abspath(bscfg['cache-file'])
 
         neuprintcfg['meta'] = os.path.abspath(neuprintcfg['meta'])
+        neuprintcfg['neuroglancer']['json-state'] = os.path.abspath(neuprintcfg['neuroglancer']['json-state'])
         output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'] or snapshot_tag)
 
     # If the user didn't specify an explicit subset
