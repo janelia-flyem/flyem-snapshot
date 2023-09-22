@@ -572,7 +572,10 @@ def _load_neuron_columns(metacfg, neuprint_ann):
         item['visible'] = (col in metacfg['neuronColumnsVisible'])
         item['name'] = (item['name'] or col)
         if item['choices'] == 'auto':
-            item['choices'] = sorted(filter(lambda choice: choice != '', neuprint_ann[col].unique()))
+            # Note:
+            #   Empty strings were already removed when the annotations
+            #   were prepped for neuprint, the empty strings were removed.
+            item['choices'] = sorted(neuprint_ann[col].dropna().unique())
     return neuron_columns
 
 
