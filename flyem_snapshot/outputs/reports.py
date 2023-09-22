@@ -24,7 +24,7 @@ from neuclease.misc.completeness import (
     variable_width_hbar,
 )
 
-from .util import export_bokeh
+from ..util import export_bokeh
 
 _ = hvplot.pandas  # linting
 
