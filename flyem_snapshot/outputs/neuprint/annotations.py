@@ -2,7 +2,11 @@
 Business logic for translating arbitrary body annotations (e.g. from DVID/Clio)
 into the format neuprint needs (column names, status values, etc.)
 """
+import logging
+
 from neuclease.util import snakecase_to_camelcase
+
+logger = logging.getLogger(__name__)
 
 # For most fields, we formulaically convert from snake_case to camelCase,
 # but for some fields the terminology isn't translated by that formula.
@@ -95,6 +99,8 @@ def neuprint_segment_annotations(cfg, ann):
     renames = {k:v for k,v in renames.items() if (k in ann) and v}
     ann = ann[[*renames.keys()]]
     ann = ann.rename(columns=renames)
+
+    logger.info(f"Annotation columns after renaming: {ann.columns.tolist()}")
 
     # Erase any values which are just "".
     # Better to leave them null.
