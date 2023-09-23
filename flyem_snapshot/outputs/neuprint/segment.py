@@ -107,6 +107,10 @@ def _body_roi_synstats(cfg, point_df, partner_df):
         roiset_dfs.append(df)
     roi_syn = pd.concat(roiset_dfs)
 
+    # It's critical that each body occupies contiguous
+    # rows before we assign bodies into batches.
+    roi_syn.sort_index(inplace=True)
+
     BATCH_SIZE = 10_000
     bodies = pd.Series(roi_syn.index.get_level_values('body'))
     body_count = bodies.diff().fillna(0).astype(bool).cumsum()
