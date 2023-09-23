@@ -44,7 +44,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
         neuron_df = neuron_df.merge(body_sizes, 'left', on='body')
     _assign_segment_label(cfg, neuron_df)
 
-    # We include bodyId as a property AND as the node ID column for neo4j ingestion.
+    # We include bodyId as a property column AND as the node ID column for neo4j ingestion.
     neuron_df['bodyId'] = neuron_df.index
     neuron_df = neuron_df.rename_axis(':ID(Body-ID)').reset_index()
     neuron_df = append_neo4j_type_suffixes(neuron_df, exclude=['roiset_hash'])
@@ -233,6 +233,17 @@ def _make_roi_infos(batch_df):
 
 @timed("Assigning :Segment/:Neuron labels")
 def _assign_segment_label(cfg, neuron_df):
+    """
+    Determine which segments qualify to get the :Neuron
+    label according to the user's config (neuron-label-criteria),
+    and construct the :LABEL column of the neuron table
+    accordingly.
+
+    TODO:
+        In hemibrain v1.2, there is also a :Cell label
+        on each neuron (and segment?), along with duplicate
+        indexes for that label.
+    """
     dataset = cfg['meta']['dataset']
     crit = cfg['neuron-label-criteria']
     crit_props = crit['properties']
