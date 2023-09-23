@@ -53,7 +53,11 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
 
     # While we've got this data handy, compute total pre/post
     # in each ROI and also the whole dataset.
-    roi_totals = roi_syn_df.groupby(level='roi')[['pre', 'post']].sum()
+    roi_totals = (
+        roi_syn_df
+        .groupby(level='roi')[['pre', 'post']].sum()
+        .query('roi != "<unspecified>"')
+    )
     dataset_totals = point_df['kind'].value_counts()
     dataset_totals.index = dataset_totals.index.map({'PreSyn': 'pre', 'PostSyn': 'post'})
 
