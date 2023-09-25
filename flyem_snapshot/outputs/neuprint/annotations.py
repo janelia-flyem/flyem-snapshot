@@ -34,6 +34,7 @@ CLIO_TO_NEUPRINT_PROPERTIES = {
     'notes': '',
     'halfbrainBody': '',
     'group_old': '',
+    'confidence': '',
 
     # These generally won't be sourced from Clio anyway;
     # they should be sourced from the appropriate DVID annotation instance.
