@@ -1,8 +1,9 @@
 """
-Export a connectivity snapshot from a DVID segmentation,
-along with other denormalizations.
+Export a connectivity snapshot in the form of CSV files that can be converted to a neo4j neuprint database.
 """
+import os
 import logging
+
 from neuclease import PrefixFilter
 
 from .annotations import neuprint_segment_annotations
@@ -160,6 +161,8 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, last_mutation):
     if not cfg['export-neuprint-snapshot']:
         logger.info("Not generating neuprint snapshot.")
         return
+
+    os.makedirs('neuprint', exist_ok=True)
 
     # Drop body 0 entirely.
     point_df = point_df.loc[point_df['body'] != 0]
