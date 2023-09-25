@@ -4,6 +4,8 @@ into the format neuprint needs (column names, status values, etc.)
 """
 import logging
 
+import numpy as np
+
 from neuclease.util import snakecase_to_camelcase
 
 logger = logging.getLogger(__name__)
@@ -135,15 +137,37 @@ def neuprint_segment_annotations(cfg, ann):
     # Points must be converted to neo4j spatial points.
     # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
     for col in ann.columns:
-        if 'location' in col.lower() or 'position' in col.lower():
+        if 'location' not in col.lower() and 'position' not in col.lower():
+            continue
+        if col == 'positionType':
+            # FIXME: Is there a better way to catch positionType instead of hard-coding this?
+            continue
+
+        ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
+        if (ann[col].notnull() & ~ispoint).any():
+            def _convert(x):
+                if not isinstance(x, str):
+                    return x
+                try:
+                    p = eval(x)
+                    if len(p) == 3:
+                        return list(p)
+                    return x
+                except Exception:
+                    return x
+
+            # Try converting strings like '123, 456, 789' to lists
+            ann[col] = ann[col].map(_convert)
             ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
             if (ann[col].notnull() & ~ispoint).any():
+                # Even after conversion, there are _still_ bad entries!
                 logger.warning(f"Annotation column {col} has non-null values that aren't points. Ignoring those items.")
-            valid = ann[col].notnull() & ispoint
-            ann.loc[~valid, col] = None
-            ann.loc[valid, col] = [
-                f"{{x:{x}, y:{y}, z:{z}}}"
-                for (x,y,z) in ann.loc[valid, col].values
-            ]
+
+        valid = ann[col].notnull() & ispoint
+        ann.loc[~valid, col] = None
+        ann.loc[valid, col] = [
+            f"{{x:{x}, y:{y}, z:{z}}}"
+            for (x,y,z) in ann.loc[valid, col].values
+        ]
 
     return ann
