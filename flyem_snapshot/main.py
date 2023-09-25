@@ -51,9 +51,9 @@ ConfigSchema = {
             "default": {},
             "additionalProperties": False,
             "properties": {
-                "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
+                "flat-connectome": FlatConnectomeSchema,
             }
         },
         "job-settings": {
@@ -191,7 +191,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
         # By default, the ROI config uses the same server/uuid as the synapses.
         roicfg['dvid']['server'] = roicfg['dvid']['server'] or syncfg['update-to']['server']
-        roicfg['dvid']['uuid'] = roicfg['dvid']['server'] or uuid
+        roicfg['dvid']['uuid'] = roicfg['dvid']['uuid'] or uuid
 
     if not snapshot_tag:
         msg = (
