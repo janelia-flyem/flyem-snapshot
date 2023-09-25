@@ -96,6 +96,12 @@ def load_annotations(cfg, dvid_seg, snapshot_tag):
         # but that's not necessary for anything in this code.
         del ann['json']
 
+    # This is ugly, but it's easier than a real fix.
+    # The 'group_old' column should't exist, but it does and it has screwy types.
+    # We don't want to deal with it.
+    if 'group_old' in ann.columns:
+        del ann['group_old']
+
     feather.write_feather(
         ann.reset_index(),
         f'tables/body-annotations-{snapshot_tag}.feather'
