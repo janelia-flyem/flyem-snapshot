@@ -261,11 +261,12 @@ def _load_raw_synapses(cfg):
         )
 
     min_conf = cfg['min-confidence']
-    with Timer(f"Filtering for min-confidence: {min_conf}", logger):
-        point_df = point_df.loc[point_df['conf'] >= min_conf].copy()
-        partner_df = partner_df.loc[
-            (partner_df['conf_pre'] >= min_conf) &  # noqa
-            (partner_df['conf_post'] >= min_conf)].copy()
+    if min_conf > 0.0:
+        with Timer(f"Filtering for min-confidence: {min_conf}", logger):
+            point_df = point_df.loc[point_df['conf'] >= min_conf].copy()
+            partner_df = partner_df.loc[
+                (partner_df['conf_pre'] >= min_conf) &  # noqa
+                (partner_df['conf_post'] >= min_conf)].copy()
 
     logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners")
     return point_df, partner_df
