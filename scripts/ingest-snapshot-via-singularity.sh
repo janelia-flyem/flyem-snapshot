@@ -14,7 +14,6 @@ SNAPSHOT_DIR=$1
 # The directory in which this bash script resides.
 # https://stackoverflow.com/questions/59895
 SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-cd ${SCRIPTS_DIR}
 
 # debug values
 #SNAPSHOT_DIR=/groups/flyem/data/scratchspace/flyemflows/cns-full/tmp/small-test
@@ -38,7 +37,7 @@ do
     export APPTAINER_BIND="${APPTAINER_BIND},${WORKSPACE_DIR}/${d}:/${d}"
 done
 
-# I have no idea why neo4j balks if the log file
+# I have no idea why, but neo4j balks if the log file
 # doesn't already exist when the server is launched.
 touch ${WORKSPACE_DIR}/logs/neo4j.log
 
@@ -47,9 +46,9 @@ touch ${WORKSPACE_DIR}/logs/neo4j.log
 # Fortunately, we don't really need apoc functions during the ingestion procedure.
 # cp /groups/flyem/data/neo4j-plugins/apoc-4.4.0.7-all.jar ${WORKSPACE_DIR}/plugins/
 
-cp * ${WORKSPACE_DIR}/scripts/
+cp ${SCRIPTS_DIR}/* ${WORKSPACE_DIR}/scripts/
 cp ${SNAPSHOT_DIR}/neuprint/create-indexes.cypher ${WORKSPACE_DIR}/scripts/
-cp neo4j.conf ${WORKSPACE_DIR}/conf/
+cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 
 # Note: By default, the container's networking is the same as the host,
 # so there's no need to map ports explicitly unless we want to use
