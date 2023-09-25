@@ -103,6 +103,16 @@ def neuprint_segment_annotations(cfg, ann):
 
     # Drop the columns that map to "", and rename the rest.
     renames = {k:v for k,v in renames.items() if (k in ann) and v}
+
+    # Due to source data problems, it's possible that
+    # renaming columns introduces DUPLICATE columns.
+    # We will consolidate them before deleting the 'duplicates'.
+    for k, v in list(renames.items()):
+        if (k != v) and (k in ann) and (v in ann):
+            ann[k].update(ann[v])
+            del ann[v]
+            del renames[v]
+
     ann = ann[[*renames.keys()]]
     ann = ann.rename(columns=renames)
 
