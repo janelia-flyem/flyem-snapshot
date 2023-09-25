@@ -115,12 +115,18 @@ def neuprint_segment_annotations(cfg, ann):
 
     ann = ann[[*renames.keys()]]
     ann = ann.rename(columns=renames)
-
     logger.info(f"Annotation columns after renaming: {ann.columns.tolist()}")
 
     # Erase any values which are just "".
     # Better to leave them null.
     ann = ann.replace('', None)
+
+    # If any columns are completely empty, remove them.
+    allnull = ann.isnull().all(axis=0)
+    empty_cols = allnull.loc[allnull].index
+    if len(empty_cols) > 0:
+        logger.info(f"Deleting empty annotation columns: {empty_cols.tolist()}")
+        ann = ann.drop(columns=empty_cols)
 
     # Neuprint uses 'simplified' status choices,
     # referring to the original (dvid) status as 'statusLabel'.
