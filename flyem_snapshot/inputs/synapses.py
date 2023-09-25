@@ -211,17 +211,25 @@ def _load_raw_synapses(cfg):
             ]
         )
 
-        point_df = point_df.astype({
+        t = {
             'conf': np.float32,
             'sv': label_dtype,
             'body': label_dtype,
             'kind': 'category',
             'roi': 'category',
+        }
+        point_df = point_df.astype({
+            k:v for k,v in t.items()
+            if k in point_df.columns
         })
 
-        partner_df = partner_df.astype({
+        t = {
             'conf_pre': np.float32,
             'conf_post': np.float32,
+        }
+        partner_df = partner_df.astype({
+            k:v for k,v in t.items()
+            if k in partner_df.columns
         })
 
     zone = cfg['zone']
