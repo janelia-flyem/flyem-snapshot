@@ -93,7 +93,11 @@ def neuprint_segment_annotations(cfg, ann):
     ann = ann.query('body != 0')
 
     renames = {c: snakecase_to_camelcase(c.replace(' ', '_'), False) for c in ann.columns}
-    renames.update({c: c.replace('Position', 'Location') for c in renames})
+    renames.update({
+        c: c.replace('Position', 'Location')
+        for c in renames.keys()
+        if 'Position' in c
+    })
     renames.update(CLIO_TO_NEUPRINT_PROPERTIES)
     renames.update(cfg['annotation-property-names'])
 
