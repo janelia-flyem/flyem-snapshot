@@ -116,7 +116,11 @@ def neuprint_segment_annotations(cfg, ann):
     # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
     for col in ann.columns:
         if 'location' in col.lower() or 'position' in col.lower():
-            valid = ann[col].notnull()
+            ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
+            if (ann[col].notnull() & ~ispoint).any():
+                logger.warning(f"Annotation column {col} has non-null values that aren't points. Ignoring those items.")
+            valid = ann[col].notnull() & ispoint
+            ann.loc[~valid, col] = None
             ann.loc[valid, col] = [
                 f"{{x:{x}, y:{y}, z:{z}}}"
                 for (x,y,z) in ann.loc[valid, col].values
