@@ -46,6 +46,13 @@ BodySizesSchema = {
 
 @PrefixFilter.with_context('body-sizes')
 def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
+    """
+    Load/export the sizes of all bodies listed in df
+    (in either the index or the 'body' column).
+    It's up to the caller to decide which set of bodies to process.
+    But for connectivity snapshots, we typically fetch sizes
+    ONLY for bodies which have at least one synapse.
+    """
     if not cfg['load-sizes']:
         logger.info("Body sizes will not be emitted due to load-sizes: false")
         return None
@@ -70,11 +77,11 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
                 *dvid_seg,
                 bodies,
                 processes=cfg['processes']
-            ).values
+            )
 
         feather.write_feather(
             sizes.reset_index(),
-            f'neuprint/body-size-cache-{snapshot_tag}.feather')
+            f'tables/body-size-cache-{snapshot_tag}.feather')
         return sizes
 
     cached_sizes = feather.read_feather(cache_file).set_index('body')['size']
