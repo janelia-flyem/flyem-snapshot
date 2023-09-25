@@ -29,7 +29,9 @@ BodySizesSchema = {
             "default": "",
         },
         "cache-uuid": {
-            "description": "The locked uuid from which these sizes were obtained.\n",
+            "description":
+                "The locked uuid from which these sizes were obtained.\n"
+                "If you genereted these sizes from an unlocked node, then provide the UUID of the PARENT node.\n",
             "type": "string",
             "default": "",
         },
