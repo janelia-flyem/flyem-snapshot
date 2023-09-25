@@ -73,6 +73,10 @@ NeuprintSchema = {
             ]
         },
         "roi-synapse-properties": {
+            "description":
+                "Synapse properties derived from the roi values in a single roi-set (roi column).\n"
+                "The canonical example of this is the CNS optic lobe columns, which define special\n"
+                "properties for hex1,hex2 based on the ROI segment ID values.\n",
             "additionalProperties": RoiSynapsePropertiesSchema,
             "default": {},
         },

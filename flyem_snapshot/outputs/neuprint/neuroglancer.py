@@ -26,6 +26,7 @@ NeuroglancerSettingsSchema = {
             "type": "string",
             "default": ""
         },
+        ## FIXME: I should just use a jinja template with a few predefined variables.
         "replacements": {
             "type": "object",
             "description":
