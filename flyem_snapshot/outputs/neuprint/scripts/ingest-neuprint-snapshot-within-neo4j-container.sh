@@ -67,6 +67,11 @@ echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"
 ## Create indexes
 ##
 
+# neo4j seems to require a lot of time to shut down.
+# Let's give it a ton of time:
+# Half of the time it took to run the ingestion.
+export NEO4J_SHUTDOWN_TIMEOUT=$(((end-start)/2))
+
 start=$(date +%s)
 echo "Launching neo4j..."
 trap "neo4j stop" EXIT
