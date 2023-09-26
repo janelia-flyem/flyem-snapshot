@@ -46,6 +46,7 @@ start=$(date +%s)
     --force=true \
     --database=data \
     --normalize-types=false \
+    --verbose=true \
     ${META_ARG} \
     ${NEURON_ARGS} \
     ${SYNAPSE_ARGS} \

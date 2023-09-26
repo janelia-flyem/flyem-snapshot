@@ -4,7 +4,9 @@ set -e
 
 if [[ -z "$1" ]]; then
     echo "Usage:" 1>&2
+    echo "" 1>&2
     echo "  ingest-snapshot-via-singularity.sh <snapshot-dir>" 1>&2
+    echo "" 1>&2
     echo "where <snapshot-dir> contains a 'neuprint' subdirectory containing CSV files and scripts to use for neuprint ingestion." 1>&2
     exit 1
 fi
