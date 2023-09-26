@@ -59,7 +59,7 @@ cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 # We use --writable-tmpfs since neo4j needs a writable filesystem.
 # https://github.com/apptainer/singularity/issues/4546#issuecomment-537152617
 
-singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-snapshot.sh
+singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
 
 # Now copy the database files from /scratch to the snapshot directory
 echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
