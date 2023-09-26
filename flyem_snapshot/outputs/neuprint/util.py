@@ -1,4 +1,6 @@
+import re
 import logging
+
 import numpy as np
 import pandas as pd
 
@@ -21,6 +23,8 @@ NEUPRINT_TYPE_OVERRIDES = {
     'primaryRois': 'string[]',
     'superLevelRois': 'string[]',
     'nonHierarchicalROIs': 'string[]',
+    'positionType': 'string',
+    'locationType': 'string',
 }
 
 
@@ -53,12 +57,12 @@ def neo4j_column_names(df, exclude=()):
 def neo4j_type_suffix(series):
     # In some cases, the name determines the dtype suffix
     # We check these first because these names override the dtype-based rules.
-    if 'location' in series.name.lower() or 'position' in series.name.lower():
+    if series.name in NEUPRINT_TYPE_OVERRIDES:
+        return NEUPRINT_TYPE_OVERRIDES[series.name]
+    if re.search('position|location', series.name.lower()):
         # The weird srid:9157 means 'cartesian-3d' according to the neo4j docs.
         # https://neo4j.com/docs/cypher-manual/current/values-and-types/spatial/#spatial-values-crs-cartesian
         return 'point{srid:9157}'
-    if series.name in NEUPRINT_TYPE_OVERRIDES:
-        return NEUPRINT_TYPE_OVERRIDES[series.name]
 
     # In most cases, the dtype determines the type suffix
     if isinstance(series.dtype, pd.CategoricalDtype):

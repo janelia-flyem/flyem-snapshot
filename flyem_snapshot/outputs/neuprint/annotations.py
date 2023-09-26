@@ -2,9 +2,8 @@
 Business logic for translating arbitrary body annotations (e.g. from DVID/Clio)
 into the format neuprint needs (column names, status values, etc.)
 """
+import re
 import logging
-
-import numpy as np
 
 from neuclease.util import snakecase_to_camelcase
 
@@ -37,6 +36,11 @@ CLIO_TO_NEUPRINT_PROPERTIES = {
     'halfbrainBody': '',
     'group_old': '',
     'confidence': '',
+
+    # Hand-edited positions.
+    # Should these be discarded?
+    'position': 'location',
+    'position_type': 'locationType',
 
     # These generally won't be sourced from Clio anyway;
     # they should be sourced from the appropriate DVID annotation instance.
@@ -137,16 +141,17 @@ def neuprint_segment_annotations(cfg, ann):
     # Points must be converted to neo4j spatial points.
     # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
     for col in ann.columns:
-        if 'location' not in col.lower() and 'position' not in col.lower():
+        if not re.search('position|location', col.lower()):
             continue
-        if col == 'positionType':
-            # FIXME: Is there a better way to catch positionType instead of hard-coding this?
+
+        # FIXME: Is there a better way to catch positionType instead of hard-coding this?
+        if col in ('positionType', 'locationType'):
             continue
 
         ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
         if (ann[col].notnull() & ~ispoint).any():
             def _convert(x):
-                if not isinstance(x, str):
+                if not isinstance(x, str) or ',' not in x:
                     return x
                 try:
                     p = eval(x)
