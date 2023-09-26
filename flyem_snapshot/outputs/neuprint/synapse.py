@@ -18,10 +18,17 @@ def export_neuprint_synapses(cfg, point_df):
 
     dataset = cfg['meta']['dataset']
 
+    # Check that the 'kind' column has the correct categorical dtype.
+    # Sometimes our tables have a third category in the dtype,
+    # but it shouldn't be present in the data values.
+    assert set(point_df['kind'].cat.categories) >= {'PostSyn', 'PreSyn'}
+    if len(point_df['kind'].cat.categories) > 2:
+        assert point_df['kind'].value_counts().loc[['PreSyn', 'PostSyn']].sum() == len(point_df), \
+            "point_df['kind'] must not contain any categories other than PreSyn and PostSyn"
+
     point_df = point_df.reset_index()
     point_df[':Label'] = f'Synapse;{dataset}_Synapse'
-    assert (point_df['kind'].cat.categories == ['PostSyn', 'PreSyn']).all()
-    point_df['kind'].cat.rename_categories(['post', 'pre'])
+    point_df['kind'].cat.rename_categories({'PreSyn': 'pre', 'PosSyn': 'post'})
     point_df = point_df.rename(columns={
         'point_id': ':ID(Syn-ID)',
         'kind': 'type:string',
