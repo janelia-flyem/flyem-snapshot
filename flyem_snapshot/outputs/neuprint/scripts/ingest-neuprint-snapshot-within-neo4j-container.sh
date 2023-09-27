@@ -76,9 +76,8 @@ echo "Launching neo4j..."
 trap "neo4j stop" EXIT
 neo4j start --verbose
 
-# Give neo4j a few seconds to start
-sleep 10
-tail -n1 /logs/neo4j.log
+# Wait for neo4j to start. (Wait for the "Started." in the log file.)
+grep -q 'Started\.' <(tail -n1 -f /logs/neo4j.log)
 
 /var/lib/neo4j/bin/cypher-shell \
     -d data \

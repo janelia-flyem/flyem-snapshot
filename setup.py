@@ -17,7 +17,8 @@ setup(
     entry_points={
         'console_scripts': [
             'flyem-snapshot = flyem_snapshot.bin.flyem_snapshot_entrypoint:main',
-            'ingest-neuprint-snapshot-using-apptainer = flyem_snapshot.bin.ingest_neuprint_snapshot_using_apptainer:main'
+            'ingest-neuprint-snapshot-using-apptainer = flyem_snapshot.bin.ingest_neuprint_snapshot_using_apptainer:main',
+            'inspect-neuprint-snapshot = flyem_snapshot.bin.inspect_neuprint_snapshot:main',
         ]
     }
 )
