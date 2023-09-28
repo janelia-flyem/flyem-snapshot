@@ -228,9 +228,8 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
     # If the user didn't specify an explicit subset
     #  of roi-sets to include in neuprint, include them all.
-    if neuprintcfg['export-neuprint-snapshot']:
-        if neuprintcfg['roi-set-names'] is None:
-            neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
+    if neuprintcfg['export-neuprint-snapshot'] and neuprintcfg['roi-set-names'] is None:
+        neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
@@ -255,7 +254,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # we made and how the UUID was resolved.
     dump_config(cfg, f"{output_dir}/final-config.yaml")
 
-    # We load the neuprint :Meta node configuraton in a separate file,
+    # We load the neuprint :Meta node configuraton from a separate file,
     # but we insert its loaded contents into the main config for all neuprint steps to use.
     if neuprintcfg['export-neuprint-snapshot']:
         metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)

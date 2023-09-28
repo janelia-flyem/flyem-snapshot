@@ -591,7 +591,7 @@ def _load_neuron_columns(metacfg, neuprint_ann):
         if item['choices'] == 'auto':
             # Note:
             #   Empty strings were already removed when the annotations
-            #   were prepped for neuprint, the empty strings were removed.
+            #   were prepped for neuprint, so none of these choices will be "".
             item['choices'] = sorted(neuprint_ann[col].dropna().unique())
     return neuron_columns
 
