@@ -603,7 +603,8 @@ def _load_neuron_columns(metacfg, neuprint_ann):
 
 def _export_meta_as_csv(meta):
     assert set(meta.keys()) == set(META_PROPERTIES)
-    meta[':Label'] = f":Meta;{meta['dataset']}_Meta"
+    dataset = meta['dataset']
+    meta[':Label'] = f"Meta;{dataset}_Meta"
 
     # For columns with neo4j types like float[] or string[],
     # convert them to a string using ';' as list delimiter.
