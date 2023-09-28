@@ -191,6 +191,11 @@ NeuprintMetaSchema = {
             "type": "string",
             "default": ""
         },
+        "hideDataSet": {
+            "description": "Should this dataset be hidden from the neuprintExplorer drop-down menu?\n",
+            "type": "boolean",
+            "default": False
+        },
         "voxelSize": {
             "type": "array",
             "items": {"type": "number"},
@@ -461,7 +466,7 @@ def construct_neuprint_roi_hierarchy(rh):
 # This is the complete list of :Meta properties.
 # See assert statement below.
 META_PROPERTIES = [
-    'dataset', 'tag',
+    'dataset', 'tag', 'hideDataSet',
     'voxelSize', 'voxelUnits',
     'info', 'logo', 'meshHost',
     'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
@@ -489,7 +494,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, 
 
     # Copy this subset directly from the config
     verbatim_keys = (
-        'dataset', 'tag',
+        'dataset', 'tag', 'hideDataSet',
         'voxelSize', 'voxelUnits',
         'info', 'logo', 'meshHost',
         'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
