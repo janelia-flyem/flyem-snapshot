@@ -328,10 +328,21 @@ def _export_neurons_with_shared_roiset(neuron_dir, total_batches, batch_index, n
     # that all neurons in the batch intersect the same set of ROIs.
     rois = list(json.loads(neuron_df['roiInfo:string'].iloc[0]).keys())
 
-    # This awkward way of assigning the new columns is a way to work around
-    # this warning from pandas: "PerformanceWarning: DataFrame is highly fragmented".
-    # https://stackoverflow.com/a/76344743/162094
-    flags = pd.DataFrame([[True]*len(rois)], columns=[f'{roi}:boolean' for roi in rois], index=neuron_df.index)
+    # Two notes:
+    #
+    # 1. This awkward way of assigning the new columns (instead of assigning columns one at a time)
+    #    avoids this warning from pandas: "PerformanceWarning: DataFrame is highly fragmented".
+    #    https://stackoverflow.com/a/76344743/162094
+    #
+    # 2. Furthermore, we assign them as the string 'true' (instead of boolean True),
+    #    because neo4j requires booleans to exactly match 'true' (lowercase),
+    #    and pandas would normally write bools as 'True'.
+    #    https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
+    flags = pd.DataFrame(
+        [['true']*len(rois)],
+        columns=[f'{roi}:boolean' for roi in rois],
+        index=neuron_df.index
+    )
     neuron_df = pd.concat((neuron_df, flags), axis=1)
 
     digits = len(str(total_batches-1))

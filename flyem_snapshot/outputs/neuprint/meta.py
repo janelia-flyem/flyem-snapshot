@@ -602,6 +602,7 @@ def _load_neuron_columns(metacfg, neuprint_ann):
 
 
 def _export_meta_as_csv(meta):
+    meta = copy.deepcopy(meta)
     assert set(meta.keys()) == set(META_PROPERTIES)
     dataset = meta['dataset']
     meta[':Label'] = f"Meta;{dataset}_Meta"
@@ -621,6 +622,12 @@ def _export_meta_as_csv(meta):
     # And these are JSON strings, too.
     meta['neuronColumns'] = json.dumps(meta['neuronColumns'])
     meta['neuronColumnsVisible'] = json.dumps(meta['neuronColumnsVisible'])
+
+    # We can't export as bool since neo4j requires 'true' not 'True'.
+    # Convert to string.
+    # https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
+    meta['hideDataSet:boolean'] = str(meta['hideDataSet']).lower()
+    del meta['hideDataSet']
 
     # One column per key, with exactly one row.
     meta_df = pd.DataFrame({k: [v] for k,v in meta.items()})

@@ -68,7 +68,15 @@ def neo4j_type_suffix(series):
     if isinstance(series.dtype, pd.CategoricalDtype):
         return 'string'
     if series.dtype == bool:
-        return 'boolean'
+        # https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
+        msg = (
+            f"Problem with column '{series.name}':\n"
+            "You shouldn't export columns as bool dtype because pandas will not export "
+            "lowercase 'true', and neo4j will silently fail to interpret your data correctly.\n"
+            "You should convert your data to string, make sure it's lowercase, "
+            "and give it an explicit foo:boolean header."
+        )
+        raise RuntimeError(msg)
     if np.issubdtype(series.dtype, np.integer):
         return 'int'
     if np.issubdtype(series.dtype, np.floating):
