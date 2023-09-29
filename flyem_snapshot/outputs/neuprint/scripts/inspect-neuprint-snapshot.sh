@@ -14,6 +14,7 @@ if [[ -z "$1" ]]; then
     echo "  inspect-neuprint-snapshot <neo4j-export-dir>" 1>&2
     echo "" 1>&2
     echo "where <neo4j-export-dir> contains: conf  data  logs  plugins" 1>&2
+    echo "Note: It should be on a local drive, not network storage" 1>&2
     exit 1
 fi
 
