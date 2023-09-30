@@ -61,9 +61,10 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     dataset_totals = point_df['kind'].value_counts()
     dataset_totals.index = dataset_totals.index.map({'PreSyn': 'pre', 'PostSyn': 'post'})
 
-    neuron_prop_splits = [name.split(':') for name in neuron_df.columns]
-    neuron_prop_names = [ps[0] for ps in neuron_prop_splits if ps[0] and len(ps) > 1]
-    return neuron_prop_names, dataset_totals, roi_totals
+    neuron_prop_splits = [name.split(':', 1) for name in neuron_df.columns]
+    neuron_prop_splits = filter(lambda s: len(s) > 1 and s[0], neuron_prop_splits)
+    neuron_property_types = dict(neuron_prop_splits)
+    return neuron_property_types, dataset_totals, roi_totals
 
 
 @timed

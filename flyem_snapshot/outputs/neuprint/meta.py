@@ -484,7 +484,7 @@ META_PROPERTIES = [
 ]
 
 
-def export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, roi_totals, neuprint_ann):
+def export_neuprint_meta(cfg, last_mutation, neuron_property_types, dataset_totals, roi_totals, neuprint_ann):
     """
     """
     metacfg = cfg['meta']
@@ -532,7 +532,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_prop_names, dataset_totals, 
     # These were determined during the snapshot export.
     meta['totalPreCount'] = dataset_totals['pre']
     meta['totalPostCount'] = dataset_totals['post']
-    meta['neuronProperties'] = neuron_prop_names
+    meta['neuronProperties'] = neuron_property_types
 
     # These are created with info from the config (and annotations).
     rh = load_roi_hierarchy(metacfg['roiHierarchy'])
