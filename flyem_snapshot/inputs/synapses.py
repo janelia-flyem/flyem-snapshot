@@ -182,8 +182,9 @@ def _load_raw_synapses(cfg):
     # If point_df is missing either point_id or zyx columns,
     # then use one to generate the other.
     if not ({*'zyx'} <= {*point_df.columns}):
+        logger.warning("synapse (x,y,z) columns not provided. I'm assuming they can be decoded from 'point_id'")
         point_df[[*'zyx']] = decode_coords_from_uint64(point_df['point_id'].values)
-    if 'point_df' not in point_df.columns:
+    if 'point_id' not in point_df.columns:
         point_df['point_id'] = encode_coords_to_uint64(point_df[[*'zyx']].values)
 
     if not {'point_id', *'zyx', 'kind', 'conf'} <= {*point_df.columns}:
