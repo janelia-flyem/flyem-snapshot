@@ -555,7 +555,7 @@ def export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types
     meta['neuronColumns'] = _load_neuron_columns(metacfg, neuprint_ann)
 
     # Just for debug
-    dump_json(meta, 'neuprint/meta.json')
+    dump_json(meta, 'neuprint/Neuprint_Meta_debug.json')
 
     # Export for neo4j!
     _export_meta_as_csv(meta)
