@@ -22,7 +22,13 @@ RoiSetSchema = {
     "required": ["rois"],
     "properties": {
         "rois": {
-            "description": "Either a list of ROI names or a mapping of ROI names to integers.\n",
+            "description":
+                "One of the following:\n"
+                "  - list of ROI names: ['FOO(R)', 'FOO(L)', ...]\n"
+                "  - mapping to segment IDs: {'FOO(R)': 1, 'FOO(L)': 2}\n"
+                "  - path to a .json file with either of the above: /path/to/my-roi-ids.json\n"
+                "  - a python expression to compute each ROI name from its ROI segment ID 'x',\n"
+                "    such as: 'ME_R_col_{x // 100}_{x % 100}'\n",
             "oneOf": [
                 {
                     # Optionally provide a path to a '.json' from which the ROI set will be read,
@@ -90,7 +96,9 @@ RoisSchema = {
         },
         "roi-sets": {
             "additionalProperties": RoiSetSchema,
-            "default": {},
+            "default": {
+                "example_roiset": {}
+            },
         },
         "processes": {
             "description":
@@ -112,6 +120,7 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
     os.makedirs("volumes", exist_ok=True)
 
     point_df = point_df.copy()
+    roisets = {}
     for roiset_name, roiset_cfg in cfg['roi-sets'].items():
         roi_ids = roiset_cfg['rois']
         if isinstance(roi_ids, str) and roi_ids.endswith('.json'):
@@ -142,6 +151,8 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
                 }
             extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
 
+        roisets[roiset_name] = roi_ids
+
     # Merge those extracted ROI values onto the partner_df, too.
     # Note that we use the 'post' side when defining the location of a synapse connection.
     # The post side is used consistently for definining aggregate per-ROI synapse strengths
@@ -161,7 +172,7 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
             partner_df,
             f'tables/partner_df-{snapshot_tag}.feather'
         )
-    return point_df, partner_df
+    return point_df, partner_df, roisets
 
 
 def _load_roi_col(roiset_name, roi_ids, point_df):

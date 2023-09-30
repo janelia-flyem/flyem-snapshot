@@ -7,6 +7,7 @@ for this node.  Like all other data we ingest into neo4j, we create a CSV
 file with the data for this node.  Since there is only a single :Meta node,
 the generated CSV file will have only one row.
 """
+import re
 import copy
 import json
 import logging
@@ -57,10 +58,15 @@ RoiHierarchyDefinition = {
             "items": {"type": "string"}
         },
 
-        # Path to a json/yaml file
+        # A string containing one of the following:
+        # - a path to a json/yaml file OR
+        # - a reference to the name of one of the roi-sets named in the top-level config,
+        #   using the syntax 'roiset://my-roiset'.  In that case, it's effectively similar
+        #   to the above alternative of inserting a list of children,
+        #   i.e. every ROI in the roiset becomes a 'leaf' ROI.
         {
             "type": "string",
-            "pattern": r".*\.(json|yaml)$"
+            "pattern": r"(.*\.(json|yaml))|(roiset://.*)$"
         },
 
         # Recursive definition
@@ -387,17 +393,25 @@ NeuprintMetaSchema = {
 }
 
 
-def load_roi_hierarchy(rhcfg):
+def load_roi_hierarchy(rhcfg, roisets):
     if rhcfg is None:
         return None
 
     if isinstance(rhcfg, str):
-        rhcfg = load_config(rhcfg, RoiHierarchySchema)
-        return load_roi_hierarchy(rhcfg)
+        if rhcfg.startswith('roiset://'):
+            roiset_name = rhcfg[len('roiset://'):]
+            rois = roisets[roiset_name].keys()
+            return {k: None for k in rois}
+        elif re.match('.*(yaml|json)$', rhcfg):
+            rhcfg = load_config(rhcfg, RoiHierarchySchema)
+            return load_roi_hierarchy(rhcfg, roisets)
+        raise RuntimeError(f"bad string entry in roi-hierarchy: '{rhcfg}'")
 
     if isinstance(rhcfg, Mapping):
         if rhcfg:
-            return {k: load_roi_hierarchy(v) for k,v in rhcfg.items()}
+            return {k: load_roi_hierarchy(v, roisets) for k,v in rhcfg.items()}
+
+        # We translate {} to None, though either works.
         return None
 
     if isinstance(rhcfg, Sequence):
@@ -484,7 +498,7 @@ META_PROPERTIES = [
 ]
 
 
-def export_neuprint_meta(cfg, last_mutation, neuron_property_types, dataset_totals, roi_totals, neuprint_ann):
+def export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets):
     """
     """
     metacfg = cfg['meta']
@@ -535,7 +549,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_property_types, dataset_tota
     meta['neuronProperties'] = neuron_property_types
 
     # These are created with info from the config (and annotations).
-    rh = load_roi_hierarchy(metacfg['roiHierarchy'])
+    rh = load_roi_hierarchy(metacfg['roiHierarchy'], roisets)
     meta['roiHierarchy'] = construct_neuprint_roi_hierarchy(rh)
     meta['roiInfo'] = _load_roi_info(metacfg, roi_totals, rh)
     meta['neuronColumns'] = _load_neuron_columns(metacfg, neuprint_ann)

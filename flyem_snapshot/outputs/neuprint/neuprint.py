@@ -139,7 +139,7 @@ NeuprintSchema = {
 
 
 @PrefixFilter.with_context('neuprint')
-def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, last_mutation):
+def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mutation):
     """
     Export CSV files for each of the following:
 
@@ -170,7 +170,7 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, last_mutation):
 
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
     neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
-    export_neuprint_meta(cfg, last_mutation, neuron_property_types, dataset_totals, roi_totals, neuprint_ann)
+    export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets)
     export_neuroglancer_json_state(cfg, last_mutation)
     export_neuprint_indexes_script(cfg, neuron_property_types.keys(), roi_totals.index)
 
