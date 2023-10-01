@@ -27,7 +27,7 @@ RoiSetSchema = {
                 "  - list of ROI names: ['FOO(R)', 'FOO(L)', ...]\n"
                 "  - mapping to segment IDs: {'FOO(R)': 1, 'FOO(L)': 2}\n"
                 "  - path to a .json file with either of the above: /path/to/my-roi-ids.json\n"
-                "  - a python expression to compute each ROI name from its ROI segment ID 'x',\n"
+                "  - a format string to compute each ROI name from its ROI segment ID 'x',\n"
                 "    such as: 'ME_R_col_{x // 100}_{x % 100}'\n",
             "oneOf": [
                 {
@@ -129,9 +129,9 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
             roi_ids = dict(zip(roi_ids, range(1, len(roi_ids)+1)))
 
         if isinstance(roi_ids, str):
-            # If roi_ids is still a string, it must be a valid python expression,
+            # If roi_ids is still a string, it must be a valid format string,
             # and it shouldn't give the same result for ID 0 as ID 1
-            assert eval(roi_ids.format(x=1)) != eval(roi_ids.format(x=0))  # pylint: disable=eval-used
+            assert eval(f'f"{roi_ids}"', None, {'x': 1}) != eval(f'f"{roi_ids}"', None, {'x': 0})
         else:
             assert isinstance(roi_ids, dict)
 
@@ -146,7 +146,7 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
                 # Now we can compute the mapping from name to label
                 unique_ids = pd.unique(roi_vol.reshape(-1))
                 roi_ids = {
-                    eval(roi_ids.format(x=x)): x  # pylint: disable=eval-used
+                    eval(f'f"{roi_ids}"', None, {'x': x}): x
                     for x in unique_ids if x != 0
                 }
             extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
@@ -189,11 +189,11 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
     if isinstance(roi_ids, str):
         if f'{roiset_name}_label' not in point_df.columns:
             raise RuntimeError(
-                f"If you are specifying {roiset_name} roi_ids via a python expression, "
+                f"If you are specifying {roiset_name} roi_ids via a format string, "
                 f"then you must supply the {roiset_name}_label column.")
         unique_ids = point_df[f'{roiset_name}'].unique()
         roi_ids = {
-            eval(roi_ids.format(x=x)): x  # pylint: disable=eval-used
+            eval(f'f"{roi_ids}"', None, {'x': x})
             for x in unique_ids if x != 0
         }
 

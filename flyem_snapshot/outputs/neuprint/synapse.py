@@ -73,7 +73,7 @@ def _export_synapse_group_csv(roi_syn_props, i, group_rois, df):
         if roi_segment_id == 0:
             continue
         for prop_name, formula in prop_cfg.items():
-            df[prop_name] = eval(formula, {}, {'x': roi_segment_id})  # pylint: disable=eval-used
+            df[prop_name] = eval(formula, None, {'x': roi_segment_id})  # pylint: disable=eval-used
             extra_props.append(prop_name)
 
     # The ROI boolean flags are all :boolean

@@ -154,6 +154,7 @@ def neuprint_segment_annotations(cfg, ann):
                 if not isinstance(x, str) or ',' not in x:
                     return x
                 try:
+                    # In clio, points can be strings, e.g. '123, 456, 789'
                     p = eval(x)
                     if len(p) == 3:
                         return list(p)
