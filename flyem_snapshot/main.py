@@ -87,7 +87,7 @@ ConfigSchema = {
                 "dvid-timeout": {
                     "description": "Timeout for dvid requests, in seconds. Used for both 'connect' and 'read' timeout.",
                     "type": "number",
-                    "default": 180.0,
+                    "default": 300.0,
                 }
             }
         }

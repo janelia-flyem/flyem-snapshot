@@ -111,7 +111,9 @@ NeuprintSchema = {
         "annotation-property-names": {
             "description":
                 "Mapping from annotation columns to neuprint property names.\n"
-                "Any columns NOT mentioned here will be translated to property names according to predefined rules.\n"
+                "By default, annotation columns are automatically translated to neuprint properties,\n"
+                "with names translated according to standard rules.\n"
+                "But you can customize the translations here (or exclude some properties by translating them to ''.\n"
                 "Note: Currently, all spatial (point) properties MUST contain the word 'Location' in the name.",
             "additionalProperties": {
                 "type": "string"
