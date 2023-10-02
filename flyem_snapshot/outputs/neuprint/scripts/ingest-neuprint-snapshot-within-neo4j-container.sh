@@ -21,14 +21,21 @@ set -e
 # We must overwrite the default config file.
 cp /conf/neo4j.conf /var/lib/neo4j/conf/neo4j.conf
 
-##
-## Import CSVs for nodes/relationships
-##
-
 # Minimize the length of our command-line arguments
 cd /snapshot
 ln -sf Neuprint_Neurons nn
 ln -sf Neuprint_Synapses ns
+
+DEBUG_SHELL=$1
+if [[ ! -z "${DEBUG_SHELL}" ]]
+then
+    /bin/bash
+    exit $?
+fi
+
+##
+## Import CSVs for nodes/relationships
+##
 
 META_ARG=--nodes=Neuprint_Meta.csv
 SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv

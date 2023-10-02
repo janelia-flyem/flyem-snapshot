@@ -12,6 +12,7 @@ if [[ -z "$1" ]]; then
 fi
 
 SNAPSHOT_DIR=$1
+DEBUG_SHELL=$2
 
 # The directory in which this bash script resides.
 # https://stackoverflow.com/questions/59895
@@ -59,9 +60,15 @@ cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 # We use --writable-tmpfs since neo4j needs a writable filesystem.
 # https://github.com/apptainer/singularity/issues/4546#issuecomment-537152617
 
-singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
+if [[ ! -z "${DEBUG_SHELL}" ]]
+then
+    singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
+    exit $?
+else
+    singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
 
-# Now copy the database files from /scratch to the snapshot directory
-echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
-cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
-echo "$(date '+%Y-%m-%d %H:%M:%S') DONE"
+    # Now copy the database files from /scratch to the snapshot directory
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
+    cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
+    echo "$(date '+%Y-%m-%d %H:%M:%S') DONE"
+fi
