@@ -33,6 +33,7 @@ CLIO_TO_NEUPRINT_PROPERTIES = {
     'typing_notes': '',
     'user': '',
     'notes': '',
+    'halfbrain_body': '',
     'halfbrainBody': '',
     'group_old': '',
     'confidence': '',
