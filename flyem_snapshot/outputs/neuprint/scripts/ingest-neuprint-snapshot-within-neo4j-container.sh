@@ -25,20 +25,37 @@ cp /conf/neo4j.conf /var/lib/neo4j/conf/neo4j.conf
 ## Import CSVs for nodes/relationships
 ##
 
-META_ARG=--nodes=/snapshot/Neuprint_Meta.csv
-SYNSET_ARG=--nodes=/snapshot/Neuprint_SynapseSet.csv
+# Minimize the length of our command-line arguments
+cd /snapshot
+ln -sf Neuprint_Neurons nn
+ln -sf Neuprint_Synapses ns
+
+META_ARG=--nodes=Neuprint_Meta.csv
+SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv
 
 # These may each result in thousands (or hundreds of thousands) of arguments,
 # but that's our only option without incremental import.
-NEURON_ARGS=$(for f in $(find /snapshot/Neuprint_Neurons -name "*.csv"); do printf -- "--nodes=$f "; done)
-SYNAPSE_ARGS=$(for f in $(find /snapshot/Neuprint_Synapses -name "*.csv"); do printf -- "--nodes=$f "; done)
+NEURON_ARGS=$(for f in $(find nn/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+SYNAPSE_ARGS=$(for f in $(find ns/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 
-NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=/snapshot/Neuprint_Neuron_Connections.csv
-SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=/snapshot/Neuprint_SynapseSet_to_SynapseSet.csv
-SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=/snapshot/Neuprint_Synapse_Connections.csv
+if [[ -z "${NEURON_ARGS}" ]]
+then
+    echo "Didn't find any Neuron csv files!" 1>&2
+    exit 1
+fi
 
-NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=/snapshot/Neuprint_Neuron_to_SynapseSet.csv
-SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=/snapshot/Neuprint_SynapseSet_to_Synapses.csv
+if [[ -z "${SYNAPSE_ARGS}" ]]
+then
+    echo "Didn't find any Synapse csv files!" 1>&2
+    exit 1
+fi
+
+NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_Neuron_Connections.csv
+SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_SynapseSet_to_SynapseSet.csv
+SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=Neuprint_Synapse_Connections.csv
+
+NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=Neuprint_Neuron_to_SynapseSet.csv
+SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=Neuprint_SynapseSet_to_Synapses.csv
 
 echo "Ingesting nodes and relationships"
 start=$(date +%s)
