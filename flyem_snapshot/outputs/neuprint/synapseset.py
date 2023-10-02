@@ -48,6 +48,7 @@ def export_synapsesets(cfg, partner_df, connectome):
         dataset = cfg['meta']['dataset']
         label = f"SynapseSet;{dataset}_SynapseSet"
         (
+            # This takes ~22 minutes to export for the full CNS.
             synset_ids.assign(label=label)
             [['synset_id', 'label']]
             .rename(columns={
@@ -59,6 +60,7 @@ def export_synapsesets(cfg, partner_df, connectome):
 
     with Timer("Writing Neuprint_Neuron_to_SynapseSet.csv", logger):
         (
+            # This takes ~16 minutes to export for the full CNS.
             synset_ids
             .rename(columns={
                 'body': ':START_ID(Body-ID)',
@@ -90,6 +92,9 @@ def export_synapsesets(cfg, partner_df, connectome):
 
     with Timer("Writing Neuprint_SynapseSet_to_Synapses.csv", logger):
         (
+            # TODO: This takes ~40 minutes to export for the full CNS.
+            #       It could be written in parallel, resulting in yet more
+            #       CSV files for the admin-tool to load.
             pd.concat((ss_to_syn_pre, ss_to_syn_post), ignore_index=True)
             .rename(columns={
                 'synset': ':START_ID(SynSet-ID)',

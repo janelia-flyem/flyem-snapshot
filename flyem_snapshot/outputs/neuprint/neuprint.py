@@ -170,6 +170,7 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mu
     point_df = point_df.loc[point_df['body'] != 0]
     partner_df = partner_df.loc[(partner_df['body_pre'] != 0) & (partner_df['body_post'] != 0)]
 
+    # TODO: Would be nice if 'last edit' could reflect annotation edits (if they are later than segmentation edits)
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
     neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
     export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets)

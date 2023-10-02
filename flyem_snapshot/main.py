@@ -51,6 +51,7 @@ ConfigSchema = {
             "default": {},
             "additionalProperties": False,
             "properties": {
+                # TODO: BigQuery exports
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
                 "flat-connectome": FlatConnectomeSchema,
