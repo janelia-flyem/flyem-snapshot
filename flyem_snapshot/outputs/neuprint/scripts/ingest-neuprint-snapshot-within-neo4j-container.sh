@@ -45,6 +45,10 @@ SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv
 NEURON_ARGS=$(for f in $(find nn/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 SYNAPSE_ARGS=$(for f in $(find ns/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 
+## We can't do this because each file has its own header (and they aren't all the same).
+# NEURON_ARGS="--nodes=Neuprint_Neurons/.*csv"
+# SYNAPSE_ARGS="--nodes=Neuprint_Synapses/.*csv"
+
 if [[ -z "${NEURON_ARGS}" ]]
 then
     echo "Didn't find any Neuron csv files!" 1>&2
@@ -71,8 +75,8 @@ start=$(date +%s)
     --database=data \
     --normalize-types=false \
     ${META_ARG} \
-    ${NEURON_ARGS} \
-    ${SYNAPSE_ARGS} \
+    "${NEURON_ARGS}" \
+    "${SYNAPSE_ARGS}" \
     ${SYNSET_ARG} \
     ${NEURON_CONNECTSTO_ARG} \
     ${SYNSET_CONNECTSTO_ARG} \

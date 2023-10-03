@@ -5,7 +5,7 @@ set -e
 if [[ -z "$1" ]]; then
     echo "Usage:" 1>&2
     echo "" 1>&2
-    echo "  ingest-snapshot-via-singularity.sh <snapshot-dir>" 1>&2
+    echo "  ingest-neuprint-snapshot-using-apptainer.sh <snapshot-dir>" 1>&2
     echo "" 1>&2
     echo "where <snapshot-dir> contains a 'neuprint' subdirectory containing CSV files and scripts to use for neuprint ingestion." 1>&2
     exit 1
@@ -62,10 +62,10 @@ cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 
 if [[ ! -z "${DEBUG_SHELL}" ]]
 then
-    singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
+    apptainer exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
     exit $?
 else
-    singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
+    apptainer exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
 
     # Now copy the database files from /scratch to the snapshot directory
     echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
