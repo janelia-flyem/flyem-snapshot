@@ -121,6 +121,13 @@ NeuprintSchema = {
             "default": {},
         },
         "indexes": IndexesSettingsSchema,
+        "max-segment-files": {
+            "description":
+                "The :Segment nodes will be exported as a series of CSV files.\n"
+                "This setting controls the number of CSV files to produce.\n",
+            "type": "integer",
+            "default": 30_000,
+        },
         "processes": {
             "description":
                 "For steps specifically in the neuprint build process which could\n"

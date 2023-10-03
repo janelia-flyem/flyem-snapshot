@@ -49,7 +49,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     neuron_df = neuron_df.rename_axis(':ID(Body-ID)').reset_index()
     neuron_df = append_neo4j_type_suffixes(neuron_df, exclude=['roiset_hash'])
 
-    _export_neuron_csvs(neuron_df, cfg['processes'])
+    _export_neuron_csvs(neuron_df, cfg['max-segment-files'], cfg['processes'])
 
     # While we've got this data handy, compute total pre/post
     # in each ROI and also the whole dataset.
@@ -262,7 +262,7 @@ def _assign_segment_label(cfg, neuron_df):
     neuron_df.loc[is_neuron, ':LABEL'] = f'Segment;{dataset}_Segment;Neuron;{dataset}_Neuron'
 
 
-def _export_neuron_csvs(neuron_df, processes):
+def _export_neuron_csvs(neuron_df, max_files, processes):
     neuron_dir = 'neuprint/Neuprint_Neurons'
     if os.path.exists(neuron_dir):
         shutil.rmtree(neuron_dir)
@@ -273,13 +273,40 @@ def _export_neuron_csvs(neuron_df, processes):
         'neuprint/Neuprint_Neurons.feather'
     )
 
-    batches = [
-        (i, df)
-        for i, (_, df) in
-        enumerate(neuron_df.groupby('roiset_hash', sort=False))
-    ]
+    # It's critical that each roiset occupies contiguous
+    # rows before we assign roisets into batches.
+    # Also, sort by size of largest roiset to smallest.
+    neuron_df['roiset_size'] = neuron_df.groupby('roiset_hash').transform('size')
+    neuron_df.sort_values(['roiset_size', 'roiset_hash'], ascending=False, inplace=True, ignore_index=True)
 
-    _fn = partial(_export_neurons_with_shared_roiset, neuron_dir, len(batches))
+    batch_size = (len(neuron_df) + max_files - 1) // max_files
+
+    # Determine how many 'singleton' batches there are which are big enough to get their own batch.
+    # If we don't, they would the total batch count below the user's desired count.
+    roiset_sizes = neuron_df[['roiset_size', 'roiset_hash']].drop_duplicates()
+    singleton_batch_df = roiset_sizes.query('roiset_size >= @batch_size')
+    singleton_batches = len(singleton_batch_df)
+    singleton_batch_total_size = singleton_batch_df['roiset_size'].sum()
+
+    # Calculate batch_size based on remainder after subtracting out the singleton batches.
+    # Of course, by changing the batch size, we'll be changing the number of 'singleton' batches,
+    # so we could consider iterating here until the batch size converges.
+    # But we won't bother; we'll just adjust the batch size once.
+    batch_size = (len(neuron_df) - singleton_batch_total_size + max_files - 1) // max(1, (max_files - singleton_batches))
+    neuron_df['batch_index'] = neuron_df.index // batch_size
+    neuron_df['batch_index'] = neuron_df.groupby('roiset_hash')['batch_index'].transform('first')
+
+    # Renumber with consecutive batch indexes.
+    neuron_df['batch_index'] = neuron_df.groupby('batch_index').ngroup()
+
+    del neuron_df['roiset_size']
+    batches = neuron_df.groupby('batch_index', sort=False)
+
+    _fn = partial(
+        _export_neuron_batch,
+        neuron_dir,
+        neuron_df['batch_index'].nunique()
+    )
     compute_parallel(
         _fn,
         batches,
@@ -289,9 +316,26 @@ def _export_neuron_csvs(neuron_df, processes):
     )
 
 
-def _export_neurons_with_shared_roiset(neuron_dir, total_batches, batch_index, neuron_df):
-    neuron_df.drop(columns=['roiset_hash'], inplace=True)
-    assert all(':' in c for c in neuron_df.columns)
+def _export_neuron_batch(neuron_dir, total_batches, batch_index, batch_df):
+    subbatch_dfs = []
+    for _, subbatch_df in batch_df.groupby('roiset_hash'):
+        df = _construct_export_df_for_common_roiset(subbatch_df)
+        subbatch_dfs.append(df)
+
+    export_df = pd.concat(subbatch_dfs, ignore_index=True)
+    digits = len(str(total_batches-1))
+    p = f'{neuron_dir}/{batch_index:0{digits}d}.csv'
+    export_df.to_csv(p, index=False, header=True)
+
+
+def _construct_export_df_for_common_roiset(neuron_df):
+    """
+    For a batch of segments/neurons which all have the SAME roiset_hash,
+    construct format their data for CSV export and neo4j ingestion.
+    """
+    neuron_df.drop(columns=['roiset_hash', 'batch_index'], inplace=True)
+    assert all(':' in c for c in neuron_df.columns), \
+        f"Columns aren't all ready for neo4j export: {neuron_df.columns.tolist()}"
 
     neo4j_to_numpy = {
         'long': np.int64,
@@ -345,10 +389,7 @@ def _export_neurons_with_shared_roiset(neuron_dir, total_batches, batch_index, n
         index=neuron_df.index
     )
     neuron_df = pd.concat((neuron_df, flags), axis=1)
-
-    digits = len(str(total_batches-1))
-    p = f'{neuron_dir}/{batch_index:0{digits}d}.csv'
-    neuron_df.to_csv(p, index=False, header=True)
+    return neuron_df
 
 
 @PrefixFilter.with_context("ConnectsTo")
