@@ -131,7 +131,7 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
         if isinstance(roi_ids, str):
             # If roi_ids is still a string, it must be a valid format string,
             # and it shouldn't give the same result for ID 0 as ID 1
-            assert eval(f'f"{roi_ids}"', None, {'x': 1}) != eval(f'f"{roi_ids}"', None, {'x': 0})
+            assert eval(f'f"{roi_ids}"', None, {'x': 1}) != eval(f'f"{roi_ids}"', None, {'x': 0})  # pylint: disable=eval-used
         else:
             assert isinstance(roi_ids, dict)
 
@@ -146,7 +146,7 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
                 # Now we can compute the mapping from name to label
                 unique_ids = pd.unique(roi_vol.reshape(-1))
                 roi_ids = {
-                    eval(f'f"{roi_ids}"', None, {'x': x}): x
+                    eval(f'f"{roi_ids}"', None, {'x': x}): x  # pylint: disable=eval-used
                     for x in unique_ids if x != 0
                 }
             extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
@@ -193,7 +193,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
                 f"then you must supply the {roiset_name}_label column.")
         unique_ids = point_df[f'{roiset_name}'].unique()
         roi_ids = {
-            eval(f'f"{roi_ids}"', None, {'x': x})
+            eval(f'f"{roi_ids}"', None, {'x': x})  # pylint: disable=eval-used
             for x in unique_ids if x != 0
         }
 
@@ -219,7 +219,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
 
     if f'{roiset_name}_label' not in point_df.columns:
         # Produce integers from names according to roi_ids
-        dtype = narrowest_dtype(max(roi_ids.values()), signed=False)
+        dtype = narrowest_dtype(max(roi_ids.values()), signed=None)
         point_df[f'{roiset_name}_label'] = point_df[roiset_name].map(roi_ids).astype(dtype)
 
     if roiset_name not in point_df.columns:
@@ -284,6 +284,8 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
         roi_box = np.array(fetch_volume_box(*roi_seg))
         with Timer(f"Fetching ROI volume: {roi_labelmap_name}"):
             roi_vol = fetch_labelmap_voxels_chunkwise(*roi_seg, roi_box, progress=False)
+            dtype = narrowest_dtype(roi_vol.max(), signed=None)
+            roi_vol = roi_vol.astype(dtype)
     else:
         if isinstance(roi_ids, str):
             raise RuntimeError(
