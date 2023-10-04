@@ -28,7 +28,7 @@ NEUPRINT_TYPE_OVERRIDES = {
 }
 
 
-def append_neo4j_type_suffixes(df, exclude=()):
+def append_neo4j_type_suffixes(df, exclude=(), drop_empty=True):
     """
     Return a renamed DataFrame wholes columns now have
     type suffixes such as ':float'.
@@ -36,7 +36,10 @@ def append_neo4j_type_suffixes(df, exclude=()):
     colon (:) in the name.
     """
     typed_renames = neo4j_column_names(df, exclude)
-    return df.rename(columns=typed_renames)
+    cols = df.columns.tolist()
+    if drop_empty:
+        cols = [c for c in cols if typed_renames.get(c, None) != ':IGNORE']
+    return df[cols].rename(columns=typed_renames)
 
 
 def neo4j_column_names(df, exclude=()):
