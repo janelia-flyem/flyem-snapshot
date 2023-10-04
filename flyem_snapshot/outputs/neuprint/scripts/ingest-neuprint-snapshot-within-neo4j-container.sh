@@ -1,6 +1,12 @@
 #!/bin/bash
 
 ##
+## This script is not meant to be invoked directly.
+## It is invoked from ingest-neuprint-snapshot-using-apptainer.sh
+## (which itself is usually invoked via a Python wrapper script).
+##
+
+##
 ## This script is meant to be run from WITHIN the neo4j:4.4 container.
 ## (At the time of this writing, we use neo4j:4.4.16.)
 ## This ingests ALL of the CSV files from a neuprint snapshot via the
@@ -14,6 +20,10 @@
 ## send the appropriate cypher commands to create indexes for segment properties.
 ##
 
+# This is optionally set via the calling script, when you use
+# ingest-neuprint-snapshot-using-apptainer <snapshot-dir> --debug-shell
+DEBUG_SHELL=$1
+
 set -e
 
 # If we used the normal docker entrypoint, then we could leave the config in /conf.
@@ -21,33 +31,19 @@ set -e
 # We must overwrite the default config file.
 cp /conf/neo4j.conf /var/lib/neo4j/conf/neo4j.conf
 
-# Minimize the length of our command-line arguments
 cd /snapshot
-ln -sf Neuprint_Neurons nn
-ln -sf Neuprint_Synapses ns
-
-DEBUG_SHELL=$1
-if [[ ! -z "${DEBUG_SHELL}" ]]
-then
-    /bin/bash
-    exit $?
-fi
 
 ##
 ## Import CSVs for nodes/relationships
 ##
 
+# Node arguments.
+# There may be hundreds of thousands of node CSV files, which is why we supply
+# these arguments to neo4j-admin via a special arguments file.  (See below.)
 META_ARG=--nodes=Neuprint_Meta.csv
 SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv
-
-# These may each result in thousands (or hundreds of thousands) of arguments,
-# but that's our only option without incremental import.
-NEURON_ARGS=$(for f in $(find nn/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-SYNAPSE_ARGS=$(for f in $(find ns/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-
-## We can't do this because each file has its own header (and they aren't all the same).
-# NEURON_ARGS="--nodes=Neuprint_Neurons/.*csv"
-# SYNAPSE_ARGS="--nodes=Neuprint_Synapses/.*csv"
+NEURON_ARGS=$(for f in $(find Neuprint_Neurons/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+SYNAPSE_ARGS=$(for f in $(find Neuprint_Synapses/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 
 if [[ -z "${NEURON_ARGS}" ]]
 then
@@ -61,33 +57,47 @@ then
     exit 1
 fi
 
+# Relationship arguments.
 NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_Neuron_Connections.csv
 SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_SynapseSet_to_SynapseSet.csv
 SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=Neuprint_Synapse_Connections.csv
-
 NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=Neuprint_Neuron_to_SynapseSet.csv
 SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=Neuprint_SynapseSet_to_Synapses.csv
 
-echo "Ingesting nodes and relationships"
-start=$(date +%s)
-/var/lib/neo4j/bin/neo4j-admin import \
-    --force=true \
-    --database=data \
-    --normalize-types=false \
-    ${META_ARG} \
-    ${NEURON_ARGS} \
-    ${SYNAPSE_ARGS} \
-    ${SYNSET_ARG} \
-    ${NEURON_CONNECTSTO_ARG} \
-    ${SYNSET_CONNECTSTO_ARG} \
-    ${SYNAPSE_SYNAPSESTO_ARG} \
-    ${NEURON_CONTAINS_SYNSET_ARG} \
-    ${SYNSET_CONTAINS_SYNAPSE_ARG} \
-    | tee /logs/import.log \
-##
 
+cat > ingestion-args.txt << EOF
+--force=true \
+--database=data \
+--normalize-types=false \
+${META_ARG} \
+${NEURON_ARGS} \
+${SYNAPSE_ARGS} \
+${SYNSET_ARG} \
+${NEURON_CONNECTSTO_ARG} \
+${SYNSET_CONNECTSTO_ARG} \
+${SYNAPSE_SYNAPSESTO_ARG} \
+${NEURON_CONTAINS_SYNSET_ARG} \
+${SYNSET_CONTAINS_SYNAPSE_ARG} \
+
+EOF
+
+if [[ ! -z "${DEBUG_SHELL}" ]]
+then
+    # Drop the user into a bash shell instead of running the ingestion.
+    /bin/bash
+    exit $?
+fi
+
+start=$(date +%s)
+echo "[$(date)] Ingesting nodes and relationships"
+
+# Our argument list would be way too long to supply on the command line.
+# (Error: Argument list too long)
+# Luckily, we can supply the arguments via a file!
+# https://github.com/neo4j/neo4j/issues/7333#issuecomment-1746238765
+/var/lib/neo4j/bin/neo4j-admin import @ingestion-args.txt | tee /logs/import.log
 end=$(date +%s)
-echo "Node/relationship ingest completed at: $(date)"
+echo "[$(date)] Node/relationship ingest completed."
 echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"
 
 ##
@@ -100,7 +110,7 @@ echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"
 export NEO4J_SHUTDOWN_TIMEOUT=$(((end-start)/2))
 
 start=$(date +%s)
-echo "Launching neo4j..."
+echo "[$(date)] Launching neo4j..."
 trap "neo4j stop" EXIT
 neo4j start --verbose
 
@@ -115,5 +125,5 @@ grep -q 'Started\.' <(tail -n1 -f /logs/neo4j.log)
 ##
 
 end=$(date +%s)
-echo "Indexes creation completed at: $(date)"
+echo "[$(date)] Index creation completed."
 echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"

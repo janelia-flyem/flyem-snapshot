@@ -5,9 +5,12 @@ set -e
 if [[ -z "$1" ]]; then
     echo "Usage:" 1>&2
     echo "" 1>&2
-    echo "  ingest-neuprint-snapshot-using-apptainer.sh <snapshot-dir>" 1>&2
+    echo "  ingest-neuprint-snapshot-using-apptainer.sh <snapshot-dir> [--debug-shell]" 1>&2
     echo "" 1>&2
-    echo "where <snapshot-dir> contains a 'neuprint' subdirectory containing CSV files and scripts to use for neuprint ingestion." 1>&2
+    echo "where <snapshot-dir> contains a 'neuprint' subdirectory containing CSV files" 1>&2
+    echo " and scripts to use for neuprint ingestion." 1>&2
+    echo "If --debug-shell is given, then you'll be dropped into a bash shell within " 1>&2
+    echo "the container instead of launching the ingestion script." 1>&2
     exit 1
 fi
 
@@ -66,7 +69,10 @@ then
     exit $?
 else
     apptainer exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
-
+    if [[ "$?" != "0" ]]
+    then
+        exit $?
+    fi
     # Now copy the database files from /scratch to the snapshot directory
     echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
     cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
