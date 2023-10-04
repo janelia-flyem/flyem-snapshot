@@ -75,8 +75,8 @@ start=$(date +%s)
     --database=data \
     --normalize-types=false \
     ${META_ARG} \
-    "${NEURON_ARGS}" \
-    "${SYNAPSE_ARGS}" \
+    ${NEURON_ARGS} \
+    ${SYNAPSE_ARGS} \
     ${SYNSET_ARG} \
     ${NEURON_CONNECTSTO_ARG} \
     ${SYNSET_CONNECTSTO_ARG} \
