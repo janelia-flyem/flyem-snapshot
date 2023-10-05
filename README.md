@@ -8,7 +8,6 @@ Given a connectome in the following form:
    - with a column for `body` (neuron)
    - one or more ROI columns (if not being sourced from DVID)
 - synapse relationships (pre-post)
-
 - a table neuron annotations (or a DVID neuronjson instance to load them from)
 - Optionally, one or more ROI lists to load from DVID (instead of providing pre-loaded ROI columns in the input)
 
@@ -18,7 +17,8 @@ This tool can produce various outputs:
 - a neuprint neo4j database
 - a series of connectivity reports illustrating various metrics in selected ROIs
 
-The input is expected to be in Apache Feather format, but there is an option to update the input bodies and ROIs via
+The input is expected to be in Apache Feather format, but you can
+optionally update the `body` and ROI columns from a DVID checkpoint.
 
 # Installation:
 

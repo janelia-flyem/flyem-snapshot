@@ -8,10 +8,11 @@ import argparse
 def main():
     DEBUG = False
     if DEBUG and len(sys.argv) == 1:
-        # This is simpler than messing around with VSCode debugging configurations.
+        # Providing fake CLI arguments this way is simpler than
+        # than messing around with VSCode debugging configurations.
         import os
         sys.stderr.write("DEBUGGING WITH ARTIFICAL ARGS\n")
-        p = os.path.split(__file__)[0] + '/../../neuprint-small-test.yaml'
+        p = os.path.split(__file__)[0] + '/../../ol-small-test.yaml'
         sys.argv.extend(['-c', p])
 
     parser = argparse.ArgumentParser(

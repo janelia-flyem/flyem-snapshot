@@ -262,6 +262,7 @@ def _assign_segment_label(cfg, neuron_df):
     neuron_df.loc[is_neuron, ':LABEL'] = f'Segment;{dataset}_Segment;Neuron;{dataset}_Neuron'
 
 
+@timed
 def _export_neuron_csvs(neuron_df, max_files, processes):
     neuron_dir = 'neuprint/Neuprint_Neurons'
     if os.path.exists(neuron_dir):
@@ -527,6 +528,8 @@ def _make_connection_roi_infos(batch_df):
         # Filter out non-roi weights.
         # If there are no other rois, we'll emit an empty dict: '{}'
         df = df.query('roi != "<unspecified>"')
+
+        # FIXME: Replace to_json() with something faster
         roi_info = df.to_json(orient='index')
 
         body_pairs.append(body_pair)
