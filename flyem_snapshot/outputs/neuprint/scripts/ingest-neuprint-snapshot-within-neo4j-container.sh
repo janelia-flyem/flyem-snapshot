@@ -104,13 +104,17 @@ echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"
 ## Create indexes
 ##
 
-# neo4j seems to require a lot of time to shut down.
-# Let's give it a ton of time:
-# Half of the time it took to run the ingestion.
-export NEO4J_SHUTDOWN_TIMEOUT=$(((end-start)/2))
+# neo4j creates indexes IN THE BACKGROUND.
+# Those queued background operations prevent neo4j from
+# shutting down if they haven't completed yet.
+# We certainly don't want to interrupt that, so we give a ridiculously
+# long amount of time to shut down if it needs it.
+export NEO4J_SHUTDOWN_TIMEOUT=86400
 
 start=$(date +%s)
 echo "[$(date)] Launching neo4j..."
+# Note: We used 'set -e' above, which means the trap won't hide the exit code.
+# https://unix.stackexchange.com/questions/667368/bash-change-exit-status-in-trap#comment1444973_667384
 trap "neo4j stop" EXIT
 neo4j start --verbose
 

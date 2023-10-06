@@ -11,9 +11,9 @@ CREATE CONSTRAINT ON ( {{dataset}}neuron:{{dataset}}_Neuron ) ASSERT {{dataset}}
 // However, this will implicitly create an index on all synapse locations.
 // I'm not sure how costly that is and what benefit that brings.
 // We should consider dropping this unless we can think of queries that benefit from this index.
-RETURN datetime() as time, "Starting to index synapse location" as message;
+RETURN datetime() as time, ":Synapse.location: Requesting index creation" as message;
 CREATE CONSTRAINT ON ( {{dataset}}synapse:{{dataset}}_Synapse ) ASSERT {{dataset}}synapse.location IS UNIQUE;
-RETURN datetime() as time, "Done indexing synapse location" as message;
+RETURN datetime() as time, ":Synapse.location: Initiated index creation" as message;
 
 // I have no idea what this DataModel node is, so it's possible this line
 // is erroneously left over from an earlier neuprint prototype.
@@ -34,7 +34,7 @@ CREATE INDEX ON :Synapse(`type`);
 {% for prop in segment_properties %}
 CREATE INDEX ON :{{dataset}}_Segment(`{{prop}}`);
 CREATE INDEX ON :{{dataset}}_Neuron(`{{prop}}`);
-RETURN datetime() as time, "Done with prop {{loop.index}}: {{prop}}" as message;
+RETURN datetime() as time, ":Segment/:Neuron property #{{loop.index}}: Initiated index creation for '{{prop}}'" as message;
 {% endfor %}
 
 //
@@ -43,13 +43,17 @@ RETURN datetime() as time, "Done with prop {{loop.index}}: {{prop}}" as message;
 {% for roi in rois %}
 CREATE INDEX ON :{{dataset}}_Segment(`{{roi}}`);
 CREATE INDEX ON :{{dataset}}_Neuron(`{{roi}}`);
-RETURN datetime() as time, "Done with ROI {{loop.index}}: {{roi}}" as message;
+RETURN datetime() as time, ":Segment/:Neuron ROI property #{{loop.index}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 
 SHOW DATABASES;
 SHOW INDEXES;
 
-RETURN datetime() as time, "Indexing complete!" as message;
+RETURN datetime() as time, "All indexes requested." as message;
+RETURN datetime() as time, "NOTE: neo4j performs indexing in the background.\n" +
+                           "      The 'neo4j stop' command will not return until all indexes are complete,\n" +
+                           "      which can take a long time.  If 'neo4j stop' times out, you may need to adjust\n" +
+                           "      the NEO4J_SHUTDOWN_TIMEOUT environment variable.\n" as message;
 
 // The next step in our previously documented procedure is to warm up
 // the page cache using the following command, but shouldn't this be
