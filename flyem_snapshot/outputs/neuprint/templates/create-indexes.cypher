@@ -34,7 +34,7 @@ CREATE INDEX ON :Synapse(`type`);
 {% for prop in segment_properties %}
 CREATE INDEX ON :{{dataset}}_Segment(`{{prop}}`);
 CREATE INDEX ON :{{dataset}}_Neuron(`{{prop}}`);
-RETURN datetime() as time, ":Segment/:Neuron property #{{loop.index}}: Initiated index creation for '{{prop}}'" as message;
+RETURN datetime() as time, ":Segment/:Neuron annotation property #{{loop.index}}: Initiated index creation for '{{prop}}'" as message;
 {% endfor %}
 
 //

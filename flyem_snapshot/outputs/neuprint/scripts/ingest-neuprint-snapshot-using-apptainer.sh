@@ -28,6 +28,12 @@ SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # We export the database to /scratch.
 # Assuming I'm on a cluster node, this directory is available.
 WORKSPACE_DIR=${WORKSPACE_DIR-/scratch/${USER}/$(basename ${SNAPSHOT_DIR})/neo4j}
+
+if [[ -z "${DEBUG_SHELL}" ]]
+then
+    mv ${WORKSPACE_DIR} ${WORKSPACE_DIR}-old 2> /dev/null || true
+fi
+
 export APPTAINER_BIND="${SNAPSHOT_DIR}/neuprint:/snapshot"
 
 # Create these directories in our workspace and
