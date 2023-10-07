@@ -1,3 +1,8 @@
+// Let's try warming up the cache before we start creating indexes.
+// This might improve indexing speed, though we haven't actually benchmarked it.
+RETURN datetime() as time, "Warming up page cache" as message;
+CALL apoc.warmup.run();
+
 // These uniqueness constraints implicitly create indexes, too.
 // https://neo4j.com/docs/cypher-manual/4.4/constraints/
 
@@ -46,17 +51,17 @@ CREATE INDEX ON :{{dataset}}_Neuron(`{{roi}}`);
 RETURN datetime() as time, ":Segment/:Neuron ROI property #{{loop.index}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 
+// Indexing is performed in the background,
+// but we don't want to exit until the indexes are all online.
+RETURN datetime() as time, "Waiting for indexes to come online..." as message;
+CALL db.awaitIndexes(86400);  // wait up to 24 hours!
+RETURN datetime() as time, "All indexes are online!" as message;
+
 SHOW DATABASES;
 SHOW INDEXES;
 
-RETURN datetime() as time, "All indexes requested." as message;
-RETURN datetime() as time, "NOTE: neo4j performs indexing in the background.\n" +
-                           "      The 'neo4j stop' command will not return until all indexes are complete,\n" +
-                           "      which can take a long time.  If 'neo4j stop' times out, you may need to adjust\n" +
-                           "      the NEO4J_SHUTDOWN_TIMEOUT environment variable.\n" as message;
-
-// The next step in our previously documented procedure is to warm up
-// the page cache using the following command, but shouldn't this be
+// The next step documented in our original procedure is to warm up
+// the page cache using the following command. But shouldn't this be
 // executed only on the production deployment?
 // What's the point of doing this on the build machine?
 //
