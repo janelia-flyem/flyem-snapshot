@@ -182,7 +182,7 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mu
     neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
     export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets)
     export_neuroglancer_json_state(cfg, last_mutation)
-    export_neuprint_indexes_script(cfg, neuron_property_types.keys(), roi_totals.index)
+    export_neuprint_indexes_script(cfg, neuron_property_types.keys(), roi_totals.index, roisets)
 
     connectome = export_neuprint_segment_connections(cfg, partner_df)
     export_synapsesets(cfg, partner_df, connectome)
