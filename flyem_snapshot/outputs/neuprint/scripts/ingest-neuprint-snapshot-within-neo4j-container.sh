@@ -57,6 +57,13 @@ then
     exit 1
 fi
 
+if [[ -z "${LSB_MAX_NUM_PROCESSORS}" ]]
+then
+    CPU_COUNT=$(python -c 'import multiprocessing; print(multiprocessing.cpu_count()//2)')
+else
+    CPU_COUNT=${LSB_MAX_NUM_PROCESSORS}
+fi
+
 # Relationship arguments.
 NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_Neuron_Connections.csv
 SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_SynapseSet_to_SynapseSet.csv
@@ -64,21 +71,34 @@ SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=Neuprint_Synapse_Connections.c
 NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=Neuprint_Neuron_to_SynapseSet.csv
 SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=Neuprint_SynapseSet_to_Synapses.csv
 
+# The v4.4 docs say this about the HEAP_SIZE variable:
+# "If doing imports in the order of magnitude of 100 billion entities, 20G will be an appropriate value."
+# (We have ~0.5B entities)
+export HEAP_SIZE='31G'
+
+# TODO: Should we use this option?
+# --cache-on-heap=true
+
+# NOTE: This is a hard-coded value for --max-memory!
+# (BTW, in neo4j v5, it will be renamed to --max-off-heap-memory)
+MAX_MEMORY='150G'
 
 cat > ingestion-args.txt << EOF
---force=true \
---database=data \
---normalize-types=false \
-${META_ARG} \
-${NEURON_ARGS} \
-${SYNAPSE_ARGS} \
-${SYNSET_ARG} \
-${NEURON_CONNECTSTO_ARG} \
-${SYNSET_CONNECTSTO_ARG} \
-${SYNAPSE_SYNAPSESTO_ARG} \
-${NEURON_CONTAINS_SYNSET_ARG} \
-${SYNSET_CONTAINS_SYNAPSE_ARG} \
-
+--force=true
+--database=data
+--normalize-types=false
+--high-io=true
+--max-memory=${MAX_MEMORY}
+--processors=${CPU_COUNT}
+${META_ARG}
+${NEURON_ARGS}
+${SYNAPSE_ARGS}
+${SYNSET_ARG}
+${NEURON_CONNECTSTO_ARG}
+${SYNSET_CONNECTSTO_ARG}
+${SYNAPSE_SYNAPSESTO_ARG}
+${NEURON_CONTAINS_SYNSET_ARG}
+${SYNSET_CONTAINS_SYNAPSE_ARG}
 EOF
 
 if [[ ! -z "${DEBUG_SHELL}" ]]
@@ -115,7 +135,7 @@ start=$(date +%s)
 echo "[$(date)] Launching neo4j..."
 # Note: We used 'set -e' above, which means the trap won't hide the exit code.
 # https://unix.stackexchange.com/questions/667368/bash-change-exit-status-in-trap#comment1444973_667384
-trap "neo4j stop" EXIT
+trap 'neo4j stop && echo "[$(date)] Indexes created (unless an error occured). Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"' EXIT
 neo4j start --verbose
 
 # Wait for neo4j to start. (Wait for the "Started." in the log file.)
@@ -129,5 +149,3 @@ grep -q 'Started\.' <(tail -n1 -f /logs/neo4j.log)
 ##
 
 end=$(date +%s)
-echo "[$(date)] Index creation completed."
-echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"
