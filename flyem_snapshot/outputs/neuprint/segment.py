@@ -1,5 +1,5 @@
 import os
-import json
+import ujson
 import shutil
 import logging
 from functools import partial
@@ -184,6 +184,31 @@ def _neuprint_neuron_roi_infos(roisyn_df, processes):
 
 
 def _make_roi_infos(batch_df):
+    """
+    Given a table of ROI statistics for each body and each ROI,
+    Aggregate the statistics for each body into a neuprint-style roiInfo,
+    JSON-serialize it, and also compute a hash from the (sorted) list of
+    ROIs the body touches. (The hash can be used to group each body with
+    similar bodies for the purposes of CSV exports.)
+
+    Arg:
+        batch_df:
+            A DataFrame with columns:
+            ['body_batch', 'body', 'roi', 'post', 'pre', 'downstream', 'upstream', 'synweight']
+            (The index is ignored/discarded.)
+
+    Returns:
+        DataFrame, indexed by body, with columns:
+            - roiset_hash (an int)
+            - roiInfo (already JSON-serialized into a string)
+
+        Example:
+                    roiset_hash roiInfo
+            body
+            123   9384832742398 '{"ME(R)": {"post": 10, "pre": 2, ...}, "LO(R)": {"post": 16, "pre": 0, ...}}'
+            456   -387462398472 '{"ME(R)": {"post": 45, "pre": 9, ...}, "LO(R)": {"post": 213, "pre": 12, ...}}'
+        ...
+    """
     batch_df = batch_df.query('body != 0')
     batch_df = batch_df.set_index('roi')
     assert batch_df.columns[:2].tolist() == ['body_batch', 'body']
@@ -196,12 +221,21 @@ def _make_roi_infos(batch_df):
         # Note: df.iloc[] is faster than df.drop()
         df = df.iloc[:, 2:]
 
-        # This would produce the JSON string in one line if we were
-        # okay with zeros being present in the result (such as pre: 0).
+        # The following commented-out line would produce the JSON string in one line
+        # if we were okay with zeros being present in the result (such as pre: 0).
+        # But we don't want zeros, and besides, df.to_json() is super slow.
+        # Thus, we'll construct the JSON ourselves.
         # roi_info = df.to_json(orient='index')
 
         # This is equivalent to df.to_dict(orient='records'),
-        # but faster for simple integer data
+        # but faster for simple integer data.
+        # Result is like this:
+        #   [
+        #       {'post': 10, 'pre': 2, 'downstream': 9, 'upstream': 10, 'synweight': 19},
+        #       {'post': 18, 'pre': 1, 'downstream': 3, 'upstream': 18, 'synweight': 22},
+        #       {'post': 10, 'pre': 2, 'downstream': 9, 'upstream': 10, 'synweight': 19},
+        #       ...
+        #   ]
         single_roi_infos = [
             dict(zip(df.columns, row))
             for row in df.itertuples(index=False, name=None)
@@ -210,6 +244,14 @@ def _make_roi_infos(batch_df):
         # This removes 0 entries, which is how neuprint is
         # currently populated (though I'm not sure why).
         single_roi_infos = [{k:v for k,v in d.items() if v} for d in single_roi_infos]
+
+        # Now aggregate into the full roiInfo for the current body, like this:
+        # {
+        #   'ME(R)': {'post': 10, 'pre': 2, 'downstream': 9, 'upstream': 10, 'synweight': 19},
+        #   'LO(R)': {'post': 18, 'pre': 1, 'downstream': 3, 'upstream': 18, 'synweight': 22},
+        #   'LOP(R)': {'post': 10, 'pre': 2, 'downstream': 9, 'upstream': 10, 'synweight': 19},
+        #   ...
+        # }
         roi_info = dict(zip(df.index, single_roi_infos))
 
         # We filter out non-roi counts here (instead of before the loop)
@@ -219,7 +261,7 @@ def _make_roi_infos(batch_df):
         roi_info.pop("<unspecified>", None)
 
         roi_hash = hash(tuple(sorted(roi_info.keys())))
-        roi_info = json.dumps(roi_info)
+        roi_info = ujson.dumps(roi_info)
 
         bodies.append(body)
         roi_infos.append(roi_info)
@@ -372,7 +414,7 @@ def _construct_export_df_for_common_roiset(neuron_df):
     # The only way to be 100% safe is to check them all.
     # For now, I'm ignoring that problem and just assuming
     # that all neurons in the batch intersect the same set of ROIs.
-    rois = list(json.loads(neuron_df['roiInfo:string'].iloc[0]).keys())
+    rois = list(ujson.loads(neuron_df['roiInfo:string'].iloc[0]).keys())
 
     # Two notes:
     #
@@ -529,8 +571,18 @@ def _make_connection_roi_infos(batch_df):
         # If there are no other rois, we'll emit an empty dict: '{}'
         df = df.query('roi != "<unspecified>"')
 
-        # FIXME: Replace to_json() with something faster
-        roi_info = df.to_json(orient='index')
+        # We could just use the following line, but to_json()
+        # is super slow, so we construct the JSON the hard way.
+        # roi_info = df.to_json(orient='index')
+
+        # Result is like this:
+        # {
+        #    'ME(R)': {'post': 10},
+        #    'LO(R)': {'post': 18},
+        #    'LOP(R)': {'post': 10}
+        # }
+        roi_info = {roi: {'post': post} for roi, post in df['post'].items()}
+        roi_info = ujson.dumps(roi_info)
 
         body_pairs.append(body_pair)
         roi_infos.append(roi_info)
