@@ -20,4 +20,4 @@ neo4j start --verbose
 # Wait for neo4j to start. (Wait for the "Started." in the log file.)
 grep -q 'Started\.' <(tail -n1 -f /logs/neo4j.log)
 
-/var/lib/neo4j/bin/cypher-shell -d data
+/bin/bash

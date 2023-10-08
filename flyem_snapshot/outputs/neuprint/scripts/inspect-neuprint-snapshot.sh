@@ -3,7 +3,9 @@
 ##
 ## Spins up a neo4j container using apptainer (singularity)
 ## to allow manual inspection of a neuprint database.
-## The command executed in the container will launch neo4j and open the cypher-shell.
+## This will launch neo4j and start a bash shell within the container.
+## Users typicallly call this script indirectly via a Python wrapper script.
+## See inspect_neuprint_snapshot.py
 ##
 
 set -e
@@ -46,5 +48,5 @@ export APPTAINER_BIND="/tmp/scripts:/scripts,${APPTAINER_BIND}"
 # https://github.com/apptainer/singularity/issues/4546#issuecomment-537152617
 
 # singularity run --writable-tmpfs docker://neo4j:4.4.16
-singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/_launch_snapshot_and_cypher_shell.sh
+singularity exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/_launch_snapshot_and_bash_shell.sh
 

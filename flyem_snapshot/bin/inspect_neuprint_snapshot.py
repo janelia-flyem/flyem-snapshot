@@ -1,7 +1,7 @@
 """
 Spins up a neo4j container using apptainer (singularity)
 to allow manual inspection of a neuprint database.
-The command executed in the container will launch neo4j and open the cypher-shell.
+This will launch neo4j and start a bash shell within the container.
 (This Python script is a thin wrapper around a bash script.)
 
 Usage:
