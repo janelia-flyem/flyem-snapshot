@@ -29,7 +29,10 @@ set -e
 # If we used the normal docker entrypoint, then we could leave the config in /conf.
 # But since we bypass the docker entrypoint, then /conf is ignored, apparently.
 # We must overwrite the default config file.
-cp /conf/neo4j.conf /var/lib/neo4j/conf/neo4j.conf
+cp /conf/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf
+
+# Plugins need to be copied, too.
+ls /plugins/* > /dev/null 2>&1 && cp /plugins/* ${NEO4J_HOME}/plugins/
 
 cd /snapshot
 

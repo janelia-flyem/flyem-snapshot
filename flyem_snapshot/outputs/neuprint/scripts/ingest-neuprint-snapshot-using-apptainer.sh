@@ -53,10 +53,10 @@ done
 # doesn't already exist when the server is launched.
 touch ${WORKSPACE_DIR}/logs/neo4j.log
 
-# I can't figure out how to make plugins work in cypher-shell
-# The following doesn't do it.
-# Fortunately, we don't really need apoc functions during the ingestion procedure.
+# Note: The plugins still need to be installed into ${NEO4J_HOME}/plugins once the container is launched.
 # cp /groups/flyem/data/neo4j-plugins/apoc-4.4.0.7-all.jar ${WORKSPACE_DIR}/plugins/
+APOC_PLUGINS_URL=https://github.com/neo4j-contrib/neo4j-apoc-procedures/releases/download/4.4.0.7/apoc-4.4.0.7-all.jar
+wget -q ${APOC_PLUGINS_URL} -P ${WORKSPACE_DIR}/plugins/
 
 cp ${SCRIPTS_DIR}/* ${WORKSPACE_DIR}/scripts/
 cp ${SNAPSHOT_DIR}/neuprint/create-indexes.cypher ${WORKSPACE_DIR}/scripts/

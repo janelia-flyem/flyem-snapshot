@@ -35,11 +35,6 @@ mkdir -p /tmp/scripts
 cp -R "${SCRIPTS_DIR}"/* /tmp/scripts/
 export APPTAINER_BIND="/tmp/scripts:/scripts,${APPTAINER_BIND}"
 
-# I can't figure out how to make plugins work in cypher-shell
-# The following doesn't do it.
-# Fortunately, we don't really need apoc functions during the ingestion procedure.
-# cp /groups/flyem/data/neo4j-plugins/apoc-4.4.0.7-all.jar ${WORKSPACE_DIR}/plugins/
-
 # Note: By default, the container's networking is the same as the host,
 # so there's no need to map ports explicitly unless we want to use
 # different ports within the container and host.

@@ -13,6 +13,9 @@ set -e
 # We must overwrite the default config file.
 cp /conf/neo4j.conf /var/lib/neo4j/conf/neo4j.conf
 
+# Plugins need to be copied, too.
+ls /plugins/* > /dev/null 2>&1 && cp /plugins/* ${NEO4J_HOME}/plugins/
+
 echo "Launching neo4j..."
 trap "neo4j stop" EXIT
 neo4j start --verbose
