@@ -13,7 +13,9 @@ set -e
 # We must overwrite the default config file.
 cp /conf/neo4j.conf /var/lib/neo4j/conf/neo4j.conf
 
-# Plugins need to be copied, too.
+# We don't actually use plugins during ingestion,
+# but it's convenient to have access to them when debugging.
+# Install them by copying into NEO4J_HOME.
 ls /plugins/* > /dev/null 2>&1 && cp /plugins/* ${NEO4J_HOME}/plugins/
 
 echo "Launching neo4j..."

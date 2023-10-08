@@ -1,13 +1,19 @@
-// Let's try warming up the cache before we start creating indexes.
-// This might improve indexing speed, though we haven't actually benchmarked it.
-RETURN datetime() as time, "Warming up page cache" as message;
-CALL apoc.warmup.run();
+{#
+    This is a jijna template.
+    The flyem-snapshot tool renders it into an actual Cypher script.
+    (See flyem_snapshot/outputs/neuprint/indexes.py)
+
+    The rendered script is later executed via the neo4j
+    cypher-shell create indexes on Segment properties.
+    (See ingest-neuprint-snapshot-within-neo4j-container.sh)
+#}
 
 // These uniqueness constraints implicitly create indexes, too.
 // https://neo4j.com/docs/cypher-manual/4.4/constraints/
 
 // This syntax appears to be for neo4j 3.5, with newer versions using a different syntax.
 // But this seems to still work for now, at least in neo4j 4.4.
+RETURN datetime() as time, "Creating uniqueness constraint on bodyId" as message;
 CREATE CONSTRAINT ON ( {{dataset}}segment:{{dataset}}_Segment ) ASSERT {{dataset}}segment.bodyId IS UNIQUE;
 CREATE CONSTRAINT ON ( {{dataset}}neuron:{{dataset}}_Neuron ) ASSERT {{dataset}}neuron.bodyId IS UNIQUE;
 
@@ -60,10 +66,4 @@ RETURN datetime() as time, "All indexes are online!" as message;
 SHOW DATABASES;
 SHOW INDEXES;
 
-// The next step documented in our original procedure is to warm up
-// the page cache using the following command. But shouldn't this be
-// executed only on the production deployment?
-// What's the point of doing this on the build machine?
-//
-// CALL apoc.warmup.run();
-//
+RETURN datetime() as time, "DONE with create-indexes.cypher" as message;
