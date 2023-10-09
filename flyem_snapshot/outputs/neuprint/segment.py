@@ -502,6 +502,12 @@ def export_neuprint_segment_connections(cfg, partner_df):
     roi_info = _neuron_connection_roi_infos(roi_conn, cfg['processes'])
     connectome = connectome.merge(roi_info, 'left', on=['body_pre', 'body_post'])
     connectome = connectome.reset_index()
+
+    # In cases where a connection has has a 'weight' of 0
+    # but has non-zero 'weightHR', the roiInfo hasn't yet,
+    # been created. Fill it with an empty JSON object.
+    connectome['roiInfo'].fillna('{}', inplace=True)
+
     cols = ['body_pre', 'body_post', 'weightHR', 'weight', 'weightHP', 'roiInfo']
     assert connectome.columns.tolist() == cols, f"{connectome.columns}"
 
