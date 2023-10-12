@@ -28,7 +28,7 @@ def export_neuprint_synapses(cfg, point_df):
 
     point_df = point_df.reset_index()
     point_df[':Label'] = f'Synapse;{dataset}_Synapse'
-    point_df['kind'].cat.rename_categories({'PreSyn': 'pre', 'PostSyn': 'post'})
+    point_df['kind'] = point_df['kind'].cat.rename_categories({'PreSyn': 'pre', 'PostSyn': 'post'})
     point_df = point_df.rename(columns={
         'point_id': ':ID(Syn-ID)',
         'kind': 'type:string',
