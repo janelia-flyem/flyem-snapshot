@@ -8,7 +8,8 @@ Usage:
 
     inspect-neuprint-snapshot <neo4j-export-dir>
 
-... where <neo4j-export-dir> contains: conf/  data/  logs/  plugins/
+... where <neo4j-export-dir> contains:
+        conf/  data/  logs/  plugins/
 
 Note:
     The neo4j-export-dir should be on a local hard disk, NOT on network storage such as Janelia's prfs.
