@@ -5,6 +5,7 @@ import os
 import logging
 
 from neuclease import PrefixFilter
+from neuclease.util import Timer
 
 from .annotations import neuprint_segment_annotations
 from .meta import export_neuprint_meta
@@ -72,6 +73,25 @@ NeuprintSchema = {
                     "type": "null"
                 }
             ]
+        },
+        "restrict-synapses-to-roiset": {
+            "description":
+                "Entirely discard synapses that fall outside the given roiset.\n"
+                "Synapses which do not fall on a non-zero ROI in the given roiset\n"
+                "will not be used to calculate Neuron roiInfo totals, compartment totals,\n"
+                "connection weights, or anything else. It's as if they don't exist.",
+            "type": "string",
+            "default": ""
+        },
+        "restrict-connectivity-to-roiset": {
+            "description":
+                "Discard synapse *connections* that fall outside the given roiset.\n"
+                "The discarded synapses won't be included in the database individually,\n"
+                "nor will they contribute to Neuron :ConnectsTo weights.\n"
+                "However, they WILL contribute to Neuron roiInfo totals, indicating which compartments\n"
+                "a Neuron innervates and what portion of the Neuron's total synapses reside in each compartment.\n",
+            "type": "string",
+            "default": ""
         },
         "roi-synapse-properties": {
             "description":
@@ -177,6 +197,8 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mu
     point_df = point_df.loc[point_df['body'] != 0]
     partner_df = partner_df.loc[(partner_df['body_pre'] != 0) & (partner_df['body_post'] != 0)]
 
+    point_df, partner_df = restrict_synapses_to_roiset(cfg, 'restrict-synapses-to-roiset', point_df, partner_df)
+
     # TODO: Would be nice if 'last edit' could reflect annotation edits (if they are later than segmentation edits)
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
     neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
@@ -184,8 +206,25 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mu
     export_neuroglancer_json_state(cfg, last_mutation)
     export_neuprint_indexes_script(cfg, neuron_property_types.keys(), roi_totals.index, roisets)
 
+    point_df, partner_df = restrict_synapses_to_roiset(cfg, 'restrict-connectivity-to-roiset', point_df, partner_df)
+
     connectome = export_neuprint_segment_connections(cfg, partner_df)
     export_synapsesets(cfg, partner_df, connectome)
 
     export_neuprint_synapses(cfg, point_df)
     export_neuprint_synapse_connections(partner_df)
+
+
+def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
+    roiset = cfg[setting]
+    if not roiset:
+        return point_df, partner_df
+
+    with Timer(f"Filtering out synapses according to {setting}: '{roiset}'"):
+        keep = point_df[f"{roiset}_label"].astype(bool)
+        point_df = point_df.loc[keep]
+        valid_pre = partner_df['pre_id'].isin(point_df.index)
+        valid_post = partner_df['post_id'].isin(point_df.index)
+        partner_df = partner_df.loc[valid_pre & valid_post].copy()
+
+    return point_df, partner_df
