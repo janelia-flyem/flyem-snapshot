@@ -138,7 +138,9 @@ def export_all(cfg, config_dir):
     dvid_seg = (update_seg['server'], update_seg['uuid'], update_seg['instance'])
 
     # All subsequent processing occurs from within the output-dir
-    with switch_cwd(cfg['job-settings']['output-dir']):
+    output_dir = cfg['job-settings']['output-dir']
+    logger.info(f"Working in {output_dir}")
+    with switch_cwd(output_dir):
         # Load inputs
         ann = load_annotations(cfg['inputs']['annotations'], dvid_seg, snapshot_tag)
         point_df, partner_df, last_mutation = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
@@ -208,11 +210,21 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         if isinstance(subcfg, Mapping) and 'processes' in subcfg and subcfg['processes'] is None:
             subcfg['processes'] = jobcfg['processes']
 
+    # If output-dir WASN'T specified, then we create one in the user's current directory
+    if not jobcfg['output-dir']:
+        output_dir = jobcfg['output-dir'] = os.path.abspath(snapshot_tag)
+
     # Convert file paths to absolute (if necessary).
     # Relative paths are interpreted w.r.t. to the config file, not the cwd.
     # Overwrite the paths with their absolute versions so subsequent functions
     # don't have to worry about relative paths.
     with switch_cwd(config_dir):
+        # If an output-dir WAS specified, then relative paths
+        # are interpreted as relative to the config file.
+        # (If it wasn't specified, then we already converted to
+        # abspath (above) and this line has no effect.)
+        output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'])
+
         syncfg['syndir'] = os.path.abspath(syncfg['syndir'])
         if not syncfg['synapse-points'].startswith('{syndir}'):
             syncfg['synapse-points'] = os.path.abspath(syncfg['synapse-points'])
@@ -225,7 +237,6 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
         neuprintcfg['meta'] = os.path.abspath(neuprintcfg['meta'])
         neuprintcfg['neuroglancer']['json-state'] = os.path.abspath(neuprintcfg['neuroglancer']['json-state'])
-        output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'] or snapshot_tag)
 
     # If the user didn't specify an explicit subset
     #  of roi-sets to include in neuprint, include them all.
