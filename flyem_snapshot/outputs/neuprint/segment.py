@@ -28,6 +28,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
 
+    point_df, partner_df = _drop_out_of_bounds_bodies(cfg, point_df, partner_df)
     body_stats = _body_synstats(point_df, partner_df)
     roi_syn_df = _body_roi_synstats(cfg, point_df, partner_df)
     roi_info_df = _neuprint_neuron_roi_infos(roi_syn_df, cfg['processes'])
@@ -65,6 +66,27 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     neuron_prop_splits = filter(lambda s: len(s) > 1 and s[0], neuron_prop_splits)
     neuron_property_types = dict(neuron_prop_splits)
     return neuron_property_types, dataset_totals, roi_totals
+
+
+def _drop_out_of_bounds_bodies(cfg, point_df, partner_df):
+    """
+    If we're going to drop out-of-bounds connections from the final result,
+    then we filter out bodies which would end up with NO connections in the database.
+    But for the bodies keep, we keep ALL of their synapses
+    (even the out-of-bounds ones).
+    """
+    setting = 'restrict-connectivity-to-roiset'
+    roiset = cfg[setting]
+    if not roiset:
+        return point_df, partner_df
+
+    with Timer(f"Filtering out bodies according to {setting}: '{roiset}'"):
+        keep_post = (partner_df[roiset] != "<unspecified>")
+        keep_bodies = partner_df.loc[keep_post, 'body_post'].unique()
+        point_df = point_df.loc[point_df['body'].isin(keep_bodies)]
+        partner_df = partner_df.loc[keep_post]
+
+    return point_df, partner_df
 
 
 @timed
