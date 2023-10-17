@@ -115,4 +115,9 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
         .combine_first(cached_sizes.to_frame())['size']
         .astype(np.int64)
     )
+
+    feather.write_feather(
+        combined_sizes.reset_index(),
+        f'tables/body-size-cache-{snapshot_tag}.feather')
+
     return combined_sizes
