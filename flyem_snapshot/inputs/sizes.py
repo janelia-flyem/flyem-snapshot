@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
@@ -102,6 +103,7 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
     muts = fetch_mutations(server, delta_range, instance)
     effects = compute_affected_bodies(muts)
     outofdate_bodies = np.concatenate((effects.changed_bodies, effects.new_bodies))
+    outofdate_bodies = pd.unique(outofdate_bodies)
     if len(outofdate_bodies) == 0:
         return cached_sizes
 
