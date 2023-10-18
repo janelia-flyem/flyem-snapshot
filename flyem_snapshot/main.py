@@ -19,6 +19,8 @@ from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
 
+from .util import log_lsf_details
+
 logger = logging.getLogger(__name__)
 
 ConfigSchema = {
@@ -115,10 +117,11 @@ def main(args):
         return
 
     configure_default_logging()
+    log_lsf_details(logger)
     cfg = load_config(args.config, ConfigSchema)
     config_dir = os.path.dirname(args.config)
 
-    with Timer("Exporting snapshot denormalizations", logger):
+    with Timer("Exporting snapshot denormalizations", logger, log_start=False):
         export_all(cfg, config_dir)
     logger.info("DONE")
 
