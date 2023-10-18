@@ -151,22 +151,7 @@ def neuprint_segment_annotations(cfg, ann):
 
         ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
         if (ann[col].notnull() & ~ispoint).any():
-            def _convert(x):
-                if not isinstance(x, str) or ',' not in x:
-                    return x
-                try:
-                    # In clio, points might be strings, such as:
-                    # - "123, 456, 789"
-                    # - "[123, 456, 789]"
-                    p = eval(x)
-                    if len(p) == 3:
-                        return list(p)
-                    return x
-                except Exception:
-                    return x
-
-            # Try converting strings like '123, 456, 789' to lists
-            ann[col] = ann[col].map(_convert)
+            ann[col] = ann[col].map(_convert_point)
             ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
             if (ann[col].notnull() & ~ispoint).any():
                 # Even after conversion, there are _still_ bad entries!
@@ -180,3 +165,19 @@ def neuprint_segment_annotations(cfg, ann):
         ]
 
     return ann
+
+
+def _convert_point(x):
+    # Try converting strings like '123, 456, 789' to lists
+    if not isinstance(x, str) or ',' not in x:
+        return x
+    try:
+        # In clio, points might be strings, such as:
+        # - "123, 456, 789"
+        # - "[123, 456, 789]"
+        p = eval(x)
+        if len(p) == 3:
+            return list(p)
+        return x
+    except Exception:
+        return x
