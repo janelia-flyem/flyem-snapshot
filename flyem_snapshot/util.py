@@ -1,4 +1,5 @@
 import os
+import platform
 import time
 from datetime import datetime
 from subprocess import check_output
@@ -27,6 +28,7 @@ def export_bokeh(p, filename, title):
 
 
 def log_lsf_details(logger):
+    logger.info(f"Running on {platform.uname().node}")
     job_id = os.environ.get("LSB_JOBID", None)
     if not job_id:
         return
