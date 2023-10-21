@@ -19,6 +19,7 @@ setup(
             'flyem-snapshot = flyem_snapshot.bin.flyem_snapshot_entrypoint:main',
             'ingest-neuprint-snapshot-using-apptainer = flyem_snapshot.bin.ingest_neuprint_snapshot_using_apptainer:main',
             'inspect-neuprint-snapshot = flyem_snapshot.bin.inspect_neuprint_snapshot:main',
+            'parse-neuprint-log = flyem_snapshot.bin.parse_neuprint_log:main',
         ]
     }
 )
