@@ -28,9 +28,10 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
 
-    point_df, partner_df = _drop_out_of_bounds_bodies(cfg, point_df, partner_df)
-    body_stats = _body_synstats(point_df, partner_df)
-    roi_syn_df = _body_roi_synstats(cfg, point_df, partner_df)
+    point_df, partner_df, inbounds_bodies, inbounds_rois = _drop_out_of_bounds_bodies(cfg, point_df, partner_df)
+
+    body_stats = _body_synstats(point_df, partner_df, inbounds_bodies)
+    roi_syn_df = _body_roi_synstats(cfg, point_df, partner_df, inbounds_bodies)
     roi_info_df = _neuprint_neuron_roi_infos(roi_syn_df, cfg['processes'])
 
     # We use a left-merge here (not outer) because we deliberately exclude
@@ -59,8 +60,11 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
         .groupby(level='roi')[['pre', 'post']].sum()
         .query('roi != "<unspecified>"')
     )
-    dataset_totals = point_df['kind'].value_counts()
-    dataset_totals.index = dataset_totals.index.map({'PreSyn': 'pre', 'PostSyn': 'post'})
+
+    if inbounds_rois is None:
+        dataset_totals = body_stats[['pre', 'post']].sum()
+    else:
+        dataset_totals = roi_syn_df.query('roi in @inbounds_rois')[['pre', 'post']].sum()
 
     neuron_prop_splits = [name.split(':', 1) for name in neuron_df.columns]
     neuron_prop_splits = filter(lambda s: len(s) > 1 and s[0], neuron_prop_splits)
@@ -70,27 +74,42 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
 
 def _drop_out_of_bounds_bodies(cfg, point_df, partner_df):
     """
-    If we're going to drop out-of-bounds connections from the final result,
-    then we filter out bodies which would end up with NO connections in the database.
-    But for the bodies keep, we keep ALL of their synapses
-    (even the out-of-bounds ones).
+    Determine which bodies intersect the 'in-bounds' ROIs,
+    and preserve all of their synaptic connections (even if the partner bod is entirely out-of-bounds.)
+    Discard synaptic connections in which neither side is an in-bounds body.
     """
     setting = 'restrict-connectivity-to-roiset'
     roiset = cfg[setting]
     if not roiset:
-        return point_df, partner_df
+        return point_df, partner_df, None, None
 
     with Timer(f"Filtering out bodies according to {setting}: '{roiset}'"):
-        keep_post = (partner_df[roiset] != "<unspecified>")
-        keep_bodies = partner_df.loc[keep_post, 'body_post'].unique()
-        point_df = point_df.loc[point_df['body'].isin(keep_bodies)]
-        partner_df = partner_df.loc[keep_post]
+        inbounds_rois = {*partner_df[roiset].unique()} - {"<unspecified>"}
+        inbounds_partners = (partner_df[roiset] != "<unspecified>")
+        inbounds_body_pairs = partner_df.loc[inbounds_partners, ['body_pre', 'body_post']]
+        inbounds_bodies = pd.unique(inbounds_body_pairs.values.reshape(-1))
 
-    return point_df, partner_df
+        # Preserve partners as long as at least one side belongs to an in-bounds body.
+        # (This will include out-of-bounds synapses, but no synapses where neither
+        # body touches the in-bounds region.)
+        keep_pre = partner_df['body_pre'].isin(inbounds_bodies)
+        keep_post = partner_df['body_post'].isin(inbounds_bodies)
+        partner_df = partner_df.loc[keep_pre | keep_post]
+
+        # Keep the points which are still referenced in partner_df
+        valid_ids = pd.concat(
+            (
+                partner_df['pre_id'].drop_duplicates().rename('point_id'),
+                partner_df['post_id'].drop_duplicates().rename('point_id')
+            ),
+            ignore_index=True
+        )
+        point_df = point_df.loc[point_df.index.isin(valid_ids)]
+        return point_df, partner_df, inbounds_bodies, inbounds_rois
 
 
 @timed
-def _body_synstats(point_df, partner_df):
+def _body_synstats(point_df, partner_df, inbounds_bodies):
     prepost = point_df[['body', 'kind']].value_counts().unstack(fill_value=0)
     prepost.columns = ['post', 'pre']
 
@@ -103,6 +122,12 @@ def _body_synstats(point_df, partner_df):
     body_syn = body_syn.fillna(0).astype(np.int32)
     body_syn = body_syn.query('body != 0')
 
+    # Above, we had to keep all the partners to ensure accurate counts for
+    # in-bounds bodies which are partnered to out-of-bounds bodies.
+    # But now that the stats are computed, we can drop the out-of-bounds bodies.
+    if inbounds_bodies is not None:
+        body_syn = body_syn.loc[body_syn.index.isin(inbounds_bodies)]
+
     logger.info("Writing body_syn.feather")
     feather.write_feather(body_syn.reset_index(), 'neuprint/body_syn.feather')
 
@@ -112,7 +137,7 @@ def _body_synstats(point_df, partner_df):
 
 
 @timed
-def _body_roi_synstats(cfg, point_df, partner_df):
+def _body_roi_synstats(cfg, point_df, partner_df, inbounds_bodies):
     """
     Per-body-per-ROI stats
     """
@@ -138,9 +163,16 @@ def _body_roi_synstats(cfg, point_df, partner_df):
     # rows before we assign bodies into batches.
     roi_syn.sort_index(inplace=True)
 
+    # Above, we had to keep all the partners to ensure accurate counts for
+    # in-bounds bodies which are partnered to out-of-bounds bodies.
+    # But now that the stats are computed, we can drop the out-of-bounds bodies.
+    if inbounds_bodies is not None:
+        bodies = roi_syn.index.get_level_values('body')
+        roi_syn = roi_syn.loc[bodies.isin(inbounds_bodies)]
+
     BATCH_SIZE = 10_000
-    bodies = pd.Series(roi_syn.index.get_level_values('body'))
-    body_count = bodies.diff().fillna(0).astype(bool).cumsum()
+    bodies = roi_syn.index.get_level_values('body')
+    body_count = pd.Series(bodies).diff().fillna(0).astype(bool).cumsum()
     roi_syn['body_batch'] = (body_count // BATCH_SIZE).values
     roi_syn.set_index('body_batch', append=True, inplace=True)
     roi_syn = roi_syn.reorder_levels(['body_batch', 'body', 'roi'])
@@ -154,11 +186,11 @@ def _body_roi_synstats(cfg, point_df, partner_df):
 
 
 def _roisyn_for_roiset(point_df, partner_df, roiset_name):
-    point_df = point_df.drop(columns=['roi'], errors='ignore')
-    partner_df = partner_df.drop(columns=['roi'], errors='ignore')
-
-    point_df = point_df.rename(columns={roiset_name: 'roi'})
-    partner_df = partner_df.rename(columns={roiset_name: 'roi'})
+    if roiset_name != 'roi':
+        point_df = point_df.drop(columns=['roi'], errors='ignore')
+        partner_df = partner_df.drop(columns=['roi'], errors='ignore')
+        point_df = point_df.rename(columns={roiset_name: 'roi'})
+        partner_df = partner_df.rename(columns={roiset_name: 'roi'})
 
     roi_prepost = point_df[['body', 'roi', 'kind']].value_counts().unstack(fill_value=0)
     roi_prepost.columns = ['post', 'pre']

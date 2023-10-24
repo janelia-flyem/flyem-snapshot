@@ -4,6 +4,8 @@ Export a connectivity snapshot in the form of CSV files that can be converted to
 import os
 import logging
 
+import pandas as pd
+
 from neuclease import PrefixFilter
 from neuclease.util import Timer
 
@@ -222,10 +224,20 @@ def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
         return point_df, partner_df
 
     with Timer(f"Filtering out synapses according to {setting}: '{roiset}'"):
-        keep = point_df[f"{roiset}_label"].astype(bool)
-        point_df = point_df.loc[keep]
-        valid_pre = partner_df['pre_id'].isin(point_df.index)
-        valid_post = partner_df['post_id'].isin(point_df.index)
-        partner_df = partner_df.loc[valid_pre & valid_post].copy()
+        # We keep *connections* that are in-bounds.
+        # In neuprint, this is defined by the 'post' side.
+        # On the edge, there can be 'pre' points that are out-of-bounds but
+        # preserved here because they are partnered to an in-bounds 'post' point.
+        inbounds_partners = (partner_df[roiset] != "<unspecified>")
+        partner_df = partner_df.loc[inbounds_partners]
+        # Keep the points which are still referenced in partner_df
+        valid_ids = pd.concat(
+            (
+                partner_df['pre_id'].drop_duplicates().rename('point_id'),
+                partner_df['post_id'].drop_duplicates().rename('point_id')
+            ),
+            ignore_index=True
+        )
+        point_df = point_df.loc[point_df.index.isin(valid_ids)]
 
     return point_df, partner_df
