@@ -243,7 +243,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
     # If the user didn't specify an explicit subset
     #  of roi-sets to include in neuprint, include them all.
-    if neuprintcfg['export-neuprint-snapshot'] and neuprintcfg['roi-set-names'] is None:
+    if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['roi-set-names']:
         neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
     # If any report is un-named, auto-name it

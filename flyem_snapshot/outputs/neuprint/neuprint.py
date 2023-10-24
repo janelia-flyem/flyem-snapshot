@@ -62,7 +62,8 @@ NeuprintSchema = {
         "roi-set-names": {
             "description":
                 "The set of ROI sets (ROI column names) from the input synapse\n"
-                "table to actually copy into neuprint as ROIs.\n",
+                "table to actually copy into neuprint as ROIs.\n"
+                "If nothing is listed here, all ROI sets are used.",
             "default": None,
             "oneOf": [
                 {
