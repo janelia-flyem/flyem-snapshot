@@ -13,8 +13,10 @@ from .inputs.synapses import SnapshotSynapsesSchema, load_synapses
 from .inputs.annotations import AnnotationsSchema, load_annotations
 from .inputs.rois import RoisSchema, load_rois
 from .inputs.sizes import BodySizesSchema, load_body_sizes
+from .inputs.neurotransmitters import NeurotransmittersSchema, load_neurotransmitters
 
 from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
+from .outputs.neurotransmitters import NeurotransmiterExportSchema, export_neurotransmitters
 from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
@@ -46,6 +48,7 @@ ConfigSchema = {
                 "annotations": AnnotationsSchema,
                 "rois": RoisSchema,
                 "body-sizes": BodySizesSchema,
+                "neurotransmitters": NeurotransmittersSchema,
             }
         },
         "outputs": {
@@ -57,6 +60,7 @@ ConfigSchema = {
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
                 "flat-connectome": FlatConnectomeSchema,
+                "neurotransmitters": NeurotransmiterExportSchema,
             }
         },
         "job-settings": {
@@ -149,11 +153,13 @@ def export_all(cfg, config_dir):
         point_df, partner_df, last_mutation = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
         point_df, partner_df, roisets = load_rois(cfg['inputs']['rois'], snapshot_tag, point_df, partner_df)
         body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvid_seg, point_df, snapshot_tag)
+        tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
 
         # Produce outputs
-        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes, roisets, last_mutation)
+        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes, tbar_nt, body_nt, roisets, last_mutation)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, point_df)
 
 
 def _finalize_config_and_output_dir(cfg, config_dir):
@@ -179,10 +185,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
            It was nice to have all config-manipulation in one place, but at this point
            we should probably move some of this logic into the relevant pipeline steps.
     """
+    jobcfg = cfg['job-settings']
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
-    jobcfg = cfg['job-settings']
 
     snapshot_tag = None
     if syncfg['update-to']:
@@ -213,7 +219,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         if isinstance(subcfg, Mapping) and 'processes' in subcfg and subcfg['processes'] is None:
             subcfg['processes'] = jobcfg['processes']
 
-    # If output-dir WASN'T specified, then we create one in the user's current directory
+    # If output-dir WASN'T specified, then we create one in the user's CURRENT directory
     if not jobcfg['output-dir']:
         output_dir = jobcfg['output-dir'] = os.path.abspath(snapshot_tag)
 
@@ -222,8 +228,8 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # Overwrite the paths with their absolute versions so subsequent functions
     # don't have to worry about relative paths.
     with switch_cwd(config_dir):
-        # If an output-dir WAS specified, then relative paths
-        # are interpreted as relative to the config file.
+        # If an output-dir WAS specified, then a relative output dir
+        # is relative to the config file.
         # (If it wasn't specified, then we already converted to
         # abspath (above) and this line has no effect.)
         output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'])
@@ -233,6 +239,13 @@ def _finalize_config_and_output_dir(cfg, config_dir):
             syncfg['synapse-points'] = os.path.abspath(syncfg['synapse-points'])
         if not syncfg['synapse-partners'].startswith('{syndir}'):
             syncfg['synapse-partners'] = os.path.abspath(syncfg['synapse-partners'])
+
+        # The 'syndir' keyword is also respected in the neurotransmitter filepath
+        ntcfg = cfg['inputs']['neurotransmitters']
+        if ntcfg['synister-feather'].startswith('{syndir}'):
+            ntcfg['synister-feather'] = ntcfg['synister-feather'].format(syndir=syncfg['syndir'])
+        elif ntcfg['synister-feather']:
+            ntcfg['synister-feather'] = os.path.abspath(ntcfg['synister-feather'])
 
         bscfg = cfg['inputs']['body-sizes']
         if bscfg['cache-file']:

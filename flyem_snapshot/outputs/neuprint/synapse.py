@@ -4,13 +4,13 @@ import warnings
 from functools import partial
 
 from neuclease import PrefixFilter
-from neuclease.util import timed, compute_parallel
+from neuclease.util import timed, compute_parallel, snakecase_to_camelcase
 
-from .util import neo4j_column_names
+from .util import neo4j_column_names, append_neo4j_type_suffixes
 
 
 @PrefixFilter.with_context("Synapse")
-def export_neuprint_synapses(cfg, point_df):
+def export_neuprint_synapses(cfg, point_df, tbar_nt):
     synapse_dir = 'neuprint/Neuprint_Synapses'
     if os.path.exists(synapse_dir):
         shutil.rmtree(synapse_dir)
@@ -25,6 +25,14 @@ def export_neuprint_synapses(cfg, point_df):
     if len(point_df['kind'].cat.categories) > 2:
         assert point_df['kind'].value_counts().loc[['PreSyn', 'PostSyn']].sum() == len(point_df), \
             "point_df['kind'] must not contain any categories other than PreSyn and PostSyn"
+
+    if tbar_nt is not None:
+        tbar_nt = tbar_nt.drop(columns=['body', *'xyz'])
+        tbar_nt = tbar_nt.rename(columns={
+            c: snakecase_to_camelcase(c) for c in tbar_nt.columns
+        })
+        tbar_nt = append_neo4j_type_suffixes(tbar_nt)
+        point_df = point_df.merge(tbar_nt, 'left', on='point_id')
 
     point_df = point_df.reset_index()
     point_df[':Label'] = f'Synapse;{dataset}_Synapse'

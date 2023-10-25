@@ -171,7 +171,7 @@ NeuprintSchema = {
 
 
 @PrefixFilter.with_context('neuprint')
-def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mutation):
+def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, tbar_nt, body_nt, roisets, last_mutation):
     """
     Export CSV files for each of the following:
 
@@ -200,22 +200,69 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, roisets, last_mu
     point_df = point_df.loc[point_df['body'] != 0]
     partner_df = partner_df.loc[(partner_df['body_pre'] != 0) & (partner_df['body_post'] != 0)]
 
-    point_df, partner_df = restrict_synapses_to_roiset(cfg, 'restrict-synapses-to-roiset', point_df, partner_df)
-
-    # TODO: Would be nice if 'last edit' could reflect annotation edits (if they are later than segmentation edits)
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
-    neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(cfg, point_df, partner_df, neuprint_ann, body_sizes)
-    export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets)
-    export_neuroglancer_json_state(cfg, last_mutation)
-    export_neuprint_indexes_script(cfg, neuron_property_types.keys(), roi_totals.index, roisets)
 
-    point_df, partner_df = restrict_synapses_to_roiset(cfg, 'restrict-connectivity-to-roiset', point_df, partner_df)
+    point_df, partner_df = restrict_synapses_to_roiset(
+        cfg, 'restrict-synapses-to-roiset', point_df, partner_df)
+
+    point_df, partner_df, inbounds_bodies, inbounds_rois = drop_out_of_bounds_bodies(
+        cfg, point_df, partner_df)
+
+    neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(
+        cfg, point_df, partner_df, neuprint_ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois)
+
+    export_neuprint_meta(
+        cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets)
+
+    export_neuroglancer_json_state(cfg, last_mutation)
+
+    export_neuprint_indexes_script(
+        cfg, neuron_property_types.keys(), roi_totals.index, roisets)
+
+    point_df, partner_df = restrict_synapses_to_roiset(
+        cfg, 'restrict-connectivity-to-roiset', point_df, partner_df)
 
     connectome = export_neuprint_segment_connections(cfg, partner_df)
     export_synapsesets(cfg, partner_df, connectome)
 
-    export_neuprint_synapses(cfg, point_df)
+    export_neuprint_synapses(cfg, point_df, tbar_nt)
     export_neuprint_synapse_connections(partner_df)
+
+
+def drop_out_of_bounds_bodies(cfg, point_df, partner_df):
+    """
+    Determine which bodies intersect the 'in-bounds' ROIs,
+    and preserve all of their synaptic connections (even if the partner bod is entirely out-of-bounds.)
+    Discard synaptic connections in which neither side is an in-bounds body.
+    """
+    setting = 'restrict-connectivity-to-roiset'
+    roiset = cfg[setting]
+    if not roiset:
+        return point_df, partner_df, None, None
+
+    with Timer(f"Filtering out bodies according to {setting}: '{roiset}'"):
+        inbounds_rois = {*partner_df[roiset].unique()} - {"<unspecified>"}
+        inbounds_partners = (partner_df[roiset] != "<unspecified>")
+        inbounds_body_pairs = partner_df.loc[inbounds_partners, ['body_pre', 'body_post']]
+        inbounds_bodies = pd.unique(inbounds_body_pairs.values.reshape(-1))
+
+        # Preserve partners as long as at least one side belongs to an in-bounds body.
+        # (This will include out-of-bounds synapses, but no synapses where neither
+        # body touches the in-bounds region.)
+        keep_pre = partner_df['body_pre'].isin(inbounds_bodies)
+        keep_post = partner_df['body_post'].isin(inbounds_bodies)
+        partner_df = partner_df.loc[keep_pre | keep_post]
+
+        # Keep the points which are still referenced in partner_df
+        valid_ids = pd.concat(
+            (
+                partner_df['pre_id'].drop_duplicates().rename('point_id'),
+                partner_df['post_id'].drop_duplicates().rename('point_id')
+            ),
+            ignore_index=True
+        )
+        point_df = point_df.loc[point_df.index.isin(valid_ids)]
+        return point_df, partner_df, inbounds_bodies, inbounds_rois
 
 
 def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):

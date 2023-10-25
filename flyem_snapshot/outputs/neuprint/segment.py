@@ -9,7 +9,7 @@ import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy
+from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
 
 from .util import append_neo4j_type_suffixes
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @PrefixFilter.with_context("Segment")
-def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
+def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois):
     """
     """
     assert ann.index.name == 'body'
@@ -27,8 +27,6 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     balanced_confidence = cfg['meta']['postHighAccuracyThreshold']
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
-
-    point_df, partner_df, inbounds_bodies, inbounds_rois = _drop_out_of_bounds_bodies(cfg, point_df, partner_df)
 
     body_stats = _body_synstats(point_df, partner_df, inbounds_bodies)
     roi_syn_df = _body_roi_synstats(cfg, point_df, partner_df, inbounds_bodies)
@@ -41,6 +39,16 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     # contain stale body IDs. Also, 'Unimportant' bodies which are just
     # fixative or whatever should generally be excluded from results.
     neuron_df = body_stats.merge(ann, 'left', on='body')
+
+    if body_nt is not None:
+        body_nt = body_nt.rename(columns={
+            c: snakecase_to_camelcase(c) for c in body_nt.columns
+        })
+        # Sometimes the neurotransmitters are present in DVID/clio,
+        # but we want to supercede those with up-to-date NT calculations.
+        neuron_df = neuron_df.drop(columns=body_nt.columns, errors='ignore')
+        neuron_df = neuron_df.merge(body_nt, 'left', on='body')
+
     neuron_df = neuron_df.merge(roi_info_df, 'left', on='body')
     if body_sizes is not None:
         neuron_df = neuron_df.merge(body_sizes, 'left', on='body')
@@ -70,42 +78,6 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes):
     neuron_prop_splits = filter(lambda s: len(s) > 1 and s[0], neuron_prop_splits)
     neuron_property_types = dict(neuron_prop_splits)
     return neuron_property_types, dataset_totals, roi_totals
-
-
-def _drop_out_of_bounds_bodies(cfg, point_df, partner_df):
-    """
-    Determine which bodies intersect the 'in-bounds' ROIs,
-    and preserve all of their synaptic connections (even if the partner bod is entirely out-of-bounds.)
-    Discard synaptic connections in which neither side is an in-bounds body.
-    """
-    setting = 'restrict-connectivity-to-roiset'
-    roiset = cfg[setting]
-    if not roiset:
-        return point_df, partner_df, None, None
-
-    with Timer(f"Filtering out bodies according to {setting}: '{roiset}'"):
-        inbounds_rois = {*partner_df[roiset].unique()} - {"<unspecified>"}
-        inbounds_partners = (partner_df[roiset] != "<unspecified>")
-        inbounds_body_pairs = partner_df.loc[inbounds_partners, ['body_pre', 'body_post']]
-        inbounds_bodies = pd.unique(inbounds_body_pairs.values.reshape(-1))
-
-        # Preserve partners as long as at least one side belongs to an in-bounds body.
-        # (This will include out-of-bounds synapses, but no synapses where neither
-        # body touches the in-bounds region.)
-        keep_pre = partner_df['body_pre'].isin(inbounds_bodies)
-        keep_post = partner_df['body_post'].isin(inbounds_bodies)
-        partner_df = partner_df.loc[keep_pre | keep_post]
-
-        # Keep the points which are still referenced in partner_df
-        valid_ids = pd.concat(
-            (
-                partner_df['pre_id'].drop_duplicates().rename('point_id'),
-                partner_df['post_id'].drop_duplicates().rename('point_id')
-            ),
-            ignore_index=True
-        )
-        point_df = point_df.loc[point_df.index.isin(valid_ids)]
-        return point_df, partner_df, inbounds_bodies, inbounds_rois
 
 
 @timed
