@@ -97,7 +97,7 @@ def neo4j_type_suffix(series):
     if len(valid) == 0:
         logger = logging.getLogger(__name__)
         logger.warning(f"No data to infer correct neo4j type for column: {series.name}")
-        return ':IGNORE'
+        return 'IGNORE'
 
     if valid.map(lambda s: isinstance(s, str)).all():
         return 'string'
