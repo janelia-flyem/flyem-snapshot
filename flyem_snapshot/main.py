@@ -156,10 +156,10 @@ def export_all(cfg, config_dir):
         tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
 
         # Produce outputs
+        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes, tbar_nt, body_nt, roisets, last_mutation)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
-        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, point_df)
 
 
 def _finalize_config_and_output_dir(cfg, config_dir):
