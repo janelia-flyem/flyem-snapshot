@@ -4,7 +4,7 @@ Parse the neuprintHTTP log file and export as CSV, or just print the most recent
 Examples:
 
     parse-neuprint-log /data1/neuprintlog/neuprint-cns/log.json
-    parse-neuprint-log -d /data1/neuprintlog/neuprint-cns/log.json
+    parse-neuprint-log -d -u /data1/neuprintlog/neuprint-cns/log.json
     parse-neuprint-log /data1/neuprintlog/neuprint-cns/log.json recent-requests.csv
     parse-neuprint-log -t 0 /data1/neuprintlog/neuprint-cns/log.json all-requests.feather
 
@@ -84,6 +84,10 @@ def parse_args():
         '--format', '-f', choices=['csv', 'feather', 'pretty'], required=False,
         help='Output format. The default is "pretty" if no output file was specified. '
              'Otherwise, the default is inferred from the output file extension.')
+    parser.add_argument(
+        '--users-last-messages', '-u', action='store_true',
+        help='Show only the single most recent message from each user in the log.'
+    )
     parser.add_argument('log_file', help='source log file')
     parser.add_argument(
         'output_file', nargs='?',
@@ -100,7 +104,8 @@ def main():
         args.chunk_size,
         args.tail_bytes,
         args.timezone,
-        args.discard_cypher
+        args.discard_cypher,
+        args.users_last_messages
     )
 
     if not args.format:
@@ -134,7 +139,7 @@ def main():
             print(log_df)
 
 
-def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher):
+def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, deduplicate_users):
     """
     Parse the entire contents of the log file.
     Return the data as pd.DataFrame.
@@ -169,6 +174,9 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher):
     # Convert the unix timestamp to human-readable datetime.
     t = pd.to_datetime(log_df['time'], unit='s', utc=True).dt.tz_convert(timezone)
     log_df.insert(0, 'datetime', t)
+
+    if deduplicate_users:
+        log_df = log_df.drop_duplicates('user', keep='last')
 
     return log_df
 
