@@ -124,6 +124,9 @@ def main():
     pd.set_option('display.max_columns', len(log_df.columns))
     pd.set_option('display.width', 1000)
 
+    if args.format == 'pretty':
+        log_df = log_df.drop(columns=['time', 'category'])
+
     if args.output_file:
         if args.format == 'feather':
             feather.write_feather(log_df, args.output_file)
