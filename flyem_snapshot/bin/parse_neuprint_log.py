@@ -6,6 +6,7 @@ Examples:
     parse-neuprint-log /data1/neuprintlog/neuprint-cns/log.json
     parse-neuprint-log -d -u /data1/neuprintlog/neuprint-cns/log.json
     parse-neuprint-log /data1/neuprintlog/neuprint-cns/log.json recent-requests.csv
+    parse-neuprint-log -t 1_000_000 /data1/neuprintlog/neuprint-cns/log.json more-requests.feather
     parse-neuprint-log -t 0 /data1/neuprintlog/neuprint-cns/log.json all-requests.feather
 
 Notes:
@@ -62,23 +63,10 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        '--chunk-size', '-c', type=int, default=10_000,
-        help="To avoid loading millions of JSON objects into RAM, the file is converted to DataFrames in chunks. "
-             "This sets the number of messages per chunk. (You can probably leave this alone.)"
-    )
-    parser.add_argument(
-        '--tail-bytes', '-t', type=int, default=10_000,
+        '--tail-bytes', '-t', type=int, default=10_000_000,
         help='Instead of parsing the whole file, parse only the last N bytes, according to this setting. '
-             'By default, only the last 10KB is processed.'
+             'By default, only the last 10MB is processed (10_000_000).'
              'To process the whole file, use the special value of 0.'
-    )
-    parser.add_argument(
-        '--timezone', '-z', default='US/Eastern',
-        help='Specify the timezone to use when exporting human-readable timestamps.'
-    )
-    parser.add_argument(
-        '--discard-cypher', '-d', action='store_true',
-        help='Before exporting, discard the cypher queries in the log (the "debug" column)'
     )
     parser.add_argument(
         '--format', '-f', choices=['csv', 'feather', 'pretty'], required=False,
@@ -87,6 +75,19 @@ def parse_args():
     parser.add_argument(
         '--users-last-messages', '-u', action='store_true',
         help='Show only the single most recent message from each user in the log.'
+    )
+    parser.add_argument(
+        '--discard-cypher', '-d', action='store_true',
+        help='Before exporting, discard the cypher queries in the log (the "debug" column)'
+    )
+    parser.add_argument(
+        '--timezone', '-z', default='US/Eastern',
+        help='Specify the timezone to use when exporting human-readable timestamps.'
+    )
+    parser.add_argument(
+        '--chunk-size', '-c', type=int, default=10_000,
+        help="To avoid loading millions of JSON objects into RAM, the file is converted to DataFrames in chunks. "
+             "This sets the number of messages per chunk. (You can probably leave this alone.)"
     )
     parser.add_argument('log_file', help='source log file')
     parser.add_argument(
