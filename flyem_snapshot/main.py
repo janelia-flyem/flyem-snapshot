@@ -80,7 +80,7 @@ ConfigSchema = {
                     "description":
                         "Where to write output files.\n"
                         "Relative paths here are interpreted from the directory in which this config file is stored.\n"
-                        "If not specified, a reasonable default is chosen IN THE SAME DIRECTORY AS THIS CONFIG FILE.\n",
+                        "If not specified, a reasonable default is chosen and placed in the CURRENT DIRECTORY AT RUNTIME.\n",
                     "type": "string",
                     "default": "",
                 },
@@ -103,7 +103,14 @@ ConfigSchema = {
 
 
 def main(args):
-    # See argument definitions in bin/flyem_snapshot_entrypoint.py
+    """
+    Main function.
+    Handles everything except CLI argument parsing,
+    which is located in a separate file to avoid importing
+    lots of packages when the user just wants --help.
+
+    For argument definitions and explanations, see bin/flyem_snapshot_entrypoint.py
+    """
     if args.dump_default_yaml:
         dump_default_config(ConfigSchema, sys.stdout, 'yaml')
         return
@@ -120,10 +127,24 @@ def main(args):
         dump_default_config(NeuprintMetaSchema, sys.stdout, 'yaml-with-comments')
         return
 
-    configure_default_logging()
-    log_lsf_details(logger)
+    if not args.config:
+        sys.stderr.write("No config provided.\n")
+        return 1
+
     cfg = load_config(args.config, ConfigSchema)
     config_dir = os.path.dirname(args.config)
+
+    if args.print_snapshot_tag:
+        _, snapshot_tag, _ = determine_snapshot_tag(cfg, config_dir)
+        print(snapshot_tag)
+        return
+    elif args.print_output_directory:
+        _, _, output_dir = determine_snapshot_tag(cfg, config_dir)
+        print(output_dir)
+        return
+
+    configure_default_logging()
+    log_lsf_details(logger)
 
     with Timer("Exporting snapshot denormalizations", logger, log_start=False):
         export_all(cfg, config_dir)
@@ -162,6 +183,51 @@ def export_all(cfg, config_dir):
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
 
 
+def determine_snapshot_tag(cfg, config_dir):
+    """
+    Determine the snapshot tag and UUID from the user's config.
+    If the user didn't provide a snapshot tag, construct one using a
+    date from the segmentation mutation log.
+
+    Also return the final output-dir.
+
+    FIXME: Ideally, we should also consult the annotation instance
+            to see if it has even newer dates.
+    """
+    syncfg = cfg['inputs']['synapses']
+    uuid = None
+    if syncfg['update-to']:
+        uuid, snapshot_tag = resolve_snapshot_tag(
+            syncfg['update-to']['server'],
+            syncfg['update-to']['uuid'],
+            syncfg['update-to']['instance']
+        )
+
+    # If user supplied an explicit snapshot-tag in the config, use that.
+    snapshot_tag = (cfg['job-settings']['snapshot-tag'] or snapshot_tag)
+
+    if not snapshot_tag:
+        msg = (
+            "Since your synapses config does not refer to a DVID "
+            "snapshot UUID in the 'update-to' setting, you must supply "
+            "an explicit snapshot-tag to use in output file names."
+        )
+        raise RuntimeError(msg)
+
+    jobcfg = cfg['job-settings']
+    if jobcfg['output-dir']:
+        # If an output-dir WAS specified, then a relative output dir
+        # is relative to the config file.
+        with switch_cwd(config_dir):
+            output_dir = os.path.abspath(jobcfg['output-dir'])
+    else:
+        # If no output-dir was specified, then we place it in the
+        # current (execution) directory, named according to the snapshot_tag
+        output_dir = os.path.abspath(snapshot_tag)
+
+    return uuid, snapshot_tag, output_dir
+
+
 def _finalize_config_and_output_dir(cfg, config_dir):
     """
     This function encapsulates all logic related to overwriting the user's
@@ -190,8 +256,11 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
 
-    snapshot_tag = None
-    if syncfg['update-to']:
+    uuid, snapshot_tag, output_dir = determine_snapshot_tag(cfg, config_dir)
+    jobcfg['snapshot-tag'] = snapshot_tag
+    jobcfg['output-dir'] = output_dir
+
+    if uuid:
         uuid, snapshot_tag = resolve_snapshot_tag(
             syncfg['update-to']['server'],
             syncfg['update-to']['uuid'],
@@ -199,19 +268,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         )
         # Overwrite config UUID ref with the resolved (explicit) UUID
         syncfg['update-to']['uuid'] = uuid
-        snapshot_tag = jobcfg['snapshot-tag'] = (jobcfg['snapshot-tag'] or snapshot_tag)
 
         # By default, the ROI config uses the same server/uuid as the synapses.
         roicfg['dvid']['server'] = roicfg['dvid']['server'] or syncfg['update-to']['server']
         roicfg['dvid']['uuid'] = roicfg['dvid']['uuid'] or uuid
-
-    if not snapshot_tag:
-        msg = (
-            "Since your synapses config does not refer to a DVID "
-            "snapshot UUID in the 'update-to' setting, you must supply "
-            "an explicit snapshot-tag to use in output file names."
-        )
-        raise RuntimeError(msg)
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.
@@ -219,21 +279,11 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         if isinstance(subcfg, Mapping) and 'processes' in subcfg and subcfg['processes'] is None:
             subcfg['processes'] = jobcfg['processes']
 
-    # If output-dir WASN'T specified, then we create one in the user's CURRENT directory
-    if not jobcfg['output-dir']:
-        output_dir = jobcfg['output-dir'] = os.path.abspath(snapshot_tag)
-
     # Convert file paths to absolute (if necessary).
     # Relative paths are interpreted w.r.t. to the config file, not the cwd.
     # Overwrite the paths with their absolute versions so subsequent functions
     # don't have to worry about relative paths.
     with switch_cwd(config_dir):
-        # If an output-dir WAS specified, then a relative output dir
-        # is relative to the config file.
-        # (If it wasn't specified, then we already converted to
-        # abspath (above) and this line has no effect.)
-        output_dir = jobcfg['output-dir'] = os.path.abspath(jobcfg['output-dir'])
-
         syncfg['syndir'] = os.path.abspath(syncfg['syndir'])
         if not syncfg['synapse-points'].startswith('{syndir}'):
             syncfg['synapse-points'] = os.path.abspath(syncfg['synapse-points'])
