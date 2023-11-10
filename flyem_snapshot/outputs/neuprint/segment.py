@@ -74,10 +74,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
     else:
         dataset_totals = roi_syn_df.query('roi in @inbounds_rois')[['pre', 'post']].sum()
 
-    neuron_prop_splits = [name.split(':', 1) for name in neuron_df.columns]
-    neuron_prop_splits = filter(lambda s: len(s) > 1 and s[0], neuron_prop_splits)
-    neuron_property_types = dict(neuron_prop_splits)
-    return neuron_property_types, dataset_totals, roi_totals
+    return neuron_df, dataset_totals, roi_totals
 
 
 @timed

@@ -208,16 +208,22 @@ def export_neuprint(cfg, point_df, partner_df, ann, body_sizes, tbar_nt, body_nt
     point_df, partner_df, inbounds_bodies, inbounds_rois = drop_out_of_bounds_bodies(
         cfg, point_df, partner_df)
 
-    neuron_property_types, dataset_totals, roi_totals = export_neuprint_segments(
+    neuron_df, dataset_totals, roi_totals = export_neuprint_segments(
         cfg, point_df, partner_df, neuprint_ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois)
 
     export_neuprint_meta(
-        cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets)
+        cfg,
+        last_mutation,
+        neuron_df,
+        dataset_totals,
+        roi_totals,
+        roisets
+    )
 
     export_neuroglancer_json_state(cfg, last_mutation)
 
     export_neuprint_indexes_script(
-        cfg, neuron_property_types.keys(), roi_totals.index, roisets)
+        cfg, neuron_df.columns, roi_totals.index, roisets)
 
     point_df, partner_df = restrict_synapses_to_roiset(
         cfg, 'restrict-connectivity-to-roiset', point_df, partner_df)

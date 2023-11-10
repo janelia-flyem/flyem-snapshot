@@ -498,7 +498,7 @@ META_PROPERTIES = [
 ]
 
 
-def export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types, dataset_totals, roi_totals, roisets):
+def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_totals, roisets):
     """
     """
     metacfg = cfg['meta']
@@ -546,13 +546,17 @@ def export_neuprint_meta(cfg, last_mutation, neuprint_ann, neuron_property_types
     # These were determined during the snapshot export.
     meta['totalPreCount'] = dataset_totals['pre']
     meta['totalPostCount'] = dataset_totals['post']
+
+    neuron_prop_splits = [name.split(':', 1) for name in neuron_df.columns]
+    neuron_prop_splits = filter(lambda s: len(s) > 1 and s[0], neuron_prop_splits)
+    neuron_property_types = dict(neuron_prop_splits)
     meta['neuronProperties'] = neuron_property_types
 
     # These are created with info from the config (and annotations).
     rh = load_roi_hierarchy(metacfg['roiHierarchy'], roisets)
     meta['roiHierarchy'] = construct_neuprint_roi_hierarchy(rh)
     meta['roiInfo'] = _load_roi_info(metacfg, roi_totals, rh)
-    meta['neuronColumns'] = _load_neuron_columns(metacfg, neuprint_ann)
+    meta['neuronColumns'] = _load_neuron_columns(metacfg, neuron_df)
 
     # Just for debug
     dump_json(meta, 'neuprint/Neuprint_Meta_debug.json')
@@ -601,7 +605,8 @@ def _load_roi_info(metacfg, roi_totals, roi_hierarchy):
     return roi_info
 
 
-def _load_neuron_columns(metacfg, neuprint_ann):
+def _load_neuron_columns(metacfg, neuron_df):
+    neuron_df = neuron_df.rename(columns={c: c.split(':')[0] for c in neuron_df.columns})
     neuron_columns = copy.deepcopy(metacfg['neuronColumns'])
     for item in neuron_columns:
         col = item['id']
@@ -611,7 +616,7 @@ def _load_neuron_columns(metacfg, neuprint_ann):
             # Note:
             #   Empty strings were already removed when the annotations
             #   were prepped for neuprint, so none of these choices will be "".
-            item['choices'] = sorted(neuprint_ann[col].dropna().unique())
+            item['choices'] = sorted(neuron_df[col].dropna().unique())
     return neuron_columns
 
 

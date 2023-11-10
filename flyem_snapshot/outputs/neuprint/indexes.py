@@ -26,7 +26,7 @@ IndexesSettingsSchema = {
 }
 
 
-def export_neuprint_indexes_script(cfg, neuron_prop_names, roi_names, roisets):
+def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, roisets):
     """
     Using the jinja template stored in create-indexes.cypher,
     export a script of cypher commands that will create indexes for all
@@ -53,6 +53,8 @@ def export_neuprint_indexes_script(cfg, neuron_prop_names, roi_names, roisets):
     #   our script adds a uniqueness constraint, which automatically
     #   creates an index, too. (We'll get an error from neo4j if we
     #   attempt to create an additional index.)
+    neuron_prop_splits = [name.split(':', 1) for name in neuron_columns if ':' in name]
+    neuron_prop_names = [name for (name, dtype) in neuron_prop_splits if name and dtype != "IGNORE"]
     neuron_prop_names = sorted(set(neuron_prop_names) - exclude_props - {'bodyId'})
     roi_names = sorted(set(roi_names) - exclude_props - exclude_rois)
 
