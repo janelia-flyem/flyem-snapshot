@@ -11,7 +11,7 @@ import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
 from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64, dump_json
-from neuclease.dvid.labelmap import fetch_mutations, fetch_complete_mappings, fetch_bodies_for_many_points
+from neuclease.dvid.labelmap import fetch_mapping, fetch_mutations, fetch_complete_mappings, fetch_bodies_for_many_points
 
 
 logger = logging.getLogger(__name__)
@@ -135,10 +135,16 @@ def load_synapses(cfg, snapshot_tag):
             cfg['update-to']['uuid'],
             cfg['update-to']['instance'],
         )
-        mutations, mapping = _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag)
-        with Timer(f"Updating supervoxels/bodies for UUID {dvid_seg[1][:6]}", logger):
-            # This adds/updates 'sv' and 'body' columns to point_df
-            fetch_bodies_for_many_points(*dvid_seg, point_df, mutations, mapping, processes=cfg['processes'])
+
+        if len(point_df) < 1_000_000:
+            # This fast path is convenient for small tests.
+            point_df['body'] = fetch_mapping(*dvid_seg, point_df['sv'].values, batch_size=1000, threads=cfg['processes'])
+            mutations = fetch_mutations(*dvid_seg, dag_filter='leaf-only')
+        else:
+            mutations, mapping = _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag)
+            with Timer(f"Updating supervoxels/bodies for UUID {dvid_seg[1][:6]}", logger):
+                # This adds/updates 'sv' and 'body' columns to point_df
+                fetch_bodies_for_many_points(*dvid_seg, point_df, mutations, mapping, processes=cfg['processes'])
 
     if 'body' not in point_df.columns:
         raise RuntimeError(
