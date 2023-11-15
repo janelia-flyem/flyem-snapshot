@@ -19,6 +19,10 @@ FlatConnectomeSchema = {
             "type": "boolean",
             "default": True,
         },
+        "roi-set": {
+            "type": "string",
+            "default": "primary"
+        }
     }
 }
 
@@ -34,6 +38,8 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     if not cfg['export-connectome']:
         return
 
+    roiset = cfg['roi-set']
+
     os.makedirs('flat-connectome', exist_ok=True)
 
     # If the connectome export files already exist, then skip this function.
@@ -42,7 +48,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
         return
 
     with Timer("Constructing synapse partner export", logger):
-        partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', 'roi']]
+        partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', roiset]]
 
         # Add conf_pre, conf_post
         partner_export_df = (
@@ -61,12 +67,12 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
         partner_export_df[['z_pre', 'y_pre', 'x_pre']] = decode_coords_from_uint64(partner_export_df['pre_id'].values)
         partner_export_df[['z_post', 'y_post', 'x_post']] = decode_coords_from_uint64(partner_export_df['post_id'].values)
 
-        # In the original point_df, the 'roi' column was determined according to the post location.
-        # Rename to roi_post to make that clear for consumers of this table.
-        partner_export_df = partner_export_df.rename(columns={'roi': 'roi_post'})
+        # In the original point_df, the roi column was determined according to the post location.
+        # Rename with _post suffix to make that clear for consumers of this table.
+        partner_export_df = partner_export_df.rename(columns={roiset: f'{roiset}_post'})
         partner_cols = [
             'x_pre', 'y_pre', 'z_pre', 'body_pre', 'conf_pre',
-            'x_post', 'y_post', 'z_post', 'body_post', 'conf_post', 'roi_post']
+            'x_post', 'y_post', 'z_post', 'body_post', 'conf_post', f'{roiset}_post']
         partner_export_df = partner_export_df[partner_cols]
 
     with Timer("Writing synapse partner export", logger):
