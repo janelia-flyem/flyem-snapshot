@@ -5,6 +5,7 @@ import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
 from neuclease.util import Timer, decode_coords_from_uint64
+from neuclease.misc.completeness import ranked_synapse_counts
 
 logger = logging.getLogger(__name__)
 
@@ -121,4 +122,23 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
         feather.write_feather(
             primary_connectome,
             f'flat-connectome/connectome-weights-{snapshot_tag}-minconf-{min_conf}-primary-only.feather'
+        )
+
+    with Timer("Computing ranked body stats table", logger):
+        # A version of this table is also exported for each 'report' in the config,
+        # but we also export it as part of the 'flat' connectome export,
+        # and we include type/instance.
+        syn_counts_df = ranked_synapse_counts(point_df, partner_df, body_annotations_df=ann)
+        syn_counts_df = syn_counts_df.rename(columns={
+            'OutputPartners': 'downstream',
+            'PreSyn': 'pre',
+            'PostSyn': 'post',
+            'SynWeight': 'synweight'
+        })
+        body_stats = syn_counts_df.merge(ann[['type', 'instance', 'group']], 'left', on='body')
+
+    with Timer("Writing ranked body stats table", logger):
+        feather.write_feather(
+            body_stats.reset_index(),
+            f'flat-connectome/body-stats-{snapshot_tag}-minconf-{min_conf}.feather'
         )
