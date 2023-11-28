@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from collections import namedtuple
 
 import numpy as np
 import pandas as pd
@@ -122,35 +123,7 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
     point_df = point_df.copy()
     roisets = {}
     for roiset_name, roiset_cfg in cfg['roi-sets'].items():
-        roi_ids = roiset_cfg['rois']
-        if isinstance(roi_ids, str) and roi_ids.endswith('.json'):
-            roi_ids = json.load(open(roi_ids, 'r'))
-        elif isinstance(roi_ids, list):
-            roi_ids = dict(zip(roi_ids, range(1, len(roi_ids)+1)))
-
-        if isinstance(roi_ids, str):
-            # If roi_ids is still a string, it must be a valid format string,
-            # and it shouldn't give the same result for ID 0 as ID 1
-            assert eval(f'f"{roi_ids}"', None, {'x': 1}) != eval(f'f"{roi_ids}"', None, {'x': 0})  # pylint: disable=eval-used
-        else:
-            assert isinstance(roi_ids, dict)
-
-        if roiset_cfg['source'] == "synapse-point-table":
-            _load_roi_col(roiset_name, roi_ids, point_df)
-        else:
-            if bool(roiset_cfg['labelmap']) != (roiset_cfg['source'] == 'dvid-labelmap'):
-                raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
-
-            roi_vol, roi_box = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], cfg['dvid'], cfg['processes'])
-            if isinstance(roi_ids, str):
-                # Now we can compute the mapping from name to label
-                unique_ids = pd.unique(roi_vol.reshape(-1))
-                roi_ids = {
-                    eval(f'f"{roi_ids}"', None, {'x': x}): x  # pylint: disable=eval-used
-                    for x in unique_ids if x != 0
-                }
-            extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
-
+        roi_ids = _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, cfg['dvid'], cfg['processes'])
         roisets[roiset_name] = roi_ids
 
     # Merge those extracted ROI values onto the partner_df, too.
@@ -173,6 +146,63 @@ def load_rois(cfg, snapshot_tag, point_df, partner_df):
             f'tables/partner_df-{snapshot_tag}.feather'
         )
     return point_df, partner_df, roisets
+
+
+def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, processes):
+    """
+    Ensure that point_df contains name and label columns for the given roiset,
+    and that the name column is of Categorical dtype.
+    Modifies point_df IN-PLACE.
+
+    Returns the dict of roi_ids which was either loaded directly from the
+    user's config or extracted from the ROI data itself.
+
+    There are different possible sources of the ROI column data,
+    depending on the 'source' specified in the user's config:
+
+        - If the user chose to pre-populate the synapse table with the ROI column,
+          then we just load the ROI values and assign roi_ids if necessary.
+        - If the user chose to provide an ROI volume (from DVID),
+          then we load the volume and then extract the ROI labels from the
+          appropriate locations in the volume.
+
+    FIXME:
+        Right now we emit two columns: one for ROI name and another for the
+        corresponding integer segment ID.
+        It is redundant and wasteful to emit two columns for each roiset (name and label).
+        It should be feasible to just use a single Categorical column,
+        eliminating the need for a '{roiset}_label' column.
+    """
+    roi_ids = roiset_cfg['rois']
+    if isinstance(roi_ids, str) and roi_ids.endswith('.json'):
+        roi_ids = json.load(open(roi_ids, 'r'))
+    elif isinstance(roi_ids, list):
+        roi_ids = dict(zip(roi_ids, range(1, len(roi_ids)+1)))
+
+    assert isinstance(roi_ids, (dict, str))
+    if isinstance(roi_ids, str):
+        # If roi_ids is still a string, it must be a valid format string,
+        # and it shouldn't give the same result for ID 0 as ID 1
+        assert eval(f'f"{roi_ids}"', None, {'x': 1}) != eval(f'f"{roi_ids}"', None, {'x': 0})  # pylint: disable=eval-used
+
+    if roiset_cfg['source'] == "synapse-point-table":
+        _load_roi_col(roiset_name, roi_ids, point_df)
+        return roi_ids
+
+    if bool(roiset_cfg['labelmap']) != (roiset_cfg['source'] == 'dvid-labelmap'):
+        raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
+
+    roi_vol, roi_box = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], dvid_cfg, processes)
+    if isinstance(roi_ids, str):
+        # Now we can compute the mapping from name to label
+        unique_ids = pd.unique(roi_vol.reshape(-1))
+        roi_ids = {
+            eval(f'f"{roi_ids}"', None, {'x': x}): x  # pylint: disable=eval-used
+            for x in unique_ids if x != 0
+        }
+    extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
+
+    return roi_ids
 
 
 def _load_roi_col(roiset_name, roi_ids, point_df):
@@ -209,7 +239,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
         )
         raise RuntimeError(msg)
 
-    # Ensure that the string column is categorical
+    # Ensure categorical
     if not isinstance(point_df[roiset_name].dtype, pd.CategoricalDtype):
         point_df[roiset_name] = point_df[roiset_name].astype('category')
 
@@ -235,7 +265,8 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
     Load an ROI volume, either from a list of DVID 'roi' instances,
     or from a single low-res DVID labelmap instance.
 
-    If possible, load it from a locally cached copy.
+    If possible, load it from a previously cached copy without loading from DVID.
+    If not, load from DVID and cache the volume on disk before returning.
 
     Args:
         roiset_name:
@@ -245,30 +276,31 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
             or a python expression which can produce a string for each unique ID in a labelmap volume.
         roi_labelmap_name:
             The name of a low-res (256nm) segmentation that has the ROI segments.
-        snapshot_seg:
-            The main neuron segmentation's (server, uuid, instance).
+        dvid_cfg:
+            The 'dvid' portion of the roi volume config,
+            which contains the 'server', and 'uuid'.
+        processes:
+            How many processes to use when reading from DVID.
 
     Returns:
         roi_vol, roi_box (both in scale-5 resolution)
     """
+    cache = RoiVolCache(roiset_name, roi_ids)
+    roi_vol, roi_box = cache.load()
+    if roi_vol:
+        return roi_vol, roi_box
+
+    roi_vol, roi_box = _load_roi_vol_from_dvid(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes)
+    cache.save(roi_vol, roi_box)
+    return roi_vol, roi_box
+
+
+def _load_roi_vol_from_dvid(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
     dvid_node = (dvid_cfg['server'], dvid_cfg['uuid'])
     if not all(dvid_node):
         raise RuntimeError(
             f"Can't read {roiset_name} ROIs from DVID. "
             "You didn't supply DVID server/uuid to read from.")
-
-    vol_cache_name = f'volumes/{roiset_name}-vol.npy'
-    box_cache_name = f'volumes/{roiset_name}-box.json'
-    ids_cache_name = f'volumes/{roiset_name}-ids.json'
-    if all(os.path.exists(p) for p in (vol_cache_name, box_cache_name, ids_cache_name)):
-        cached_ids = json.load(open(ids_cache_name, 'r'))
-        if cached_ids != roi_ids:
-            logger.warning(f"Can't use cached volume for {roiset_name}: cached roi_ids don't match!")
-        else:
-            with Timer(f"Loading {box_cache_name}", logger):
-                roi_vol = np.load(vol_cache_name)
-                roi_box = np.array(json.load(open(box_cache_name, 'r')))
-                return roi_vol, roi_box
 
     if roi_labelmap_name:
         roi_seg = (*dvid_node, roi_labelmap_name)
@@ -286,17 +318,62 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
             roi_vol = fetch_labelmap_voxels_chunkwise(*roi_seg, roi_box, progress=False)
             dtype = narrowest_dtype(roi_vol.max(), signed=None)
             roi_vol = roi_vol.astype(dtype)
-    else:
-        if isinstance(roi_ids, str):
-            raise RuntimeError(
-                f"If you didn't supply a labelmap volume from which to fetch the {roiset_name} "
-                "ROIs, then you must supply a list of ROI instance names to fetch from DVID."
-            )
-        roi_vol, roi_box, _ = fetch_combined_roi_volume(*dvid_node, roi_ids, processes=processes)
+            return roi_vol, roi_box
 
-    with Timer(f"Writing {vol_cache_name}", logger):
-        np.save(vol_cache_name, roi_vol)
-        dump_json(roi_box, box_cache_name, unsplit_int_lists=True)
-        dump_json(roi_ids, ids_cache_name)
-
+    if isinstance(roi_ids, str):
+        raise RuntimeError(
+            f"If you didn't supply a labelmap volume from which to fetch the {roiset_name} "
+            "ROIs, then you must supply a list of ROI instance names to fetch from DVID."
+        )
+    roi_vol, roi_box, _ = fetch_combined_roi_volume(*dvid_node, roi_ids, processes=processes)
     return roi_vol, roi_box
+
+
+class RoiVolCache:
+    """
+    Utility class for loading/saving a cached ROI volume and its box on disk.
+    The segment IDs are stored and comapared against the requested IDs
+    to ensure that the cached volume is valid to be used.
+    """
+
+    CacheFiles = namedtuple('CacheFiles', 'vol box ids')
+
+    def __init__(self, roiset_name, roi_ids):
+        self.roiset_name = roiset_name
+        self.roi_ids = roi_ids
+        self.files = RoiVolCache.CacheFiles(
+            f'volumes/{roiset_name}-vol.npy',
+            f'volumes/{roiset_name}-box.json',
+            f'volumes/{roiset_name}-ids.json'
+        )
+
+    def load(self):
+        """
+        Load the cached ROI volume from disk.
+        If the ROI segment IDs stored on disk don't match the IDs
+        this cache was initialized with, then the stored files
+        aren't valid and can't be used.
+
+        If the stored file doesn't exist or isn't valid for the given IDs,
+        then None is returned.
+        """
+        files = self.files
+        if not all(os.path.exists(p) for p in files):
+            return None, None
+
+        stored_ids = json.load(open(files.ids, 'r'))
+        if stored_ids != self.roi_ids:
+            logger.warning(f"Can't use cached volume for {self.roiset_name}: cached roi_ids don't match!")
+            return None, None
+
+        with Timer(f"Loading cached volume: {files.box}", logger):
+            roi_vol = np.load(files.vol)
+            roi_box = np.array(json.load(open(files.box, 'r')))
+            return roi_vol, roi_box
+
+    def save(self, roi_vol, roi_box):
+        files = self.files
+        with Timer(f"Writing {files.vol}", logger):
+            np.save(files.vol, roi_vol)
+            dump_json(roi_box, files.box, unsplit_int_lists=True)
+            dump_json(self.roi_ids, files.ids)
