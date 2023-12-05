@@ -1,0 +1,8 @@
+feather-format
+ujson
+bokeh
+holoviews
+hvplot
+neuclease
+confiddler
+jinja2

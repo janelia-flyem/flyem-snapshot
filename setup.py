@@ -6,6 +6,10 @@ import versioneer
 
 # For now, requirements are only specified in the conda recipe, not here.
 
+with open('requirements.txt') as f:
+    requirements = f.read().splitlines()
+    requirements = [l for l in requirements if not l.strip().startswith('#')]
+
 setup(
     name='flyem-snapshot',
     version=versioneer.get_version(),
@@ -14,6 +18,7 @@ setup(
     url='https://github.com/janelia-flyem/flyem-snapshot',
     packages=find_packages(),
     include_package_data=True,
+    install_requires=requirements,
     entry_points={
         'console_scripts': [
             'flyem-snapshot = flyem_snapshot.bin.flyem_snapshot_entrypoint:main',

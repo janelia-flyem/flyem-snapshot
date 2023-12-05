@@ -1,0 +1,36 @@
+{% set data = load_setup_py_data() %}
+
+package:
+  name: flyem-snapshot
+
+  version: {{ data['version'] }}
+
+source:
+  path: ..
+
+build:
+  script: python setup.py install --single-version-externally-managed --record=record.txt
+  noarch: python
+
+requirements:
+  build:
+    - python >=3.10
+    - setuptools
+    - versioneer
+  run:
+    - python >=3.10
+    # dependencies are defined in setup.py
+    {% for dep in data['install_requires'] %}
+    - {{ dep.lower() }}
+    {% endfor %}
+    {# raw is for ignoring templating with cookiecutter, leaving it for use with conda-build #}
+
+test:
+  imports:
+    - flyem_snapshot.outputs
+
+about:
+  home: https://github.com/janelia-flyem/flyem-snapshot
+  summary: Generate connectome exports, neuprint databases and reports from flat files and DVID checkpoints.
+  license: BSD-3-Clause
+  license_file: LICENSE
