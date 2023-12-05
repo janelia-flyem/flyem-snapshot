@@ -1,0 +1,189 @@
+"""
+Compare neuronjson annotations from DVID/Clio with the Neuron/Segment
+properties from Neuprint, and update the Neuprint properties to match
+DVID/Clio if differences are found.
+
+Only bodies which already exist in neuprint and still exist in Clio will be updated.
+Others are ignored.
+
+Requires admin access to the neuprint server.
+Set NEUPRINT_APPLICATION_CREDENTIALS in your environment before running this script.
+
+Example:
+
+    update-neuprint-annotations emdata6.int.janelia.org:9000 ':master' segmentation_annotations neuprint-cns.janelia.org cns
+
+TODO:
+    This script has been tested with string properties from DVID/Clio.
+    Manually placed points (e.g. root_position) have not been tested and might not work yet.
+"""
+import os
+import logging
+import argparse
+from collections import namedtuple
+
+logger = logging.getLogger(__name__)
+DvidDetails = namedtuple('DvidInstance', 'server uuid instance')
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        '--output-directory', '-o',
+        help="Optional. Export summary files to an output directory."
+             "If the directory already contains summary files from a prior run, they'll be overwritten.")
+    parser.add_argument('dvid_server')
+    parser.add_argument('dvid_uuid')
+    parser.add_argument('dvid_instance')
+    parser.add_argument('neuprint_server')
+    parser.add_argument('neuprint_dataset')
+    args = parser.parse_args()
+
+    from neuclease import configure_default_logging
+    configure_default_logging()
+
+    dvid_details = DvidDetails(
+        args.dvid_server,
+        args.dvid_uuid,
+        args.dvid_instance
+    )
+
+    from neuprint import Client
+    neuprint_client = Client(
+        args.neuprint_server,
+        args.neuprint_dataset
+    )
+
+    clio_df, neuprint_df, changemask, commands = update_neuprint_annotations(dvid_details, neuprint_client)
+
+    if (d := args.output_directory):
+        logger.info(f"Writing summary files to {d}")
+        os.makedirs(d, exist_ok=True)
+        clio_df.to_csv(f'{d}/from-dvid.csv', header=True, index=True)
+        neuprint_df.to_csv(f'{d}/neuprint-original.csv', header=True, index=True)
+        changemask.to_csv(f'{d}/changemask.csv', header=True, index=True)
+        with open(f'{d}/cypher-update-commands.cypher', 'w') as f:
+            f.write('\n'.join(commands))
+
+    logger.info("DONE")
+
+
+def update_neuprint_annotations(dvid_details, client=None):
+    """
+    Compare neuronjson annotations from DVID/Clio with the Neuron/Segment
+    properties from Neuprint, and update the Neuprint properties to match
+    DVID/Clio if differences are found.
+
+    Only bodies which already exist in neuprint and still exist in Clio will be updated.
+    Others are ignored.
+
+    TODO:
+        This function has been tested with string properties from DVID/Clio.
+        Manually placed points (e.g. root_position) have not been tested and might not work yet.
+
+    Args:
+        dvid_details:
+            tuple (server, uuid, instance)
+        client:
+            neuprint Client
+            Requires admin access to the neuprint server.
+
+    Returns:
+        clio_df, neuprint_df, changemask, cypher_commands
+    """
+    # Late imports to speed up --help message.
+    import numpy as np
+    import pandas as pd
+
+    from neuclease.util import Timer, tqdm_proxy
+    from neuclease.dvid import fetch_all
+    from neuprint import fetch_neurons, NeuronCriteria as NC
+    from neuprint.client import default_client
+    from neuprint.admin import Transaction
+
+    from flyem_snapshot.outputs.neuprint.annotations import neuprint_segment_annotations
+
+    if client is None:
+        client = default_client()
+
+    with Timer("Fetching neuronjson body annotations from DVID", logger):
+        # We don't yet support annotation property mappings with custom column name mappings.
+        # (That would require reading the snapshot config.)
+        cfg = {'annotation-property-names': {}}
+        clio_df = fetch_all(*dvid_details).drop(columns=['json'])
+
+        # Convert to neuprint column names and values.
+        clio_df = neuprint_segment_annotations(cfg, clio_df)
+
+    # Fetch all Segment annotations that are also in Clio.
+    # For a compact query, we first fetch all Neurons,
+    # and then follow up with a query to fetch whatever Clio bodies that didn't
+    # catch, which must be mere Segments in neuprint.
+    with Timer("Fetching Neuprint Neuron properties", logger):
+        neuprint_df, _syndist = fetch_neurons(NC(client=client), client=client)
+        clio_segments = set(clio_df.index) - set(neuprint_df['bodyId'])
+        segment_df, _ = fetch_neurons(sorted(clio_segments), client=client)
+        neuprint_df = pd.concat((neuprint_df, segment_df))
+
+    # Now align the two dataframes so they can be compared.
+    # We handle all columns from clio, but only bodies which are in both.
+    missing_cols = set(clio_df.columns) - set(neuprint_df.columns)
+    neuprint_df = neuprint_df.assign(**{col: None for col in missing_cols})
+
+    bodies = neuprint_df['bodyId'].rename('body')
+    neuprint_df = neuprint_df.set_index(bodies).sort_index()
+    neuprint_df, clio_df = neuprint_df.align(clio_df, 'inner', axis=None)
+
+    # Standardize on None as the null value (instead of NaN or "").
+    # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
+    clio_df = clio_df.fillna(np.nan).replace([np.nan, ""], [None, None])
+    neuprint_df = neuprint_df.fillna(np.nan).replace([np.nan, ""], [None, None])
+
+    # Filter for rows and columns which contain at least one change.
+    changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
+    changemask = changemask.loc[changemask.any(axis=1), changemask.any(axis=0)]
+
+    commands = []
+    for body, ischanged in changemask.T.items():
+        props = ischanged[ischanged].index
+        propvals = clio_df.loc[body, props].items()
+        updates = ', '.join(f'n.`{prop}` = {_cypher_literal(val)}' for prop, val in propvals)
+
+        # It turns out it is *much* faster to perform this SET
+        # using :Neuron instead of :Segment if possible.
+        if body in clio_segments:
+            label = 'Segment'
+        else:
+            label = 'Neuron'
+        commands.append(f"MATCH (n:{label} {{bodyId: {body}}}) SET {updates}")
+
+    # TODO: Is it best to send all of our Cypher commands within
+    #       a single big transaction, or many small transactions?
+    msg = f"Updating {len(changemask)} Segments and {changemask.sum().sum()} properties in total"
+    with Timer(msg, logger), Transaction(client.dataset, client=client) as t:
+        for q in tqdm_proxy(commands):
+            t.query(q)
+
+    # Restrict summary DataFrames to the minimal subset
+    # of bodies/columns containing changes.
+    clio_df = clio_df.loc[changemask.index, changemask.columns]
+    neuprint_df = neuprint_df.loc[changemask.index, changemask.columns]
+    return clio_df, neuprint_df, changemask, commands
+
+
+def _cypher_literal(x):
+    """
+    Represent a Python value as a Cypher literal.
+    This implementation is not at all comprehensive, but it
+    works for None and strings, which is good enough for now.
+    """
+    if x is None:
+        return 'NULL'
+    return repr(x)
+
+
+if __name__ == "__main__":
+    main()
