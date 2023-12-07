@@ -99,46 +99,19 @@ def update_neuprint_annotations(dvid_details, client=None):
         the relevant DataFrames that led to those commands.
     """
     # Late imports to speed up --help message.
-    import numpy as np
-    from neuclease.util import Timer, tqdm_proxy
+    from neuclease.util import Timer
     from neuprint.client import default_client
-    from neuprint.admin import Transaction
 
     if client is None:
         client = default_client()
 
     clio_df, neuprint_df, clio_segments = _fetch_comparison_dataframes(dvid_details, client)
+    changemask = _compute_changemask(clio_df, neuprint_df)
+    commands = _generate_commands(clio_df, changemask, clio_segments)
 
-    # Find the positions with different values.
-    changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
-
-    # Special handling for float columns: We don't demand exact equality.
-    float_cols = (clio_df.fillna(np.nan).dtypes == float) & (neuprint_df.fillna(np.nan).dtypes == float)
-    changemask.loc[:, float_cols] &= ~np.isclose(clio_df.fillna(np.nan).loc[:, float_cols], neuprint_df.fillna(np.nan).loc[:, float_cols])
-
-    # Filter for rows and columns which contain at least one change.
-    changemask = changemask.loc[changemask.any(axis=1), changemask.any(axis=0)]
-
-    commands = []
-    for body, ischanged in changemask.T.items():
-        props = ischanged[ischanged].index
-        propvals = clio_df.loc[body, props].items()
-        updates = ', '.join(f'n.`{prop}` = {_cypher_literal(val)}' for prop, val in propvals)
-
-        # It turns out it is *much* faster to perform this SET
-        # using :Neuron instead of :Segment if possible.
-        if body in clio_segments:
-            label = 'Segment'
-        else:
-            label = 'Neuron'
-        commands.append(f"MATCH (n:{label} {{bodyId: {body}}}) SET {updates}")
-
-    # TODO: Is it best to send all of our Cypher commands within
-    #       a single big transaction, or many small transactions?
     msg = f"Updating {len(changemask)} Segments and {changemask.sum().sum()} properties in total"
-    with Timer(msg, logger), Transaction(client.dataset, client=client) as t:
-        for q in tqdm_proxy(commands):
-            t.query(q)
+    with Timer(msg, logger):
+        _post_commands(commands, client)
 
     # Restrict summary DataFrames to the minimal subset
     # of bodies/columns containing changes.
@@ -165,7 +138,6 @@ def _fetch_comparison_dataframes(dvid_details, client):
     from neuclease.dvid import fetch_all
     from neuclease.util import Timer
     from neuprint import fetch_neurons, NeuronCriteria as NC
-
     from flyem_snapshot.outputs.neuprint.annotations import neuprint_segment_annotations
 
     with Timer("Fetching neuronjson body annotations from DVID", logger):
@@ -217,6 +189,51 @@ def _fetch_comparison_dataframes(dvid_details, client):
     neuprint_df = neuprint_df.fillna(np.nan).replace([np.nan, ""], [None, None])
 
     return clio_df, neuprint_df, clio_segments
+
+
+def _compute_changemask(clio_df, neuprint_df):
+    import numpy as np
+
+    # Find the positions with different values.
+    changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
+
+    # Special handling for float columns: We don't demand exact equality.
+    float_cols = (clio_df.fillna(np.nan).dtypes == float) & (neuprint_df.fillna(np.nan).dtypes == float)
+    changemask.loc[:, float_cols] &= ~np.isclose(clio_df.fillna(np.nan).loc[:, float_cols], neuprint_df.fillna(np.nan).loc[:, float_cols])
+
+    # Filter for rows and columns which contain at least one change.
+    changemask = changemask.loc[changemask.any(axis=1), changemask.any(axis=0)]
+
+    return changemask
+
+
+def _generate_commands(clio_df, changemask, clio_segments):
+    commands = []
+    for body, ischanged in changemask.T.items():
+        props = ischanged[ischanged].index
+        propvals = clio_df.loc[body, props].items()
+        updates = ', '.join(f'n.`{prop}` = {_cypher_literal(val)}' for prop, val in propvals)
+
+        # It turns out it is *much* faster to perform this SET
+        # using :Neuron instead of :Segment if possible.
+        if body in clio_segments:
+            label = 'Segment'
+        else:
+            label = 'Neuron'
+        commands.append(f"MATCH (n:{label} {{bodyId: {body}}}) SET {updates}")
+
+    return commands
+
+
+def _post_commands(commands, client):
+    from neuclease.util import tqdm_proxy
+    from neuprint.admin import Transaction
+
+    # TODO: Is it best to send all of our Cypher commands within
+    #       a single big transaction, or many small transactions?
+    with Transaction(client.dataset, client=client) as t:
+        for q in tqdm_proxy(commands):
+            t.query(q)
 
 
 def _cypher_literal(x):
