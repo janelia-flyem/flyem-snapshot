@@ -33,11 +33,11 @@ def main():
     )
     parser.add_argument(
         '--output-directory', '-o',
-        help="Optional. Export summary files to an output directory."
+        help="Optional. Export summary files to an output directory. "
              "If the directory already contains summary files from a prior run, they'll be overwritten.")
     parser.add_argument(
         '--dry-run', action='store_true',
-        help="If given, generate the output files (including cypher commands) for the update, but don't"
+        help="If given, generate the output files (including cypher commands) for the update, but don't "
              "actually execute the transaction to update neuprint."
     )
     parser.add_argument('dvid_server')
