@@ -99,6 +99,7 @@ def update_neuprint_annotations(dvid_details, client=None):
         the relevant DataFrames that led to those commands.
     """
     # Late imports to speed up --help message.
+    import numpy as np
     from neuclease.util import Timer, tqdm_proxy
     from neuprint.client import default_client
     from neuprint.admin import Transaction
@@ -108,8 +109,14 @@ def update_neuprint_annotations(dvid_details, client=None):
 
     clio_df, neuprint_df, clio_segments = _fetch_comparison_dataframes(dvid_details, client)
 
-    # Filter for rows and columns which contain at least one change.
+    # Find the positions with different values.
     changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
+
+    # Special handling for float columns: We don't demand exact equality.
+    float_cols = (clio_df.fillna(np.nan).dtypes == float) & (neuprint_df.fillna(np.nan).dtypes == float)
+    changemask.loc[:, float_cols] &= ~np.isclose(clio_df.fillna(np.nan).loc[:, float_cols], neuprint_df.fillna(np.nan).loc[:, float_cols])
+
+    # Filter for rows and columns which contain at least one change.
     changemask = changemask.loc[changemask.any(axis=1), changemask.any(axis=0)]
 
     commands = []
@@ -162,12 +169,13 @@ def _fetch_comparison_dataframes(dvid_details, client):
     from flyem_snapshot.outputs.neuprint.annotations import neuprint_segment_annotations
 
     with Timer("Fetching neuronjson body annotations from DVID", logger):
-        # We don't yet support annotation property mappings with custom column name mappings.
-        # (That would require reading the snapshot config.)
-        cfg = {'annotation-property-names': {}}
         clio_df = fetch_all(*dvid_details).drop(columns=['json'])
 
         # Convert to neuprint column names and values.
+        # BTW, we don't yet support annotation property mappings with
+        # config-defined column name mappings.
+        # (That would require reading the snapshot config.)
+        cfg = {'annotation-property-names': {}}
         clio_df = neuprint_segment_annotations(cfg, clio_df)
 
     # Fetch all Segment annotations that are also in Clio.
@@ -180,14 +188,28 @@ def _fetch_comparison_dataframes(dvid_details, client):
         segment_df, _ = fetch_neurons(sorted(clio_segments), client=client)
         neuprint_df = pd.concat((neuprint_df, segment_df))
 
-    # Now align the two dataframes so they can be compared.
+    bodies = neuprint_df['bodyId'].rename('body')
+    neuprint_df = neuprint_df.set_index(bodies).sort_index()
+
+    # In some cases (such as spatial points), what neuprint
+    # returns isn't what we need to WRITE.
+    # So process the values just like we did with clio_df.
+    neuprint_df = neuprint_segment_annotations(cfg, neuprint_df)
+
     # We handle all columns from clio, but only bodies which are in both.
     missing_cols = set(clio_df.columns) - set(neuprint_df.columns)
     neuprint_df = neuprint_df.assign(**{col: None for col in missing_cols})
 
-    bodies = neuprint_df['bodyId'].rename('body')
-    neuprint_df = neuprint_df.set_index(bodies).sort_index()
+    # Now align the two dataframes so they can be compared.
     neuprint_df, clio_df = neuprint_df.align(clio_df, 'inner', axis=None)
+
+    # Special handling for neurotransmitters:
+    # Neurotransmitters are supposed to be computed anew for each neuprint snapshot,
+    # not loaded into clio.  But for historical reasons, we did upload NT predictions into the MANC clio.
+    # We do NOT want to use those values to overwite neuprint.
+    nt_cols = [col for col in clio_df.columns if col.startswith('nt') or col.startswith('predictedNt')]
+    clio_df = clio_df.drop(columns=nt_cols)
+    neuprint_df = neuprint_df.drop(columns=nt_cols)
 
     # Standardize on None as the null value (instead of NaN or "").
     # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
