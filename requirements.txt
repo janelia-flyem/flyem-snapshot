@@ -3,6 +3,7 @@ ujson
 bokeh
 holoviews
 hvplot
-neuclease
-confiddler
 jinja2
+confiddler
+neuclease>=0.6.post0.dev91
+neuprint-python
