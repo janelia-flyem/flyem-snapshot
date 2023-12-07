@@ -35,6 +35,11 @@ def main():
         '--output-directory', '-o',
         help="Optional. Export summary files to an output directory."
              "If the directory already contains summary files from a prior run, they'll be overwritten.")
+    parser.add_argument(
+        '--dry-run', action='store_true',
+        help="If given, generate the output files (including cypher commands) for the update, but don't"
+             "actually execute the transaction to update neuprint."
+    )
     parser.add_argument('dvid_server')
     parser.add_argument('dvid_uuid')
     parser.add_argument('dvid_instance')
@@ -57,7 +62,7 @@ def main():
         args.neuprint_dataset
     )
 
-    clio_df, neuprint_df, changemask, commands = update_neuprint_annotations(dvid_details, neuprint_client)
+    clio_df, neuprint_df, changemask, commands = update_neuprint_annotations(dvid_details, args.dry_run, neuprint_client)
 
     if (d := args.output_directory):
         logger.info(f"Writing summary files to {d}")
@@ -71,7 +76,7 @@ def main():
     logger.info("DONE")
 
 
-def update_neuprint_annotations(dvid_details, client=None):
+def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
     """
     Compare neuronjson annotations from DVID/Clio with the Neuron/Segment
     properties from Neuprint, and update the Neuprint properties to match
@@ -109,9 +114,13 @@ def update_neuprint_annotations(dvid_details, client=None):
     changemask = _compute_changemask(clio_df, neuprint_df)
     commands = _generate_commands(clio_df, changemask, clio_segments)
 
-    msg = f"Updating {len(changemask)} Segments and {changemask.sum().sum()} properties in total"
-    with Timer(msg, logger):
-        _post_commands(commands, client)
+    if dry_run:
+        msg = f"Dry run: Skipping update of {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties"
+        logger.info(msg)
+    else:
+        msg = f"Updating {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties"
+        with Timer(msg, logger):
+            _post_commands(commands, client)
 
     # Restrict summary DataFrames to the minimal subset
     # of bodies/columns containing changes.
