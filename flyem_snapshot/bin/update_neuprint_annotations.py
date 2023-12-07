@@ -17,6 +17,7 @@ TODO:
     This script has been tested with string properties from DVID/Clio.
     Manually placed points (e.g. root_position) have not been tested and might not work yet.
 """
+import re
 import os
 import logging
 import argparse
@@ -245,14 +246,20 @@ def _post_commands(commands, client):
             t.query(q)
 
 
+POINT_PATTERN = re.compile(r'{x:\d+, y:\d+, z:\d+}')
+
+
 def _cypher_literal(x):
     """
     Represent a Python value as a Cypher literal.
     This implementation is not at all comprehensive, but it
-    works for None and strings, which is good enough for now.
+    works for None, strings, and neo4j spatial 3d points,
+    which is good enough for now.
     """
     if x is None:
         return 'NULL'
+    if isinstance(x, str) and POINT_PATTERN.match(x):
+        return f'point({x})'
     return repr(x)
 
 
