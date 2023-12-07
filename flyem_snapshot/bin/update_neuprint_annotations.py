@@ -65,7 +65,7 @@ def main():
 
     clio_df, neuprint_df, changemask, commands = update_neuprint_annotations(dvid_details, args.dry_run, neuprint_client)
 
-    if (d := args.output_directory):
+    if len(changemask) > 0 and (d := args.output_directory):
         logger.info(f"Writing summary files to {d}")
         os.makedirs(d, exist_ok=True)
         clio_df.to_csv(f'{d}/from-dvid.csv', header=True, index=True)
@@ -116,10 +116,12 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
     commands = _generate_commands(clio_df, changemask, clio_segments)
 
     if dry_run:
-        msg = f"Dry run: Skipping update of {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties"
+        msg = f"Dry run: Skipping update of {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties."
         logger.info(msg)
+    elif len(changemask) == 0:
+        logger.info("No out-of-date properties found.")
     else:
-        msg = f"Updating {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties"
+        msg = f"Updating {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties."
         with Timer(msg, logger):
             _post_commands(commands, client)
 
