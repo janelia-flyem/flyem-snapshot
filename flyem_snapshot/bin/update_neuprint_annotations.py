@@ -13,9 +13,7 @@ Example:
 
     update-neuprint-annotations emdata6.int.janelia.org:9000 ':master' segmentation_annotations neuprint-cns.janelia.org cns
 
-TODO:
-    This script has been tested with string properties from DVID/Clio.
-    Manually placed points (e.g. root_position) have not been tested and might not work yet.
+TODO: This doesn't yet modify Meta.lastDatabaseEdit when making updates.
 """
 import re
 import os
@@ -86,10 +84,6 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
     Only bodies which already exist in neuprint and still exist in Clio will be updated.
     Others are ignored.
 
-    TODO:
-        This function has been tested with string properties from DVID/Clio.
-        Manually placed points (e.g. root_position) have not been tested and might not work yet.
-
     TODO: Update Meta.lastDatabaseEdit when making updates.
 
     Args:
@@ -144,6 +138,9 @@ def _fetch_comparison_dataframes(dvid_details, client):
         Where clio_df and neuprint_df have the same columns and index,
         and clio_segments is the list of body IDs from DVID/Clio which are not labeled
         in Neuprint as :Neuron, so they must be matched via the :Segment label in Cypher queries.
+
+    Notes:
+        - Neurotransmitter columns are discarded.
     """
     import numpy as np
     import pandas as pd
@@ -199,7 +196,6 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
     clio_df = clio_df.fillna(np.nan).replace([np.nan, ""], [None, None])
     neuprint_df = neuprint_df.fillna(np.nan).replace([np.nan, ""], [None, None])
-
     return clio_df, neuprint_df, clio_segments
 
 
@@ -209,13 +205,19 @@ def _compute_changemask(clio_df, neuprint_df):
     # Find the positions with different values.
     changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
 
+    # This will ensure that all-float columns have float dtype.
+    clio_df = clio_df.fillna(np.nan)
+    neuprint_df = neuprint_df.fillna(np.nan)
+
     # Special handling for float columns: We don't demand exact equality.
-    float_cols = (clio_df.fillna(np.nan).dtypes == float) & (neuprint_df.fillna(np.nan).dtypes == float)
-    changemask.loc[:, float_cols] &= ~np.isclose(clio_df.fillna(np.nan).loc[:, float_cols], neuprint_df.fillna(np.nan).loc[:, float_cols])
+    float_cols = (clio_df.dtypes == float) & (neuprint_df.dtypes == float)
+    changemask.loc[:, float_cols] &= ~np.isclose(
+        clio_df.loc[:, float_cols],
+        neuprint_df.loc[:, float_cols]
+    )
 
     # Filter for rows and columns which contain at least one change.
     changemask = changemask.loc[changemask.any(axis=1), changemask.any(axis=0)]
-
     return changemask
 
 
@@ -241,8 +243,8 @@ def _post_commands(commands, client):
     from neuclease.util import tqdm_proxy
     from neuprint.admin import Transaction
 
-    # TODO: Is it best to send all of our Cypher commands within
-    #       a single big transaction, or many small transactions?
+    # Is it best to send all of our Cypher commands within a
+    # single big transaction like this, or many small transactions?
     with Transaction(client.dataset, client=client) as t:
         for q in tqdm_proxy(commands):
             t.query(q)
