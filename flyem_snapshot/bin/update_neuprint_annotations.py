@@ -243,10 +243,10 @@ def _post_commands(commands, client):
     from neuclease.util import tqdm_proxy
     from neuprint.admin import Transaction
 
-    # Is it best to send all of our Cypher commands within a
-    # single big transaction like this, or many small transactions?
-    with Transaction(client.dataset, client=client) as t:
-        for q in tqdm_proxy(commands):
+    # Send each command in its own transaction to avoid
+    # timeouts that occur with large transactions.
+    for q in tqdm_proxy(commands):
+        with Transaction(client.dataset, client=client) as t:
             t.query(q)
 
 
