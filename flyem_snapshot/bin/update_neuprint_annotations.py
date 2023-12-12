@@ -158,7 +158,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
         # Note: 'birthtime' is a legit column!
         time_cols = [c for c in clio_df.columns if c.endswith('_time')]
         timestamp = clio_df[time_cols].stack().max()
-        clio_df = clio_df.drop(columns=[time_cols])
+        clio_df = clio_df.drop(columns=time_cols)
 
         # Convert to neuprint column names and values.
         # BTW, we don't yet support annotation property mappings with
