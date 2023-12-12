@@ -200,9 +200,26 @@ def _fetch_comparison_dataframes(dvid_details, client):
 
 
 def _compute_changemask(clio_df, neuprint_df):
+    """
+    Compare the two DataFrames (which must already have
+    identical indexes and columns), and return a boolean DataFrame
+    indicating which positions in the original dataframes differ.
+
+    The result will be reduced to the minimal set of rows and columns
+    to represent the differing positions.  Only rows and columns with
+    at least one True entry will be preserved in the output; other
+    rows/columns will be dropped.
+
+    Special cases:
+        - Floating-point values will be compared with np.isclose()
+          instead of pure equality.
+        - Two null values are treated as equal to each other
+          (unlike default NaN behavior).
+    """
     import numpy as np
 
     # Find the positions with different values.
+    # If both are NaN/None, they're considered equal.
     changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
 
     # This will ensure that all-float columns have float dtype.
@@ -222,6 +239,26 @@ def _compute_changemask(clio_df, neuprint_df):
 
 
 def _generate_commands(clio_df, changemask, clio_segments):
+    """
+    Generate a list of Cypher commands to update the properties
+    highlighted in the given changemask.
+    This function just generates the Cypher commands;
+    it doesn't send them to the server.
+
+    Args:
+        clio_df:
+            DataFrame holding the new property values
+        changemask:
+            Boolean DataFrame indicating which positions in
+            clio_df hold the properties to send.
+        clio_segments:
+            A list of body IDs which must be matched via :Segment instead of :Neuron.
+            We prefer to use "MATCH (:Neuron)" by default, since that's much faster
+            than "MATCH (:Segment)". But if the node to alter is labeled only with
+            :Segment (not also :Neuron), we have no choice but to use "MATCH (:Segment)".
+    Returns:
+        list of str
+    """
     commands = []
     for body, ischanged in changemask.T.items():
         props = ischanged[ischanged].index
@@ -240,6 +277,10 @@ def _generate_commands(clio_df, changemask, clio_segments):
 
 
 def _post_commands(commands, client):
+    """
+    Send the list of cypher commands to the neuprint
+    server using a Transaction for each one.
+    """
     from neuclease.util import tqdm_proxy
     from neuprint.admin import Transaction
 
