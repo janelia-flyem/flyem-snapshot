@@ -105,9 +105,10 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
     if client is None:
         client = default_client()
 
-    clio_df, neuprint_df, clio_segments = _fetch_comparison_dataframes(dvid_details, client)
+    clio_df, neuprint_df, clio_segments, timestamp = _fetch_comparison_dataframes(dvid_details, client)
     changemask = _compute_changemask(clio_df, neuprint_df)
     commands = _generate_commands(clio_df, changemask, clio_segments)
+    _update_meta_neuron_properties(clio_df, dry_run, client)
 
     if dry_run:
         msg = f"Dry run: Skipping update of {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties."
@@ -118,6 +119,8 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
         msg = f"Updating {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties."
         with Timer(msg, logger):
             _post_commands(commands, client)
+
+        _update_meta_timestamp(timestamp, client)
 
     # Restrict summary DataFrames to the minimal subset
     # of bodies/columns containing changes.
@@ -150,7 +153,12 @@ def _fetch_comparison_dataframes(dvid_details, client):
     from flyem_snapshot.outputs.neuprint.annotations import neuprint_segment_annotations
 
     with Timer("Fetching neuronjson body annotations from DVID", logger):
-        clio_df = fetch_all(*dvid_details).drop(columns=['json'])
+        clio_df = fetch_all(*dvid_details, show='time').drop(columns=['json'])
+
+        # Note: 'birthtime' is a legit column!
+        time_cols = [c for c in clio_df.columns if c.endswith('_time')]
+        timestamp = clio_df[time_cols].stack().max()
+        clio_df = clio_df.drop(columns=[time_cols])
 
         # Convert to neuprint column names and values.
         # BTW, we don't yet support annotation property mappings with
@@ -196,7 +204,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
     clio_df = clio_df.fillna(np.nan).replace([np.nan, ""], [None, None])
     neuprint_df = neuprint_df.fillna(np.nan).replace([np.nan, ""], [None, None])
-    return clio_df, neuprint_df, clio_segments
+    return clio_df, neuprint_df, clio_segments, timestamp
 
 
 def _compute_changemask(clio_df, neuprint_df):
@@ -236,6 +244,72 @@ def _compute_changemask(clio_df, neuprint_df):
     # Filter for rows and columns which contain at least one change.
     changemask = changemask.loc[changemask.any(axis=1), changemask.any(axis=0)]
     return changemask
+
+
+def _update_meta_neuron_properties(clio_df, dry_run, client):
+    """
+    In the neuornt :Meta node, we maintain a dict of
+    all :Neuron properties and their types.
+
+    If the annotation sync will include NEW properties from DVID,
+    we need to ensure that those new properties are added to
+    the :Meta info.  Client libraries/functions such as
+    neuprint.fetch_neurons() depend on it.
+    """
+    import json
+    from neuprint.admin import Transaction
+    from flyem_snapshot.outputs.neuprint.util import neo4j_type_suffix
+
+    q = "MATCH (m:Meta) RETURN m.neuronProperties"
+    property_types = client.fetch_custom(q).iloc[0, 0]
+    if property_types is None:
+        logger.warning("Could not find Meta.neuronProperties in the database")
+        return
+
+    property_types = json.loads(property_types)
+    new_prop_cols = {*clio_df.columns} - {*property_types.keys()}
+    if not new_prop_cols:
+        return
+
+    if dry_run:
+        logger.info(f"Dry run: Not updating Meta.neuronProperties to add {new_prop_cols}")
+        return
+
+    logger.info(f"Updating Meta.neuronProperties to add {new_prop_cols}")
+    new_prop_types = {p: neo4j_type_suffix(clio_df[p]) for p in new_prop_cols}
+    property_types.update(new_prop_types)
+    with Transaction(client.dataset, client=client) as t:
+        q = f"""\
+            MATCH (m:Meta)
+            SET m.neuronProperties = '{json.dumps(property_types)}'
+        """
+        t.query(q)
+
+    client.fetch_neuron_keys.cache_clear()
+
+
+def _update_meta_timestamp(timestamp, client):
+    """
+    The :Meta node stores the lastDatabaseEdit, a timestamp which
+    is displayed in neuprintExplorer.
+
+    To distinguish between the timestamp of the original snapshot
+    and the timestamp of the most recently updated annotation property,
+    we don't REPLACE the last database edit.
+    Instead, we append a second timestamp to the string.
+    """
+    from neuprint.admin import Transaction
+
+    q = "MATCH (m: Meta) RETURN m.lastDatabaseEdit"
+    last_edit = client.fetch_custom(q).iloc[0, 0]
+    last_edit = last_edit or ''
+    last_edit = last_edit.split(' / ')[0]
+    last_edit += f' / {timestamp} (segment property update)'
+
+    cmd = f"MATCH (m: Meta) SET m.lastDatabaseEdit = '{last_edit}'"
+    logger.info(cmd)
+    with Transaction(client.dataset, client=client) as t:
+        t.query(cmd)
 
 
 def _generate_commands(clio_df, changemask, clio_segments):
