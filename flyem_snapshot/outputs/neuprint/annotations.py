@@ -28,6 +28,7 @@ CLIO_TO_NEUPRINT_PROPERTIES = {
     # Make sure these never appear in neuprint.
     'last_modified_by': '',
     'old_bodyids': '',
+    'old_type': '',
     'reviewer': '',
     'to_review': '',
     'typing_notes': '',
