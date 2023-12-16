@@ -287,7 +287,7 @@ def _load_roi_vol(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes):
     """
     cache = RoiVolCache(roiset_name, roi_ids)
     roi_vol, roi_box = cache.load()
-    if roi_vol:
+    if roi_vol is not None:
         return roi_vol, roi_box
 
     roi_vol, roi_box = _load_roi_vol_from_dvid(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, processes)
