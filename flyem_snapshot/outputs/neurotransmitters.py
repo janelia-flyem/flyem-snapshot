@@ -38,9 +38,7 @@ NeurotransmiterExportSchema = {
                 "so the final per-body averages will incorporate information from the tbars outside\n"
                 "the restriction ROI.\n",
             "default": "",
-            "roi-set": {
-                "type": "string"
-            }
+            "type": "string",
         }
     }
 }
