@@ -9,6 +9,7 @@ the generated CSV file will have only one row.
 """
 import re
 import copy
+import glob
 import json
 import logging
 from textwrap import dedent
@@ -17,7 +18,7 @@ from collections.abc import Sequence, Mapping
 import pandas as pd
 
 from confiddler import load_config
-from neuclease.util import dump_json
+from neuclease.util import dump_json, find_files
 
 from .util import append_neo4j_type_suffixes, NEUPRINT_TYPE_OVERRIDES
 
@@ -52,7 +53,7 @@ RoiHierarchyDefinition = {
         },
 
         # leaf children, expressed as a simple list
-        # instead of a dict where all values are null.
+        # instead of a dict of null values.
         {
             "type": "array",
             "items": {"type": "string"}
@@ -296,6 +297,21 @@ NeuprintMetaSchema = {
             "default": ["bodyId", "type", "status"]
         },
 
+        "cellTypeStaticPages": {
+            "type": "object",
+            "default": {},
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "default": ""
+                },
+                "pattern": {
+                    "type": "string",
+                    "default": r".*/([^/]*).html"
+                }
+            }
+        },
+
         "primaryRois": {
             "description": dedent("""\
                 A typical neuprint dataset includes ROIs which may overlap with one another.
@@ -477,6 +493,13 @@ def construct_neuprint_roi_hierarchy(rh):
     return _convert(rh)[0]
 
 
+def load_celltype_static_pages(cfg, types):
+    d = cfg['cellTypeStaticPages']['directory']
+    if not d:
+        assert 'FIXME'
+    paths = find_files(cfg['cellTypeStaticPages']['directory'], '*.html')
+
+
 # This is the complete list of :Meta properties.
 # See assert statement below.
 META_PROPERTIES = [
@@ -616,7 +639,7 @@ def _load_neuron_columns(metacfg, neuron_df):
             # Note:
             #   Empty strings were already removed when the annotations
             #   were prepped for neuprint, so none of these choices will be "".
-            item['choices'] = sorted(neuron_df[col].dropna().unique())
+            item['choices'] = sorted(neuron_df[col].drop_duplicates().dropna())
     return neuron_columns
 
 
