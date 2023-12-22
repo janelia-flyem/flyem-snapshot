@@ -78,7 +78,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Writing synapse partner export", logger):
         feather.write_feather(
             partner_export_df,
-            f'flat-connectome/syn-partner-export-{snapshot_tag}-minconf-{min_conf}.feather'
+            f'flat-connectome/syn-partners-{snapshot_tag}-minconf-{min_conf}.feather'
         )
 
     with Timer("Constructing weighted connectome", logger):
