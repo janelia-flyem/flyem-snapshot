@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
@@ -18,6 +19,11 @@ NeurotransmittersSchema = {
             "description":
                 "Path to an Apache Feather file with neurotransmitter\n"
                 "predictions as produced via the 'synister' tool/method.",
+            "type": "string",
+            "default": ""
+        },
+        "groundtruth": {
+            "description": "Path to a CSV file containing the celltype groundtruth neurotransmitters",
             "type": "string",
             "default": ""
         },
@@ -56,7 +62,7 @@ NeurotransmittersSchema = {
 
 
 @PrefixFilter.with_context('neurotransmitters')
-def load_neurotransmitters(cfg, point_df):
+def load_neurotransmitters(cfg, point_df, ann):
     """
     Load the synister neurotransmitter predictions, but tweak the column
     names into the form nt_{transmitter}_prob and exclude columns other than
@@ -72,10 +78,20 @@ def load_neurotransmitters(cfg, point_df):
         return None, None
 
     with Timer("Loading neurotransmitters", logger):
-        return _load_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
+        tbar_nt, body_nt = _load_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
+
+    if cfg['groundtruth']:
+        if 'split' not in tbar_nt.columns or not (tbar_nt['split'] == 'test').any():
+            logger.warning("Can't compute neurotransmitter confidences without a confusion matrix.")
+        assert False, 'fixme here'
+
+    return tbar_nt, body_nt
 
 
 def _load_neurotransmitters(path, rescale, translations, point_df):
+    ##
+    ## TODO: Provide config values for excluding body-level predictions based on tbar count.
+    ##
     tbar_nt = feather.read_feather(path)
 
     # Rename columns pre_x, pre_y, pre_z -> x,y,z
@@ -105,12 +121,17 @@ def _load_neurotransmitters(path, rescale, translations, point_df):
     presyn_df = point_df.query('kind == "PreSyn"')
     tbar_nt = presyn_df[['body']].merge(tbar_nt, 'left', on='point_id')
 
+    col_to_nt = {c: c.split('_')[1] for c in nt_cols}
+    tbar_nt['predicted_nt'] = tbar_nt[nt_cols].idxmax(axis=1).map(col_to_nt)
+
     if (nullcount := tbar_nt[nt_cols[0]].isnull().sum()):
         logger.warning(
             f"Neurotransmitter predictions do not cover {nullcount} "
             f"({100 * nullcount / len(presyn_df):.2f}%) of the PreSyn points!")
 
     body_nt = tbar_nt.groupby('body')[nt_cols].mean()
-    col_to_nt = {c: c.split('_')[1] for c in body_nt.columns}
     body_nt['predicted_nt'] = body_nt.idxmax(axis=1).map(col_to_nt)
+
+    # FIXME
+    #body_nt['predicted_nt_prob'] = body_nt.idxmax(axis=1).map(col_to_nt)
     return tbar_nt, body_nt
