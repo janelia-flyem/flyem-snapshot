@@ -102,6 +102,21 @@ SnapshotSynapsesSchema = {
             "maximum": 1.0,
             "default": 0.0,
         },
+        "roi-set-names": {
+            "description":
+                "The list of ROI sets to include as columns in the synapse table.\n"
+                "If nothing is listed here, all ROI sets are used.",
+            "default": None,
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
         "processes": {
             "description":
                 "How many processes should be used to update synapse labels?\n"
@@ -163,6 +178,13 @@ def load_synapses(cfg, snapshot_tag):
         else:
             dump_json({}, 'tables/last-mutation.json')
 
+        export_synapse_cache(point_df, partner_df, snapshot_tag)
+    return point_df, partner_df, last_mutation
+
+
+def export_synapse_cache(point_df, partner_df, snapshot_tag):
+    # Overwrite the point_df we saved earlier now that we've updated the ROIs.
+    with Timer("Exporting filtered/updated synapse tables", logger):
         feather.write_feather(
             point_df.reset_index(),
             f'tables/point_df-{snapshot_tag}.feather'
@@ -171,7 +193,7 @@ def load_synapses(cfg, snapshot_tag):
             partner_df,
             f'tables/partner_df-{snapshot_tag}.feather'
         )
-    return point_df, partner_df, last_mutation
+    return point_df, partner_df
 
 
 def _load_raw_synapses(cfg):
