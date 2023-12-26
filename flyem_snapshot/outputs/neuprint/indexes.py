@@ -26,12 +26,14 @@ IndexesSettingsSchema = {
 }
 
 
-def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, roisets):
+def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roisets, landmark_roisets):
     """
     Using the jinja template stored in create-indexes.cypher,
     export a script of cypher commands that will create indexes for all
     :Neuron/:Segment properties, including ROI properties, except for
     those excluded via the config.
+
+    TODO: Actually index the landmark rois.
 
     Args:
         cfg:
@@ -41,12 +43,16 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, roisets):
         roi_names:
             The names of all ROIs actually found in the data.
             (If the config lists ROIs that didn't end up being used, we won't try to index them.)
-        roisets:
-            The mapping of {roiset_name: {roi_name: roi_id, roi_name: roi_id, ...}}
+        synapse_roisets:
+            The mapping of {roiset_name: {roi_name: roi_id, roi_name: roi_id, ...}}.
+            Used to create indexes for :Synapse and :Segment roi properties.
+        landmark_roisets:
+            The mapping of {roiset_name: {roi_name: roi_id, roi_name: roi_id, ...}}.
+            Used to create indexes for :Landmark roi properties.
     """
     exclude_props = set(cfg['indexes']['exclude-properties'])
     exclude_roisets = cfg['indexes']['exclude-roisets']
-    exclude_rois = set(chain(*[roisets[roiset].keys() for roiset in exclude_roisets]))
+    exclude_rois = set(chain(*[synapse_roisets[roiset].keys() for roiset in exclude_roisets]))
 
     # Note:
     #   We don't need to explicitly create an index for bodyId because
