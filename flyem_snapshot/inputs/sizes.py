@@ -48,7 +48,7 @@ BodySizesSchema = {
 
 
 @PrefixFilter.with_context('body-sizes')
-def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
+def load_body_sizes(cfg, dvidseg, df, snapshot_tag):
     """
     Load/export the sizes of all bodies listed in df
     (in either the index or the 'body' column).
@@ -62,7 +62,7 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
 
     cache_file = cfg['cache-file']
     cache_uuid = cfg['cache-uuid']
-    if not cache_file and not dvid_seg:
+    if not cache_file and not dvidseg:
         logger.info("No body size info provided. Body sizes will not be emitted.")
         return None
 
@@ -77,7 +77,7 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
         logger.info("No body sizes cache provided.")
         with Timer("Loading all neuron sizes from DVID", logger):
             sizes = fetch_sizes(
-                *dvid_seg,
+                *dvidseg,
                 bodies,
                 processes=cfg['processes']
             )
@@ -88,17 +88,17 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
         return sizes
 
     cached_sizes = feather.read_feather(cache_file).set_index('body')['size']
-    if bool(dvid_seg) != bool(cache_uuid):
+    if bool(dvidseg) != bool(cache_uuid):
         logger.error("body sizes cache is not specified properly; disregarding it.")
         cache_file = cache_uuid = ""
 
-    if not dvid_seg and not cache_uuid:
+    if not dvidseg and not cache_uuid:
         logger.info("Using cached body sizes without updating from DVID")
         return cached_sizes
 
     # Note: Using 1 parenthesis and 1 bracket to indicate
     #       exclusive/inclusive mutation range: (a,b]
-    server, snapshot_uuid, instance = dvid_seg
+    server, snapshot_uuid, instance = dvidseg
     delta_range = f"({cache_uuid}, {snapshot_uuid}]"
     muts = fetch_mutations(server, delta_range, instance)
     effects = compute_affected_bodies(muts)
@@ -108,7 +108,7 @@ def load_body_sizes(cfg, dvid_seg, df, snapshot_tag):
         return cached_sizes
 
     with Timer("Fetching non-cached neuron sizes", logger):
-        new_sizes = fetch_sizes(*dvid_seg, outofdate_bodies, processes=cfg['processes'])
+        new_sizes = fetch_sizes(*dvidseg, outofdate_bodies, processes=cfg['processes'])
 
     combined_sizes = (
         new_sizes.to_frame()

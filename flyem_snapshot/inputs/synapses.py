@@ -1,6 +1,6 @@
 """
-Export a connectivity snapshot from a DVID segmentation,
-along with other denormalizations.
+
+Import synapses from disk, filter them, and associate each point with a body ID.
 """
 import os
 import json
@@ -129,7 +129,7 @@ SnapshotSynapsesSchema = {
 
 
 @PrefixFilter.with_context('synapses')
-def load_synapses(cfg, snapshot_tag):
+def load_synapses(cfg, snapshot_tag, pointlabeler):
     os.makedirs('tables', exist_ok=True)
 
     # Do the files already exist for this snapshot?
@@ -138,28 +138,13 @@ def load_synapses(cfg, snapshot_tag):
         logger.info("Loading previously-written synapse files")
         partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
         point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
-        last_mutation = json.load(open('tables/last-mutation.json', 'r'))
-        return point_df, partner_df, last_mutation
+        return point_df, partner_df
 
     point_df, partner_df = _load_raw_synapses(cfg)
-    last_mutation = {}
 
-    if cfg['update-to']:
-        dvid_seg = (
-            cfg['update-to']['server'],
-            cfg['update-to']['uuid'],
-            cfg['update-to']['instance'],
-        )
-
-        if len(point_df) < 1_000_000:
-            # This fast path is convenient for small tests.
-            point_df['body'] = fetch_mapping(*dvid_seg, point_df['sv'].values, batch_size=1000, threads=cfg['processes'])
-            mutations = fetch_mutations(*dvid_seg, dag_filter='leaf-only')
-        else:
-            mutations, mapping = _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag)
-            with Timer(f"Updating supervoxels/bodies for UUID {dvid_seg[1][:6]}", logger):
-                # This adds/updates 'sv' and 'body' columns to point_df
-                fetch_bodies_for_many_points(*dvid_seg, point_df, mutations, mapping, processes=cfg['processes'])
+    if pointlabeler:
+        with Timer(f"Updating supervoxels/bodies for UUID {pointlabeler.dvidseg.uuid[:6]}", logger):
+            pointlabeler.update_bodies_for_points(point_df, processes=cfg['processes'])
 
     if 'body' not in point_df.columns:
         raise RuntimeError(
@@ -172,14 +157,9 @@ def load_synapses(cfg, snapshot_tag):
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
 
     with Timer("Exporting filtered/updated synapse tables", logger):
-        if len(mutations) > 0:
-            last_mutation = mutations.iloc[-1].to_dict()
-            dump_json(last_mutation, 'tables/last-mutation.json')
-        else:
-            dump_json({}, 'tables/last-mutation.json')
-
         export_synapse_cache(point_df, partner_df, snapshot_tag)
-    return point_df, partner_df, last_mutation
+
+    return point_df, partner_df
 
 
 def export_synapse_cache(point_df, partner_df, snapshot_tag):

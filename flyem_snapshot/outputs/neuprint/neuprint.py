@@ -171,7 +171,7 @@ NeuprintSchema = {
 
 
 @PrefixFilter.with_context('neuprint')
-def export_neuprint(cfg, point_df, partner_df, landmark_df, ann, body_sizes, tbar_nt, body_nt, syn_roisets, landmark_roisets, last_mutation):
+def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt, syn_roisets, landmark_roisets, last_mutation):
     """
     Export CSV files for each of the following:
 
@@ -188,7 +188,7 @@ def export_neuprint(cfg, point_df, partner_df, landmark_df, ann, body_sizes, tba
         - SynapseSet -[:ConnectsTo]-> SynapseSet
         - Synapse -[:SynapsesTo]-> Synapse
 
-    TODO: Mito
+    TODO: Elements (e.g. Mito)
     """
     if not cfg['export-neuprint-snapshot']:
         logger.info("Not generating neuprint snapshot.")
