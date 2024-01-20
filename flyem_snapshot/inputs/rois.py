@@ -184,7 +184,10 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
     if isinstance(roi_ids, str):
         # If roi_ids is still a string, it must be a valid format string,
         # and it shouldn't give the same result for ID 0 as ID 1
-        assert eval(f'f"{roi_ids}"', None, {'x': 1}) != eval(f'f"{roi_ids}"', None, {'x': 0})  # pylint: disable=eval-used
+        eval_0 = eval(f'f"{roi_ids}"', None, {'x': 0})  # pylint: disable=eval-used
+        eval_1 = eval(f'f"{roi_ids}"', None, {'x': 1})  # pylint: disable=eval-used
+        if eval_0 == eval_1:
+            raise RuntimeError("ROI ID expression should not produce the same output for ID 0 and ID 1.")
 
     if roiset_cfg['source'] == "point-table":
         roi_ids = _load_roi_col(roiset_name, roi_ids, point_df)
