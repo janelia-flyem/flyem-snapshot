@@ -35,10 +35,13 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
         point_df = point_df.merge(tbar_nt, 'left', on='point_id')
 
     point_df = point_df.reset_index()
-    point_df[':Label'] = f'Synapse;{dataset}_Synapse'
+    point_df[':Label'] = f'Synapse;{dataset}_Synapse;Element;{dataset}_Element'
     point_df['kind'] = point_df['kind'].cat.rename_categories({'PreSyn': 'pre', 'PostSyn': 'post'})
+
+    # Note that :Synapses are :Elements and must be referenced that way in :CloseTo relationships.
+    # Therefore, we use an ID space named "Element-ID", which is shared by Element nodes.
     point_df = point_df.rename(columns={
-        'point_id': ':ID(Syn-ID)',
+        'point_id': ':ID(Element-ID)',
         'kind': 'type:string',
         'conf': 'confidence:float',
     })
@@ -102,5 +105,5 @@ def _export_synapse_group_csv(roi_syn_props, i, group_rois, df):
 @timed("Writing Neuprint_Synapse_Connections.csv")
 def export_neuprint_synapse_connections(partner_df):
     df = partner_df[['pre_id', 'post_id']]
-    df.columns = [':START_ID(Syn-ID)', ':END_ID(Syn-ID)']
+    df.columns = [':START_ID(Element-ID)', ':END_ID(Element-ID)']
     df.to_csv('neuprint/Neuprint_Synapse_Connections.csv', index=False, header=True)

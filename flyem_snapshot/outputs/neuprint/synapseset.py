@@ -98,7 +98,7 @@ def export_synapsesets(cfg, partner_df, connectome):
             pd.concat((ss_to_syn_pre, ss_to_syn_post), ignore_index=True)
             .rename(columns={
                 'synset': ':START_ID(SynSet-ID)',
-                'point_id': ':END_ID(Syn-ID)'
+                'point_id': ':END_ID(Element-ID)'
             })
             .to_csv('neuprint/Neuprint_SynapseSet_to_Synapses.csv', index=False, header=True)
         )
