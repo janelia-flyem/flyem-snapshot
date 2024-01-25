@@ -71,10 +71,18 @@ ReportsSchema = {
     "default": {},
     "additionalProperties": False,
     "properties": {
+        "report-roiset": {
+            "description":
+                "Reports can be ROI-based, but only from the ROIs in just\n"
+                "one of your ROI sets (a column in point_df).\n"
+                "Specify which roiset the report ROIs will be selected from.\n",
+            "type": "string",
+            "default": ""
+        },
         "reports": {
             "description":
                 "A list of forecasts to produce.\n"
-                "Each forecast is computed on a subset of the ROIs in the dataset.\n",
+                "Each forecast is computed on a subset of the ROIs in the roiset.\n",
             "type": "array",
             "items": ReportSchema,
             "default": [],
@@ -119,11 +127,12 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
     os.makedirs("png", exist_ok=True)
     os.makedirs("html", exist_ok=True)
 
-    # TODO: It's a little weird that this works
-    #       differently here than the neuprint case
-    #       (i.e. expecting 'roi' to be pre-loaded onto point_df).
-    if 'roi' not in partner_df.columns:
-        partner_df = partner_df.drop('roi', errors='ignore')
+    # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
+    roiset = cfg['report-roiset']
+    point_df = point_df.drop(columns=['roi']).rename({roiset: 'roi'})
+    partner_df = partner_df.drop(columns=['roi']).rename({roiset: 'roi'})
+
+    if roiset not in partner_df.columns:
         partner_df = partner_df.merge(point_df['roi'].rename_axis('post_id'), 'left', on='post_id')
 
     with Timer("Flagging captured bodies", logger):

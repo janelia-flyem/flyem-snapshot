@@ -309,6 +309,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['roi-set-names']:
         neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
+    # By default, the reports will use the first listed roiset.
+    if cfg['outputs']['connectivity-reports']['reports'] and not cfg['outputs']['connectivity-reports']['report-roiset']:
+        raise RuntimeError("You must list a report-roiset if you want to generate reports.")
+
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
     for report in cfg['outputs']['connectivity-reports']['reports']:
