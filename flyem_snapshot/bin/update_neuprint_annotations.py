@@ -17,7 +17,9 @@ TODO: This doesn't yet modify Meta.lastDatabaseEdit when making updates.
 """
 import re
 import os
+import sys
 import logging
+import traceback
 import argparse
 from collections import namedtuple
 
@@ -61,21 +63,19 @@ def main():
         args.neuprint_dataset
     )
 
-    clio_df, neuprint_df, changemask, commands = update_neuprint_annotations(dvid_details, args.dry_run, neuprint_client)
-
-    if len(changemask) > 0 and (d := args.output_directory):
-        logger.info(f"Writing summary files to {d}")
-        os.makedirs(d, exist_ok=True)
-        clio_df.to_csv(f'{d}/from-dvid.csv', header=True, index=True)
-        neuprint_df.to_csv(f'{d}/neuprint-original.csv', header=True, index=True)
-        changemask.to_csv(f'{d}/changemask.csv', header=True, index=True)
-        with open(f'{d}/cypher-update-commands.cypher', 'w') as f:
-            f.write('\n'.join(commands))
+    try:
+        update_neuprint_annotations(dvid_details, args.dry_run, args.output_dir, neuprint_client)
+    except BaseException:
+        if d := args.output_dir:
+            os.makedirs(d, exist_ok=True)
+            with open(f'{d}/error.txt') as f:
+                traceback.print_exception(*sys.exc_info(), file=f)
+        raise
 
     logger.info("DONE")
 
 
-def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
+def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, client=None):
     """
     Compare neuronjson annotations from DVID/Clio with the Neuron/Segment
     properties from Neuprint, and update the Neuprint properties to match
@@ -99,7 +99,6 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
         the relevant DataFrames that led to those commands.
     """
     # Late imports to speed up --help message.
-    from neuclease.util import Timer
     from neuprint.client import default_client
 
     if client is None:
@@ -108,6 +107,29 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
     clio_df, neuprint_df, clio_segments, timestamp = _fetch_comparison_dataframes(dvid_details, client)
     changemask = _compute_changemask(clio_df, neuprint_df)
     commands = _generate_commands(clio_df, changemask, clio_segments)
+    _dump_summary_files(clio_df, neuprint_df, changemask, commands, log_dir)
+
+    clio_df, neuprint_df, changemask, commands = _apply_neuprint_annotation_updates(
+        clio_df, neuprint_df, changemask, commands, timestamp, dry_run, client)
+
+    return clio_df, neuprint_df, changemask, commands
+
+
+def _dump_summary_files(clio_df, neuprint_df, changemask, commands, log_dir):
+    if len(changemask) == 0 or not log_dir:
+        return
+    d = log_dir
+    logger.info(f"Writing summary files to {d}")
+    os.makedirs(d, exist_ok=True)
+    clio_df.to_csv(f'{d}/from-dvid.csv', header=True, index=True)
+    neuprint_df.to_csv(f'{d}/neuprint-original.csv', header=True, index=True)
+    changemask.to_csv(f'{d}/changemask.csv', header=True, index=True)
+    with open(f'{d}/cypher-update-commands.cypher', 'w') as f:
+        f.write('\n'.join(commands))
+
+
+def _apply_neuprint_annotation_updates(clio_df, neuprint_df, changemask, commands, timestamp, dry_run, client):
+    from neuclease.util import Timer
     _update_meta_neuron_properties(clio_df, dry_run, client)
 
     if dry_run:
@@ -119,7 +141,6 @@ def update_neuprint_annotations(dvid_details, dry_run=False, client=None):
         msg = f"Updating {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties."
         with Timer(msg, logger):
             _post_commands(commands, client)
-
         _update_meta_timestamp(timestamp, client)
 
     # Restrict summary DataFrames to the minimal subset
@@ -185,7 +206,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # So process the values just like we did with clio_df.
     neuprint_df = neuprint_segment_annotations(cfg, neuprint_df)
 
-    # We handle all columns from clio, but only bodies which are in both.
+    # We handle all *columns* from clio, but only *bodies* which are in both clio and neuprint.
     missing_cols = set(clio_df.columns) - set(neuprint_df.columns)
     neuprint_df = neuprint_df.assign(**{col: None for col in missing_cols})
 
@@ -195,7 +216,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # Special handling for neurotransmitters:
     # Neurotransmitters are supposed to be computed anew for each neuprint snapshot,
     # not loaded into clio.  But for historical reasons, we did upload NT predictions into the MANC clio.
-    # We do NOT want to use those values to overwite neuprint.
+    # We do NOT want to use those clio NT values to overwite neuprint NT values.
     nt_cols = [col for col in clio_df.columns if col.startswith('nt') or col.startswith('predictedNt')]
     clio_df = clio_df.drop(columns=nt_cols)
     neuprint_df = neuprint_df.drop(columns=nt_cols)
@@ -248,7 +269,7 @@ def _compute_changemask(clio_df, neuprint_df):
 
 def _update_meta_neuron_properties(clio_df, dry_run, client):
     """
-    In the neuornt :Meta node, we maintain a dict of
+    In the neuprint :Meta node, we maintain a dict of
     all :Neuron properties and their types.
 
     If the annotation sync will include NEW properties from DVID,
