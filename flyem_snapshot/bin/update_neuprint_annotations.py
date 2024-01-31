@@ -64,9 +64,9 @@ def main():
     )
 
     try:
-        update_neuprint_annotations(dvid_details, args.dry_run, args.output_dir, neuprint_client)
+        update_neuprint_annotations(dvid_details, args.dry_run, args.output_directory, neuprint_client)
     except BaseException:
-        if d := args.output_dir:
+        if d := args.output_directory:
             os.makedirs(d, exist_ok=True)
             with open(f'{d}/error.txt') as f:
                 traceback.print_exception(*sys.exc_info(), file=f)
