@@ -161,62 +161,91 @@ def export_all(cfg, config_dir):
 
     _finalize_config_and_output_dir(cfg, config_dir)
 
-    # These config settings are needed by stages other than
-    # the stage that "owns" the config setting,
-    # so we pass them via args instead of via the config.
-    snapshot_tag = cfg['job-settings']['snapshot-tag']
-    min_conf = cfg['inputs']['synapses']['min-confidence']
-
     # All subsequent processing occurs from within the output-dir
     output_dir = cfg['job-settings']['output-dir']
     logger.info(f"Working in {output_dir}")
     with switch_cwd(output_dir):
-        dvidseg, last_mutation, pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
+        last_mutation, ann, element_tables, point_df, partner_df, syn_roisets, body_sizes, tbar_nt, body_nt = \
+            load_inputs(cfg)
 
-        ann = load_annotations(
-            cfg['inputs']['annotations'],
-            dvidseg,
-            snapshot_tag
-        )
+        produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
+                        syn_roisets, body_sizes, tbar_nt, body_nt)
 
-        element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
-        point_df, partner_df = load_synapses(
-            cfg['inputs']['synapses'],
-            snapshot_tag,
-            pointlabeler
-        )
 
-        point_df, syn_roisets = load_point_rois(
+def load_inputs(cfg):
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
+
+    #
+    # Segmentation parameters
+    #
+    dvidseg, last_mutation, pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
+
+    #
+    # Annotations
+    #
+    ann = load_annotations(
+        cfg['inputs']['annotations'],
+        dvidseg,
+        snapshot_tag
+    )
+
+    #
+    # Elements
+    #
+    element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
+    point_df, partner_df = load_synapses(
+        cfg['inputs']['synapses'],
+        snapshot_tag,
+        pointlabeler
+    )
+
+    for el_name in list(element_tables.keys()):
+        el_df, syn_roisets = load_point_rois(
             cfg['inputs']['rois'],
-            point_df,
+            element_tables[el_name],
             cfg['inputs']['synapses']['roi-set-names']
         )
+        element_tables[el_name] = el_df
 
-        for el_name in list(element_tables.keys()):
-            el_df, syn_roisets = load_point_rois(
-                cfg['inputs']['rois'],
-                element_tables[el_name],
-                cfg['inputs']['synapses']['roi-set-names']
-            )
-            element_tables[el_name] = el_df
+    #
+    # Synapses
+    #
+    point_df, syn_roisets = load_point_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
 
-        partner_df = merge_partner_rois(
-            cfg['inputs']['rois'],
-            point_df,
-            partner_df
-        )
+    partner_df = merge_partner_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        partner_df
+    )
 
-        export_synapse_cache(point_df, partner_df, snapshot_tag)
+    export_synapse_cache(point_df, partner_df, snapshot_tag)
 
-        body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvidseg, point_df, snapshot_tag)
-        tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
+    #
+    # Body sizes (for synaptic bodies only)
+    #
+    body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvidseg, point_df, snapshot_tag)
 
-        # Produce outputs
-        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
-        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
-                        tbar_nt, body_nt, syn_roisets, element_tables, last_mutation)
-        export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
-        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+    #
+    # Neurotransmitters
+    #
+    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
+
+    return last_mutation, ann, element_tables, point_df, partner_df, syn_roisets, body_sizes, tbar_nt, body_nt
+
+
+def produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df, syn_roisets, body_sizes, tbar_nt, body_nt):
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
+    min_conf = cfg['inputs']['synapses']['min-confidence']
+
+    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
+    export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
+                    tbar_nt, body_nt, syn_roisets, element_tables, last_mutation)
+    export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+    export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
 
 
 def determine_snapshot_tag(cfg, config_dir):
