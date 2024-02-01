@@ -174,7 +174,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
     from flyem_snapshot.outputs.neuprint.annotations import neuprint_segment_annotations
 
     with Timer("Fetching neuronjson body annotations from DVID", logger):
-        clio_df = fetch_all(*dvid_details, show='time').drop(columns=['json'])
+        clio_df = fetch_all(*dvid_details, show='time').drop(columns=['json'], errors='ignore')
 
         # Note: 'birthtime' is a legit column!
         time_cols = [c for c in clio_df.columns if c.endswith('_time')]
