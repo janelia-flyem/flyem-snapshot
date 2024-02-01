@@ -189,23 +189,11 @@ def load_inputs(cfg):
         snapshot_tag
     )
 
-    #
-    # Elements
-    #
-    element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
     point_df, partner_df = load_synapses(
         cfg['inputs']['synapses'],
         snapshot_tag,
         pointlabeler
     )
-
-    for el_name in list(element_tables.keys()):
-        el_df, syn_roisets = load_point_rois(
-            cfg['inputs']['rois'],
-            element_tables[el_name],
-            cfg['inputs']['synapses']['roi-set-names']
-        )
-        element_tables[el_name] = el_df
 
     #
     # Synapses
@@ -223,6 +211,21 @@ def load_inputs(cfg):
     )
 
     export_synapse_cache(point_df, partner_df, snapshot_tag)
+
+    #
+    # Elements
+    #
+    element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
+    for el_name in list(element_tables.keys()):
+        el_points, el_distances = element_tables[el_name]
+        if el_points is None:
+            continue
+        el_points, syn_roisets = load_point_rois(
+            cfg['inputs']['rois'],
+            el_points,
+            cfg['inputs']['synapses']['roi-set-names']
+        )
+        element_tables[el_name] = (el_points, el_distances)
 
     #
     # Body sizes (for synaptic bodies only)
