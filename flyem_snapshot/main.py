@@ -50,7 +50,6 @@ ConfigSchema = {
                 "elements": ElementTablesSchema,
                 "synapses": SnapshotSynapsesSchema,
                 "annotations": AnnotationsSchema,
-                "landmarks": LandmarksSchema,
                 "rois": RoisSchema,
                 "body-sizes": BodySizesSchema,
                 "neurotransmitters": NeurotransmittersSchema,
