@@ -33,6 +33,7 @@ def export_synapsesets(cfg, partner_df, connectome):
             'body_pre': 'body',
             'synset_pre': 'synset_id'
         })
+        .assign(type='pre')
     )
     synset_post = (
         body_pairs_df[['body_post', 'synset_post']]
@@ -40,20 +41,22 @@ def export_synapsesets(cfg, partner_df, connectome):
             'body_post': 'body',
             'synset_post': 'synset_id'
         })
+        .assign(type='post')
     )
     synset_ids = pd.concat((synset_pre, synset_post), ignore_index=True)
-    assert synset_ids.columns.tolist() == ['body', 'synset_id']
+
+    dataset = cfg['meta']['dataset']
+    synset_ids['label'] = f"SynapseSet;{dataset}_SynapseSet;ElementSet;{dataset}_ElementSet"
+    assert synset_ids.columns.tolist() == ['body', 'synset_id', 'type', 'label']
 
     with Timer("Writing Neuprint_SynapseSet.csv", logger):
-        dataset = cfg['meta']['dataset']
-        label = f"SynapseSet;{dataset}_SynapseSet"
         (
             # This takes ~22 minutes to export for the full CNS.
-            synset_ids.assign(label=label)
-            [['synset_id', 'label']]
+            synset_ids[['synset_id', 'type', 'label']]
             .rename(columns={
                 'synset_id': ':ID(SynSet-ID)',
-                'label': ':Label'
+                'label': ':Label',
+                'type': 'type:string'
             })
             .to_csv('neuprint/Neuprint_SynapseSet.csv', index=False, header=True)
         )
@@ -61,7 +64,7 @@ def export_synapsesets(cfg, partner_df, connectome):
     with Timer("Writing Neuprint_Neuron_to_SynapseSet.csv", logger):
         (
             # This takes ~16 minutes to export for the full CNS.
-            synset_ids
+            synset_ids[['body', 'synset_id']]
             .rename(columns={
                 'body': ':START_ID(Body-ID)',
                 'synset_id': ':END_ID(SynSet-ID)'
