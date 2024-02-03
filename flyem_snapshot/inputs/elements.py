@@ -68,6 +68,8 @@ def load_elements(cfg, pointlabeler):
 
         point_df = _load_element_points(name, table_cfg)
         distance_df = _load_element_distances(name, table_cfg)
+
+        # FIXME: This would be more convenient to mutate if it were a DataClass.
         element_dfs[name] = (point_df, distance_df)
 
         if point_df is not None:
@@ -91,6 +93,7 @@ def _load_element_points(name, table_cfg):
     if 'point_id' in element_df:
         logger.warning(f"Discarding 'point_id' column from element table '{name}' "
                        "and regenerating the point_ids from scratch.")
+        del element_df['point_id']
 
     point_ids = encode_coords_to_uint64(element_df[[*'zyx']].values)
     element_df.index = pd.Index(point_ids, name='point_id')

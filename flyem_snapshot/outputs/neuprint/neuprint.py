@@ -16,6 +16,9 @@ from .indexes import IndexesSettingsSchema, export_neuprint_indexes_script
 from .segment import export_neuprint_segments, export_neuprint_segment_connections
 from .synapse import export_neuprint_synapses, export_neuprint_synapse_connections
 from .synapseset import export_synapsesets
+from .element import export_neuprint_elements, export_neuprint_elements_closeto
+from .elementset import export_neuprint_elementsets
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +80,16 @@ NeuprintSchema = {
                 }
             ]
         },
-        "restrict-synapses-to-roiset": {
+        # This setting is applied BEFORE either of the two that follow.
+        # If a point is dropped by this setting, it is definitely excluded,
+        # but the two following settings can filter the set even further.
+        "restrict-info-totals-to-roiset": {
             "description":
-                "Entirely discard synapses that fall outside the given roiset.\n"
-                "Synapses which do not fall on a non-zero ROI in the given roiset\n"
-                "will not be used to calculate Neuron roiInfo totals, compartment totals,\n"
-                "connection weights, or anything else. It's as if they don't exist.",
+                "Entirely discard synapses and elements that fall outside the given roiset.\n"
+                "Synapses/elements which do not fall on a non-zero ROI in the given roiset\n"
+                "will not be used to calculate Neuron roiInfo totals, compartment totals, connection\n"
+                "weights, or anything else. For all intents and purposes, they don't exist at all,\n"
+                "but this settings saves you from having to pre-filter them from your input tables.\n",
             "type": "string",
             "default": ""
         },
@@ -91,8 +98,17 @@ NeuprintSchema = {
                 "Discard synapse *connections* that fall outside the given roiset.\n"
                 "The discarded synapses won't be included in the database individually,\n"
                 "nor will they contribute to Neuron :ConnectsTo weights.\n"
-                "However, they WILL contribute to Neuron roiInfo totals, indicating which compartments\n"
+                "However, they may still contribute to Neuron roiInfo totals, indicating which compartments\n"
                 "a Neuron innervates and what portion of the Neuron's total synapses reside in each compartment.\n",
+            "type": "string",
+            "default": ""
+        },
+        "restrict-elements-to-roiset": {
+            "description":
+                "Discard non-Synapse :Element points that fall outside the given roiset.\n"
+                "The discarded Elements won't be included in the database individually\n"
+                "However, they may still contribute to Neuron roiInfo totals, indicating which\n"
+                "compartments within a Neuron contain various non-Synapse Elements (and their unfiltered totals).\n",
             "type": "string",
             "default": ""
         },
@@ -176,22 +192,26 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     Export CSV files for each of the following:
 
     Nodes:
-        - Synapse
+        - Meta
         - Neuron
         - SynapseSet
-        - Meta
+        - ElementSet
+        - Synapse
+        - Element
 
     Edges:
-        - Neuron -[:Contains]-> SynapseSet
-        - SynapseSet -[:Contains]-> Synapses
         - Neuron -[:ConnectsTo]-> Neuron
         - SynapseSet -[:ConnectsTo]-> SynapseSet
         - Synapse -[:SynapsesTo]-> Synapse
+        - Element -[:SynapsesTo]-> Element
 
-    TODO: Elements (e.g. Mito)
+        - Neuron -[:Contains]-> SynapseSet
+        - Neuron -[:Contains]-> ElementSet
+        - SynapseSet -[:Contains]-> Synapse
+        - ElementSet -[:Contains]-> Element
     """
     if not cfg['export-neuprint-snapshot']:
-        logger.info("Not generating neuprint snapshot.")
+        logger.info("Per config, not generating neuprint snapshot.")
         return
 
     os.makedirs('neuprint', exist_ok=True)
@@ -203,7 +223,10 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
 
     point_df, partner_df = restrict_synapses_to_roiset(
-        cfg, 'restrict-synapses-to-roiset', point_df, partner_df)
+        cfg, 'restrict-info-totals-to-roiset', point_df, partner_df)
+
+    point_df, partner_df = restrict_elements_to_roiset(
+        cfg, 'restrict-info-totals-to-roiset', element_tables, point_df)
 
     point_df, partner_df, inbounds_bodies, inbounds_rois = drop_out_of_bounds_bodies(
         cfg, point_df, partner_df)
@@ -228,9 +251,17 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     point_df, partner_df = restrict_synapses_to_roiset(
         cfg, 'restrict-connectivity-to-roiset', point_df, partner_df)
 
-    connectome = export_neuprint_segment_connections(cfg, partner_df)
-    export_synapsesets(cfg, partner_df, connectome)
+    element_tables = restrict_elements_to_roiset(
+        cfg, 'restrict-elements-to-roiset', element_tables, point_df)
 
+    connectome = export_neuprint_segment_connections(cfg, partner_df)
+
+    # FIXME: It would be good to verify that there are no duplicated Element points (including Synapses)
+    export_neuprint_elementsets(cfg, element_tables)
+    export_neuprint_elements(cfg, element_tables)
+    export_neuprint_elements_closeto(element_tables)
+
+    export_synapsesets(cfg, partner_df, connectome)
     export_neuprint_synapses(cfg, point_df, tbar_nt)
     export_neuprint_synapse_connections(partner_df)
 
@@ -272,6 +303,28 @@ def drop_out_of_bounds_bodies(cfg, point_df, partner_df):
 
 
 def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
+    """
+    Drop synapses from point_df and partner_df which fall outside a config-defined roiset.
+    (No individual ROI in the roiset is used -- only points which the
+    roiset lists as <unspecified> will be dropped.)
+
+    Args:
+        cfg:
+            neuprint section of the snapshot config
+        setting:
+            The name of the config setting which holds the roiset name
+            (Depending on WHEN this function is called in the overall pipeline,
+            this function may exclude synapses from all calculations or may exclude
+            synapses only from the connectivity export, after aggregate counts have
+            already been computed.)
+        point_df:
+            Synapse points dataframe
+        partner_df:
+            Synapse partner dataframe
+
+    Returns:
+        Filtered versions of point_df and partner_df.
+    """
     roiset = cfg[setting]
     if not roiset:
         return point_df, partner_df
@@ -283,6 +336,7 @@ def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
         # preserved here because they are partnered to an in-bounds 'post' point.
         inbounds_partners = (partner_df[roiset] != "<unspecified>")
         partner_df = partner_df.loc[inbounds_partners]
+
         # Keep the points which are still referenced in partner_df
         valid_ids = pd.concat(
             (
@@ -294,3 +348,42 @@ def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
         point_df = point_df.loc[point_df.index.isin(valid_ids)]
 
     return point_df, partner_df
+
+
+def restrict_elements_to_roiset(cfg, setting, element_tables, syn_point_df):
+    """
+    From all element point tables, drop elements which are "<unspecified>"
+    in the given roiset.
+
+    Then, from all element distance tables, drop relationships if either of the
+    points no longer exists in either the synapse point set or the generic element
+    point set.
+
+    Note:
+        Unlike synapses, ordinary Elements are permitted to exist
+        even if they have no relationships in the dataset.
+        (Synapses, on the other hand must always have at least one partner.)
+    """
+    roiset = cfg[setting]
+    if not roiset:
+        return element_tables
+
+    # Filter out points that fall outside the roiset
+    with Timer(f"Filtering out Elements according to {setting}: '{roiset}'"):
+        for name in list(element_tables.keys()):
+            el_points, el_distances = element_tables[name]
+            el_points = el_points.loc[el_points[roiset] != "<unspecified>"]
+            element_tables[name] = (el_points, el_distances)
+
+        # Filter out relationships (distances) if either point no longer exists after filtering.
+        # We count synapses as valid elements (they were pre-filtered in a different function).
+        valid_el_ids = (points[[]] for points, _ in element_tables.values())
+        valid_ids = pd.concat((syn_point_df[[]], *valid_el_ids)).index
+        for name in list(element_tables.keys()):
+            el_points, el_distances = element_tables[name]
+            valid_sources = el_distances['source_id'].isin(valid_ids)
+            valid_targets = el_distances['target_id'].isin(valid_ids)
+            el_distances = el_distances.loc[valid_sources & valid_targets]
+            element_tables[name] = (el_points, el_distances)
+
+    return element_tables
