@@ -20,7 +20,7 @@ ElementTableSchema = {
     "properties": {
         "point-table": {
             "description":
-                "Optional. A feather file containing the element points, optionally with a 'body' column.\n"
+                "Optional. A feather or CSV file containing the element points, optionally with a 'body' column.\n"
                 "If an 'sv' column is also present, it can be used to much more efficiently update the body column if needed.\n"
                 "Required columns are x,y,z,type.  Other columns may be present and will be loaded in neuprint outputs.\n",
             "type": "string",
@@ -97,7 +97,11 @@ def _load_element_points(name, table_cfg):
         return
     os.makedirs('tables', exist_ok=True)
     with Timer(f"Loading '{name}' elements from disk", logger):
-        element_df = feather.read_feather(path)
+        assert path.split('.')[-1] in ('feather', 'csv')
+        if path.endswith('.csv'):
+            element_df = pd.read_csv(path)
+        else:
+            element_df = feather.read_feather(path)
 
     if (cfg_type := table_cfg['type']):
         if 'type' in element_df.columns and (element_df['type'] != cfg_type).any():
