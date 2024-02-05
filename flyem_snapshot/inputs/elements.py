@@ -31,6 +31,13 @@ ElementTableSchema = {
             "type": "string",
             "default": ""
         },
+        "type": {
+            "description":
+                "Optional. Adds a column named 'type' to the table, with the given value in all rows.\n"
+                "If no type is provided here in the config, then the data itself should have a type column.\n",
+            "type": "string",
+            "default": "",
+        },
         "distance-table": {
             "description":
                 "Optional. A feather file containing a table of source and target point pairs, with optional 'distance' column.\n"
@@ -92,8 +99,14 @@ def _load_element_points(name, table_cfg):
     with Timer(f"Loading '{name}' elements from disk", logger):
         element_df = feather.read_feather(path)
 
+    if (cfg_type := table_cfg['type']):
+        if 'type' in element_df.columns and (element_df['type'] != cfg_type).any():
+            raise RuntimeError(f"Element table '{name}' has a type column that does "
+                               f"not entirely match its config value ('{cfg_type}')")
+        element_df['type'] = cfg_type
+
     if not {*element_df.columns} >= {*'xyz', 'type'}:
-        raise RuntimeError(f"Element table '{name}' doesn't have xyz columns.")
+        raise RuntimeError(f"Element table '{name}' doesn't have xyz and/or type columns.")
 
     if 'point_id' in element_df:
         logger.warning(f"Discarding 'point_id' column from element table '{name}' "
