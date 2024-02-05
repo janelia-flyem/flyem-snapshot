@@ -117,13 +117,19 @@ def load_annotations(cfg, dvidseg, snapshot_tag):
     vc = vc[vc.index != ""]
     vc.to_csv(f'tables/status-counts-{snapshot_tag}.csv', index=True, header=True)
 
-    title = f'body status counts ({snapshot_tag})'
-    p = vc.hvplot.barh(flip_yaxis=True, title=title)
-    export_bokeh(
-        hv.render(p),
-        f"body-status-counts-{snapshot_tag}.html",
-        title
-    )
+    try:
+        title = f'body status counts ({snapshot_tag})'
+        p = vc.hvplot.barh(flip_yaxis=True, title=title)
+        export_bokeh(
+            hv.render(p),
+            f"body-status-counts-{snapshot_tag}.html",
+            title
+        )
+    except RuntimeError as ex:
+        if 'geckodriver' in str(ex):
+            logger.warning(f"Not exporting body-status-counts graph: {str(ex)}")
+        else:
+            raise
 
     if cfg['point-annotations'] and not dvidseg:
         raise RuntimeError("Can't read point-annotations without a dvid segmentation.")

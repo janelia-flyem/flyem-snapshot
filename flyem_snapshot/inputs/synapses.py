@@ -74,17 +74,6 @@ SnapshotSynapsesSchema = {
             "type": "string",
             # NO DEFAULT
         },
-        "update-to": {
-            "oneOf": [
-                LabelmapSchema,
-                {"type": "null"}
-            ],
-            "default": {},
-            "description":
-                "DVID labelmap instance to use for updating the synapse body IDs.\n"
-                "If not provided, the synapse point_df table must include a 'body' column,\n"
-                "which will be used without modifications.\n",
-        },
         "zone": {
             # TODO: Eliminate the 'zone' feature in favor of more flexibility in defining report ROIs.
             "description":

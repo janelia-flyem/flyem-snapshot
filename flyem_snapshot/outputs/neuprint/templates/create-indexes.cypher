@@ -42,7 +42,7 @@ CREATE INDEX ON :Synapse(`type`);
 //
 // Element properties
 //
-{% for label, rois in element_rois_to_index.items %}
+{% for label, rois in element_rois_to_index.items() %}
 {% for roi in rois %}
 CREATE INDEX ON :`{{dataset}}_{{label}}`(`{{roi}}`);
 RETURN datetime() as time, ":{{label}} annotation property {{loop.index}}/{{rois|count}}: Initiated index creation for '{roi}}'" as message;

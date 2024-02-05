@@ -26,11 +26,6 @@ ElementTableSchema = {
             "type": "string",
             "default": ""
         },
-        "neuprint-label": {
-            "description": "A specific node label, if any, to use when exporting these elements to neuprint, e.g. ':Mito'\n",
-            "type": "string",
-            "default": ""
-        },
         "type": {
             "description":
                 "Optional. Adds a column named 'type' to the table, with the given value in all rows.\n"

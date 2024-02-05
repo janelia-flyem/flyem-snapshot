@@ -17,7 +17,8 @@ def main():
         # than messing around with VSCode debugging configurations.
         import os
         sys.stderr.write("DEBUGGING WITH ARTIFICAL ARGS\n")
-        p = os.path.split(__file__)[0] + '/../../ol-small-test.yaml'
+        os.chdir('/Users/bergs/workspace/snapshot-configs/test-configs')
+        p = 'small-ol-test/ol-small-test.yaml'
         sys.argv.extend(['-c', p])
 
     parser = argparse.ArgumentParser(

@@ -1,5 +1,6 @@
 import os
 import shutil
+import logging
 import warnings
 from functools import partial
 
@@ -7,6 +8,8 @@ from neuclease import PrefixFilter
 from neuclease.util import timed, compute_parallel
 
 from .util import neo4j_column_names, append_neo4j_type_suffixes
+
+logger = logging.getLogger(__name__)
 
 
 @PrefixFilter.with_context("Synapse")
@@ -20,27 +23,38 @@ def export_neuprint_elements(cfg, element_tables):
         shutil.rmtree(element_dir)
     os.makedirs(element_dir)
 
-    for config_name, (point_df, _) in element_tables.values():
+    for config_name, (point_df, _) in element_tables.items():
         if point_df is not None:
-            _export_neuprint_elements(cfg, config_name, point_df)
+            _export_neuprint_elements(cfg, point_df, config_name=config_name)
 
 
 @PrefixFilter.with_context("{config_name}")
-def _export_neuprint_elements(cfg, config_name, point_df):
+def _export_neuprint_elements(cfg, point_df, *, config_name):
     dataset = cfg['meta']['dataset']
-    specific_label = cfg['elements'][config_name]['neuprint-label']
+
+    point_df = point_df.reset_index()
+    point_df['type'] = point_df['type'].astype('category')
+
+    point_df[':Label'] = f'Element;{dataset}_Element'
+
+    specific_label = cfg['element-labels'].get(config_name, '')
     if specific_label.startswith(':'):
         specific_label = specific_label[1:]
-    point_df = point_df.reset_index()
-    point_df[':Label'] = f'Element;{dataset}_Element;{specific_label};{dataset}_{specific_label}'
-    point_df['type'] = point_df['type'].astype('category')
+    if specific_label:
+        point_df[':Label'] += f';{specific_label};{dataset}_{specific_label}'
+
+    # All non-ROI columns from the input table are exported as :Element properties.
+    roicols = (*cfg['roi-set-names'], *(f'{c}_label' for c in cfg['roi-set-names']))
+    prop_cols = set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'}
 
     point_df = point_df.rename(columns={
         'point_id': ':ID(Element-ID)'
     })
 
-    # All columns from the input table are exported as :Element properties.
-    point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz',))
+    logger.info(f"Exporting {specific_label} Elements")
+    logger.info(f"Non-ROI properties: {prop_cols}")
+    logger.info(f"ROI properties from the following roi-sets: {cfg['roi-set-names']}")
+    point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
 
     export_subdir = f'neuprint/Neuprint_Elements/{config_name}'
     os.makedirs(export_subdir, exist_ok=True)
@@ -112,6 +126,8 @@ def _export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
 @timed("Exporting neuprint :Element:CloseTo files")
 def export_neuprint_elements_closeto(element_tables):
     for config_name, (_, distance_df) in element_tables.items():
+        if distance_df is None:
+            continue
         df = distance_df.rename(columns={
             'source_id': ':START_ID(Element-ID)',
             'target_id': ':END_ID(Element-ID)',

@@ -50,7 +50,7 @@ IndexesSettingsSchema = {
                             "All of the constituent ROIs in these roisets will be indexed.\n",
                         "type": "array",
                         "default": [],
-                        "items": {"type", "string"}
+                        "items": {"type": "string"}
                     }
                 }
             }
@@ -106,17 +106,16 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roise
     neuron_prop_names = sorted(set(neuron_prop_names) - exclude_props - {'bodyId'})
     roi_names = sorted(set(roi_names) - exclude_props - exclude_rois)
 
-    indexed_label_roisets = {item['neuprint-label']: item['roiset']
+    indexed_label_roisets = {item['neuprint-label']: item['roisets']
                              for item in cfg['indexes']['element-roisets-to-index']}
 
-    all_element_labels = {e['neuprint-label'] for e in cfg['elements']}
-    invalid_labels = {*indexed_label_roisets.keys()} - all_element_labels
+    invalid_labels = {*indexed_label_roisets.keys()} - {*cfg['element-labels'].values()}
     if invalid_labels:
         raise RuntimeError(f"Some requested Element indexes refer to non-existent neuprint labels: {invalid_labels}")
 
     element_rois_to_index = {}
-    for config_name, d in element_roisets.values():
-        label = cfg['elements'][config_name]['neuprint-label']
+    for config_name, d in element_roisets.items():
+        label = cfg['element-labels'].get(config_name)
         if label not in indexed_label_roisets:
             continue
         rois = element_rois_to_index.get(label, set())

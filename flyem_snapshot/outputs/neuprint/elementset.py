@@ -16,7 +16,7 @@ def export_neuprint_elementsets(cfg, element_tables, connectome):
         (connectome['body_pre'].rename('body'),
          connectome['body_post'].rename('body')), ignore_index=True).drop_duplicates()
 
-    for config_name, (points, _) in element_tables:
+    for config_name, (points, _) in element_tables.items():
         _export_elementsets(cfg, config_name, points, synaptic_bodies)
 
 
@@ -25,25 +25,31 @@ def _export_elementsets(cfg, config_name, point_df, synaptic_bodies):
         return
 
     dataset = cfg['meta']['dataset']
-    specific_label = cfg['elements'][config_name]['neuprint-label']
+    label = f"ElementSet;{dataset}_ElementSet"
+
+    specific_label = cfg['element-labels'].get(config_name, '')
+    if specific_label.startswith(':'):
+        specific_label = specific_label[1:]
+    if specific_label:
+        label += f";{specific_label}Set;{dataset}_{specific_label}Set"
 
     point_df = point_df.reset_index()
     point_df['elmset_id'] = point_df['body'].astype(str) + '_' + point_df['type']
 
-    elmset_df = point_df.drop_duplicates('elmset_id')[['elmset_id', 'type']]
+    elmset_df = point_df.drop_duplicates('elmset_id')
 
-    os.makedirs('Neuprint_ElementSets')
-    fname = f"Neuprint_ElementSets/Neuprint_ElementSet_{config_name}.csv"
+    os.makedirs('neuprint/Neuprint_ElementSets', exist_ok=True)
+    fname = f"Neuprint_ElementSet_{config_name}.csv"
     with Timer(f"Writing {fname}", logger):
         (
             elmset_df[['elmset_id', 'type']]
-            .assign(label=f"ElementSet;{dataset}_ElementSet;{specific_label}Set;{dataset}_{specific_label}Set")
+            .assign(label=label)
             .rename(columns={
                 'elmset_id': ':ID(ElementSet-ID)',
                 'label': ':Label',
                 'type': 'type:string'
             })
-            .to_csv(f'neuprint/{fname}', index=False, header=True)
+            .to_csv(f'neuprint/Neuprint_ElementSets/{fname}', index=False, header=True)
         )
 
     fname = f"Neuprint_Neuron_to_ElementSet_{config_name}.csv"

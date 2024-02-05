@@ -1,5 +1,6 @@
 import os
 import shutil
+import logging
 import warnings
 from functools import partial
 
@@ -9,6 +10,8 @@ from neuclease.util import timed, compute_parallel, snakecase_to_camelcase
 from .util import append_neo4j_type_suffixes
 
 from .element import _export_element_group_csv
+
+logger = logging.getLogger(__name__)
 
 
 @PrefixFilter.with_context("Synapse")
@@ -40,13 +43,19 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
     point_df[':Label'] = f'Synapse;{dataset}_Synapse;Element;{dataset}_Element'
     point_df['kind'] = point_df['kind'].cat.rename_categories({'PreSyn': 'pre', 'PostSyn': 'post'})
 
+    # All non-ROI columns from the input table are exported as :Element properties.
+    roicols = (*cfg['roi-set-names'], *(f'{c}_label' for c in cfg['roi-set-names']))
+    prop_cols = set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'}
+
     # Note that :Synapses are :Elements and must be referenced that way in :CloseTo relationships.
     # Therefore, we use an ID space named "Element-ID", which is shared by Element nodes.
     point_df = point_df.rename(columns={
-        'point_id': ':ID(Element-ID)',
-        'kind': 'type:string',
-        'conf': 'confidence:float',
+        'point_id': ':ID(Element-ID)'
     })
+
+    logger.info(f"Non-ROI Synapse properties: {prop_cols}")
+    logger.info(f"ROI Synapse properties from the following roi-sets: {cfg['roi-set-names']}")
+    point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
 
     _export_fn = partial(
         _export_element_group_csv,

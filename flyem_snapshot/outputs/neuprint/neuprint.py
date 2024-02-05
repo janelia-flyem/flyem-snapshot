@@ -112,6 +112,7 @@ NeuprintSchema = {
             "type": "string",
             "default": ""
         },
+        # FIXME: These apply to all Elements, not just Synapses, maybe this should be renamed.
         "roi-synapse-properties": {
             "description":
                 "Synapse properties derived from the roi values in a single roi-set (roi column).\n"
@@ -159,6 +160,16 @@ NeuprintSchema = {
             },
             "default": {},
         },
+        "element-labels": {
+            "description":
+                "For element sets listed in the inputs.elements config, specify the neuprint "
+                "label that should be used when exporting them, e.g. ':Mito' or ':ColumnPin'",
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "indexes": IndexesSettingsSchema,
         "max-segment-files": {
             "description":
@@ -187,7 +198,8 @@ NeuprintSchema = {
 
 
 @PrefixFilter.with_context('neuprint')
-def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt, syn_roisets, element_roisets, last_mutation):
+def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
+                    syn_roisets, element_roisets, last_mutation):
     """
     Export CSV files for each of the following:
 
@@ -225,7 +237,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     point_df, partner_df = restrict_synapses_to_roiset(
         cfg, 'restrict-info-totals-to-roiset', point_df, partner_df)
 
-    point_df, partner_df = restrict_elements_to_roiset(
+    element_tables = restrict_elements_to_roiset(
         cfg, 'restrict-info-totals-to-roiset', element_tables, point_df)
 
     point_df, partner_df, inbounds_bodies, inbounds_rois = drop_out_of_bounds_bodies(

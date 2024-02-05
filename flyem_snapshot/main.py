@@ -1,5 +1,6 @@
 import os
 import sys
+import pickle
 import logging
 from collections.abc import Mapping
 
@@ -229,6 +230,9 @@ def load_inputs(cfg):
         element_tables[elm_name] = (elm_points, elm_distances)
         element_roisets[elm_name] = elm_roisets
 
+    with open('tables/element_tables.pkl', 'wb') as f:
+        pickle.dump(element_tables, f)
+
     #
     # Body sizes (for synaptic bodies only)
     #
@@ -250,8 +254,10 @@ def produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_d
     min_conf = cfg['inputs']['synapses']['min-confidence']
 
     export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
+
     export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                     tbar_nt, body_nt, syn_roisets, element_roisets, last_mutation)
+
     export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
     export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
 
@@ -267,7 +273,7 @@ def determine_snapshot_tag(cfg, config_dir):
     FIXME: Ideally, we should also consult the annotation instance
             to see if it has even newer dates.
     """
-    dvidcfg = cfg['inputs']['dvid-seg']
+    dvidcfg = cfg['inputs'].get('dvid-seg', {"server": None})
     uuid = None
     if dvidcfg['server']:
         uuid, snapshot_tag = resolve_snapshot_tag(
@@ -324,7 +330,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
            we should probably move some of this logic into the relevant pipeline steps.
     """
     jobcfg = cfg['job-settings']
-    dvidcfg = cfg['dvid-seg']
+    dvidcfg = cfg['inputs']['dvid-seg'] = cfg['inputs'].get('dvid-seg', {"server": None})
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']

@@ -4,9 +4,7 @@ import pyarrow.feather as feather
 from neuclease.util import dump_json
 from neuclease.dvid.repo import fetch_branch_nodes
 from neuclease.dvid.labelmap import fetch_complete_mappings, fetch_mutations
-from neuclease.dvid.labelmap.pointlabeler import PointLabeler
-
-DvidSeg = namedtuple('DvidSeg', 'server uuid instance')
+from neuclease.dvid.labelmap.pointlabeler import PointLabeler, DvidSeg
 
 DvidSegSchema = {
     "description": "dvid segmentation (labelmap) location",
@@ -55,7 +53,7 @@ def load_dvidseg(cfg, snapshot_tag):
 
     # Look for the last mutation, searching backwards in the DAG until a non-empty UUID is found.
     last_mutation = {}
-    branch_nodes = fetch_branch_nodes(*dvidseg)
+    branch_nodes = fetch_branch_nodes(dvidseg.server, dvidseg.uuid)
     for uuid in branch_nodes[::-1]:
         muts = fetch_mutations(dvidseg.server, uuid, dvidseg.instance, dag_filter='leaf-only')
         if len(muts):
