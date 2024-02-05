@@ -28,8 +28,11 @@ def export_neuprint_elements(cfg, element_tables):
 @PrefixFilter.with_context("{config_name}")
 def _export_neuprint_elements(cfg, config_name, point_df):
     dataset = cfg['meta']['dataset']
+    specific_label = cfg['elements'][config_name]['neuprint-label']
+    if specific_label.startswith(':'):
+        specific_label = specific_label[1:]
     point_df = point_df.reset_index()
-    point_df[':Label'] = f'Element;{dataset}_Element'
+    point_df[':Label'] = f'Element;{dataset}_Element;{specific_label};{dataset}_{specific_label}'
     point_df['type'] = point_df['type'].astype('category')
 
     point_df = point_df.rename(columns={

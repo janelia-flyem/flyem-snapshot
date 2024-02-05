@@ -14,6 +14,7 @@ from neuclease.dvid.roi import fetch_combined_roi_volume
 
 logger = logging.getLogger(__name__)
 
+# FIXME: A better name than 'roiset' would be 'roilayer'
 RoiSetSchema = {
     "description": "Settings to describe a set of disjoint ROIs",
     "type": "object",

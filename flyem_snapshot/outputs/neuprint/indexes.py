@@ -21,19 +21,52 @@ IndexesSettingsSchema = {
             "type": "array",
             "items": {"type": "string"},
             "default": []
+        },
+        "element-roisets-to-index": {
+            "description":
+                "Ordinarily, we do not create indexes for Element ROI properties,\n"
+                "but you can explicitly create selected ones with this setting.\n"
+                "Presumably this is more useful when you are working with relatively\n"
+                "sparse Elements or small ROIs (or both).\n",
+            "type": "array",
+            "default": [{
+                "neuprint-label": ":Example",
+                "roisets": ["medulla_column"]
+            }],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "neuprint-label": {
+                        "description":
+                            "The neo4j node label (e.g. ':Mito') for the elements to index.\n"
+                            "Must match the neuprint-label setting of the element input config.\n"
+                            "Do not use the generic ':Element' label, since that would also apply to synapses, which we do not index by ROI.\n",
+                        "type": "string",
+                        "default": ""
+                    },
+                    "roisets": {
+                        "description":
+                            "A list of roiset names (as listed in the 'roi' config).\n"
+                            "All of the constituent ROIs in these roisets will be indexed.\n",
+                        "type": "array",
+                        "default": [],
+                        "items": {"type", "string"}
+                    }
+                }
+            }
         }
     }
 }
 
 
-def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roisets, landmark_roisets):
+def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roisets, element_roisets):
     """
     Using the jinja template stored in create-indexes.cypher,
     export a script of cypher commands that will create indexes for all
     :Neuron/:Segment properties, including ROI properties, except for
     those excluded via the config.
 
-    TODO: Actually index the landmark rois.
+    TODO: Actually index the other landmark rois.
 
     Args:
         cfg:
@@ -46,9 +79,18 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roise
         synapse_roisets:
             The mapping of {roiset_name: {roi_name: roi_id, roi_name: roi_id, ...}}.
             Used to create indexes for :Synapse and :Segment roi properties.
-        landmark_roisets:
-            The mapping of {roiset_name: {roi_name: roi_id, roi_name: roi_id, ...}}.
-            Used to create indexes for :Landmark roi properties.
+        element_roisets:
+            Used to create indexes for :Element roi properties.
+            Structure:
+                {
+                    element_config_name: {
+                        roiset_name: {
+                            roi_name: roi_id,
+                            roi_name: roi_id,
+                            ...
+                        }
+                    }
+                }
     """
     exclude_props = set(cfg['indexes']['exclude-properties'])
     exclude_roisets = cfg['indexes']['exclude-roisets']
@@ -64,12 +106,32 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roise
     neuron_prop_names = sorted(set(neuron_prop_names) - exclude_props - {'bodyId'})
     roi_names = sorted(set(roi_names) - exclude_props - exclude_rois)
 
+    indexed_label_roisets = {item['neuprint-label']: item['roiset']
+                             for item in cfg['indexes']['element-roisets-to-index']}
+
+    all_element_labels = {e['neuprint-label'] for e in cfg['elements']}
+    invalid_labels = {*indexed_label_roisets.keys()} - all_element_labels
+    if invalid_labels:
+        raise RuntimeError(f"Some requested Element indexes refer to non-existent neuprint labels: {invalid_labels}")
+
+    element_rois_to_index = {}
+    for config_name, d in element_roisets.values():
+        label = cfg['elements'][config_name]['neuprint-label']
+        if label not in indexed_label_roisets:
+            continue
+        rois = element_rois_to_index.get(label, set())
+        rois |= set(chain(*(v.keys() for k,v in d.items() if k in indexed_label_roisets[label])))
+        element_rois_to_index[label] = rois
+
+    element_rois_to_index = {k: sorted(v) for k,v in element_rois_to_index.items()}
+
     env = Environment(loader=PackageLoader('flyem_snapshot.outputs.neuprint'))
     template = env.get_template('create-indexes.cypher')
     rendered = template.render({
         'segment_properties': neuron_prop_names,
         'rois': roi_names,
-        'dataset': cfg['meta']['dataset']
+        'dataset': cfg['meta']['dataset'],
+        'element_rois_to_index': element_rois_to_index,
     })
 
     logger.info("Writing neuprint/create-indexes.cypher")

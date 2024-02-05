@@ -165,11 +165,11 @@ def export_all(cfg, config_dir):
     output_dir = cfg['job-settings']['output-dir']
     logger.info(f"Working in {output_dir}")
     with switch_cwd(output_dir):
-        last_mutation, ann, element_tables, point_df, partner_df, syn_roisets, body_sizes, tbar_nt, body_nt = \
-            load_inputs(cfg)
+        (last_mutation, ann, element_tables, point_df, partner_df,
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt) = load_inputs(cfg)
 
         produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
-                        syn_roisets, body_sizes, tbar_nt, body_nt)
+                        syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
 
 
 def load_inputs(cfg):
@@ -216,16 +216,18 @@ def load_inputs(cfg):
     # Elements
     #
     element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
-    for el_name in list(element_tables.keys()):
-        el_points, el_distances = element_tables[el_name]
-        if el_points is None:
+    element_roisets = {}
+    for elm_name in list(element_tables.keys()):
+        elm_points, elm_distances = element_tables[elm_name]
+        if elm_points is None:
             continue
-        el_points, syn_roisets = load_point_rois(
+        elm_points, elm_roisets = load_point_rois(
             cfg['inputs']['rois'],
-            el_points,
+            elm_points,
             cfg['inputs']['synapses']['roi-set-names']
         )
-        element_tables[el_name] = (el_points, el_distances)
+        element_tables[elm_name] = (elm_points, elm_distances)
+        element_roisets[elm_name] = elm_roisets
 
     #
     # Body sizes (for synaptic bodies only)
@@ -237,16 +239,19 @@ def load_inputs(cfg):
     #
     tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
 
-    return last_mutation, ann, element_tables, point_df, partner_df, syn_roisets, body_sizes, tbar_nt, body_nt
+    return (last_mutation, ann, element_tables, point_df, partner_df,
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
 
 
-def produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df, syn_roisets, body_sizes, tbar_nt, body_nt):
+def produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
+                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt):
+
     snapshot_tag = cfg['job-settings']['snapshot-tag']
     min_conf = cfg['inputs']['synapses']['min-confidence']
 
     export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
     export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
-                    tbar_nt, body_nt, syn_roisets, element_tables, last_mutation)
+                    tbar_nt, body_nt, syn_roisets, element_roisets, last_mutation)
     export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
     export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
 

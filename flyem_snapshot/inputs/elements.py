@@ -20,15 +20,20 @@ ElementTableSchema = {
     "properties": {
         "point-table": {
             "description":
-                "A feather file containing the element points, optionally with a 'body' column.\n"
+                "Optional. A feather file containing the element points, optionally with a 'body' column.\n"
                 "If an 'sv' column is also present, it can be used to much more efficiently update the body column if needed.\n"
                 "Required columns are x,y,z,type.  Other columns may be present and will be loaded in neuprint outputs.\n",
             "type": "string",
             "default": ""
         },
+        "neuprint-label": {
+            "description": "A specific node label, if any, to use when exporting these elements to neuprint, e.g. ':Mito'\n",
+            "type": "string",
+            "default": ""
+        },
         "distance-table": {
             "description":
-                "A feather file containing a table of source and target point pairs, with optional 'distance' column.\n"
+                "Optional. A feather file containing a table of source and target point pairs, with optional 'distance' column.\n"
                 "Required columns are source_x, source_y, source_z, target_x, target_y, target_z\n",
             "type": "string",
             "default": ""
