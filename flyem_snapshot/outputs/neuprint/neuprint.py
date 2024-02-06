@@ -18,7 +18,7 @@ from .synapse import export_neuprint_synapses, export_neuprint_synapse_connectio
 from .synapseset import export_synapsesets
 from .element import export_neuprint_elements, export_neuprint_elements_closeto
 from .elementset import export_neuprint_elementsets
-
+from ...util import restrict_synapses_to_roi
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +234,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
 
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
 
-    point_df, partner_df = restrict_synapses_to_roiset(
+    point_df, partner_df = restrict_synapses_for_setting(
         cfg, 'restrict-info-totals-to-roiset', point_df, partner_df)
 
     element_tables = restrict_elements_to_roiset(
@@ -260,7 +260,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     export_neuprint_indexes_script(
         cfg, neuron_df.columns, roi_totals.index, syn_roisets, element_roisets)
 
-    point_df, partner_df = restrict_synapses_to_roiset(
+    point_df, partner_df = restrict_synapses_for_setting(
         cfg, 'restrict-connectivity-to-roiset', point_df, partner_df)
 
     element_tables = restrict_elements_to_roiset(
@@ -314,7 +314,7 @@ def drop_out_of_bounds_bodies(cfg, point_df, partner_df):
         return point_df, partner_df, inbounds_bodies, inbounds_rois
 
 
-def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
+def restrict_synapses_for_setting(cfg, setting, point_df, partner_df):
     """
     Drop synapses from point_df and partner_df which fall outside a config-defined roiset.
     (No individual ROI in the roiset is used -- only points which the
@@ -338,28 +338,8 @@ def restrict_synapses_to_roiset(cfg, setting, point_df, partner_df):
         Filtered versions of point_df and partner_df.
     """
     roiset = cfg[setting]
-    if not roiset:
-        return point_df, partner_df
-
     with Timer(f"Filtering out synapses according to {setting}: '{roiset}'"):
-        # We keep *connections* that are in-bounds.
-        # In neuprint, this is defined by the 'post' side.
-        # On the edge, there can be 'pre' points that are out-of-bounds but
-        # preserved here because they are partnered to an in-bounds 'post' point.
-        inbounds_partners = (partner_df[roiset] != "<unspecified>")
-        partner_df = partner_df.loc[inbounds_partners]
-
-        # Keep the points which are still referenced in partner_df
-        valid_ids = pd.concat(
-            (
-                partner_df['pre_id'].drop_duplicates().rename('point_id'),
-                partner_df['post_id'].drop_duplicates().rename('point_id')
-            ),
-            ignore_index=True
-        )
-        point_df = point_df.loc[point_df.index.isin(valid_ids)]
-
-    return point_df, partner_df
+        return restrict_synapses_to_roi(roiset, None, point_df, partner_df)
 
 
 def restrict_elements_to_roiset(cfg, setting, element_tables, syn_point_df):

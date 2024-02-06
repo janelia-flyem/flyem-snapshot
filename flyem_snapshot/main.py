@@ -242,7 +242,7 @@ def load_inputs(cfg):
     #
     # Neurotransmitters
     #
-    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
+    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
 
     return (last_mutation, ann, element_tables, point_df, partner_df,
             syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
