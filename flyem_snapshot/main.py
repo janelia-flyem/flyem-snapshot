@@ -208,7 +208,8 @@ def load_inputs(cfg):
     partner_df = merge_partner_rois(
         cfg['inputs']['rois'],
         point_df,
-        partner_df
+        partner_df,
+        cfg['inputs']['synapses']['roi-set-names']
     )
 
     export_synapse_cache(point_df, partner_df, snapshot_tag)
@@ -225,7 +226,7 @@ def load_inputs(cfg):
         elm_points, elm_roisets = load_point_rois(
             cfg['inputs']['rois'],
             elm_points,
-            cfg['inputs']['synapses']['roi-set-names']
+            cfg['inputs']['elements'][elm_name]['roi-set-names']
         )
         element_tables[elm_name] = (elm_points, elm_distances)
         element_roisets[elm_name] = elm_roisets
@@ -331,6 +332,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     """
     jobcfg = cfg['job-settings']
     dvidcfg = cfg['inputs']['dvid-seg'] = cfg['inputs'].get('dvid-seg', {"server": None})
+    elmcfg = cfg['inputs']['elements']
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
@@ -387,6 +389,13 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # to insert into to the synapse table, insert them all.
     if not syncfg['roi-set-names']:
         syncfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
+
+    # Same for all generic Element sets.
+    for elm_name, c in elmcfg.items():
+        if elm_name == 'processes':
+            continue
+        if not c['roi-set-names']:
+            c['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
     # If the user didn't specify an explicit subset
     # of roi-sets to include in neuprint, include them all.

@@ -40,6 +40,21 @@ ElementTableSchema = {
             "type": "string",
             "default": ""
         },
+        "roi-set-names": {
+            "description":
+                "The list of ROI sets to include as columns in the synapse table.\n"
+                "If nothing is listed here, all ROI sets are used.",
+            "default": None,
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
     }
 }
 

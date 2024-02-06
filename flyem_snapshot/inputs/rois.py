@@ -135,13 +135,12 @@ def load_point_rois(cfg, point_df, roiset_names):
 
 
 @PrefixFilter.with_context('rois')
-def merge_partner_rois(cfg, point_df, partner_df):
+def merge_partner_rois(cfg, point_df, partner_df, roiset_names):
     # Merge extracted ROI values in point_df onto the partner_df, too.
     # Note that we use the 'post' side when defining the location of a synapse connection.
     # The post side is used consistently for definining aggregate per-ROI synapse strengths
     # such as 'weight', 'synweight', 'upstream', 'downstream', 'weight'.
     with Timer("Adding roi columns to partner table", logger):
-        roiset_names = [*cfg['roi-sets'].keys()]
         partner_df = partner_df.drop(columns=roiset_names, errors='ignore')
         partner_df = partner_df.merge(point_df[roiset_names].rename_axis('post_id'), 'left', on='post_id')
 
