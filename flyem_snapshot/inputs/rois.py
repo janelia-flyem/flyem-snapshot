@@ -218,9 +218,9 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
             raise RuntimeError(
                 f"If you are specifying {roiset_name} roi_ids via a format string, "
                 f"then you must supply the {roiset_name}_label column.")
-        unique_ids = point_df[f'{roiset_name}'].unique()
+        unique_ids = point_df[f'{roiset_name}_label'].unique()
         roi_ids = {
-            eval(f'f"{roi_ids}"', None, {'x': x})  # pylint: disable=eval-used
+            eval(f'f"{roi_ids}"', None, {'x': x}): x  # pylint: disable=eval-used
             for x in unique_ids if x != 0
         }
 
@@ -237,7 +237,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
         raise RuntimeError(msg)
 
     # Ensure categorical
-    if not isinstance(point_df[roiset_name].dtype, pd.CategoricalDtype):
+    if roiset_name in point_df.columns and not isinstance(point_df[roiset_name].dtype, pd.CategoricalDtype):
         point_df[roiset_name] = point_df[roiset_name].astype('category')
 
     if expected_cols <= {*point_df.columns}:
@@ -254,7 +254,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
         reverse_ids = {v:k for k,v in roi_ids.items()}
         if len(roi_ids) != len(reverse_ids):
             logger.warning("ROI IDs are not unique; precise mapping of ROI labels to ROI names is undefined.")
-        point_df[roiset_name] = point_df[f'{roiset_name}_label'].map(reverse_ids)
+        point_df[roiset_name] = point_df[f'{roiset_name}_label'].map(reverse_ids).astype('category')
 
     return roi_ids
 

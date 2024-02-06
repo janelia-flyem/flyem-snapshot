@@ -110,8 +110,9 @@ def _body_roi_synstats(cfg, point_df, partner_df, inbounds_bodies):
     """
     Per-body-per-ROI stats
     """
+    roiset_names = set(cfg['roi-set-names']) & set(point_df.columns)
     roiset_dfs = []
-    for i, roiset_name in enumerate(tqdm_proxy(cfg['roi-set-names'])):
+    for i, roiset_name in enumerate(tqdm_proxy(sorted(roiset_names))):
         if i == 0:
             # We only include <unspecified> counts for the first ROI set.
             # The actual <unspecified> count will not appear in neuprint,
@@ -491,8 +492,9 @@ def export_neuprint_segment_connections(cfg, partner_df):
     # Neuprint defines the location of synapse connection
     # weights according to the 'post' side.
 
+    roiset_names = set(cfg['roi-set-names']) & set(partner_df.columns)
     roiset_conns = []
-    for i, roiset_name in enumerate(cfg['roi-set-names']):
+    for i, roiset_name in enumerate(sorted(roiset_names)):
         df = partner_df
         if i > 0:
             # We only include '<unspecified>' once.

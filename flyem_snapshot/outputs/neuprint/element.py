@@ -46,6 +46,7 @@ def _export_neuprint_elements(cfg, point_df, *, config_name):
     # All non-ROI columns from the input table are exported as :Element properties.
     roicols = (*cfg['roi-set-names'], *(f'{c}_label' for c in cfg['roi-set-names']))
     prop_cols = set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'}
+    roi_syn_props = {k:v for k,v in cfg['roi-synapse-properties'].items() if k in point_df.columns}
 
     point_df = point_df.rename(columns={
         'point_id': ':ID(Element-ID)'
@@ -61,12 +62,13 @@ def _export_neuprint_elements(cfg, point_df, *, config_name):
     _export_fn = partial(
         _export_element_group_csv,
         export_subdir,
-        cfg['roi-synapse-properties']
+        roi_syn_props,
     )
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", ".*groupby with a grouper equal to a list of length 1.*")
-        groups = point_df.groupby(cfg['roi-set-names'], dropna=False, observed=True)
+        roisets = sorted(set(cfg['roi-set-names']) & set(point_df.columns))
+        groups = point_df.groupby(roisets, dropna=False, observed=True)
         batches = ((i, group_rois, df) for i, (group_rois, df) in enumerate(groups))
         compute_parallel(
             _export_fn,
