@@ -338,7 +338,7 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
     df['num_presyn'] = pred_df.groupby(groupcol).size()
     if groupcol == 'body':
         df['cell_type'] = pred_df.groupby(groupcol)['cell_type'].agg('first')
-    df = df.sort_values(groupcol, ignore_index=True)
+    df = df.sort_values(groupcol)
 
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
