@@ -239,7 +239,7 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
     # Compute confusion matrix for the 'test' set only.
     confusion_df = (
         tbar_nt
-        .query('split != "train" and split != "validation" and not ground_truth.isnull()"')
+        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
         .groupby(['ground_truth', 'pred1'])
         .size()
         .unstack(-1, 0.0)
