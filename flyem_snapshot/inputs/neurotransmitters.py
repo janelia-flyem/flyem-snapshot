@@ -226,8 +226,6 @@ def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
 def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body_presyn, min_type_presyn):
     """
     FIXME: The output column names still need to be finalized.
-
-    TODO: Consensus
     """
     gt_mapping = gt_df.set_index('cell_type')['ground_truth']
 
@@ -278,15 +276,23 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
     if 'confidence' in type_df.columns:
         type_cols.append('confidence')
 
-    body_nt = body_nt.merge(
-        type_df[type_cols],
-        'left',
-        on='cell_type',
-        suffixes=['', '_celltype']
-    ).rename({
-        'num_presyn_celltype': 'celltype_num_presyn',
-        'top_pred_celltype': 'celltype_top_pred'
-    })
+    body_nt = (
+        body_nt
+        .merge(
+            type_df[type_cols],
+            'left',
+            on='cell_type',
+            suffixes=['', '_celltype']
+        )
+        .drop(columns=['num_presyn'])
+        .rename(columns={
+            'top_pred': 'predicted_nt',
+            'top_pred_celltype': 'celltype_predicted_nt',
+            'confidence': 'predicted_nt_confidence',
+            'confidence_celltype': 'celltype_predicted_nt_confidence',
+            'num_presyn_celltype': 'celltype_total_presyn',
+        })
+    )
 
     return body_nt
 
