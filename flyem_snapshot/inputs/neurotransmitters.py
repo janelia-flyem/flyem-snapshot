@@ -87,7 +87,7 @@ NeurotransmittersSchema = {
             "type": "string",
             "default": ""
         },
-        "body-min-confidence": {
+        "min-body-confidence": {
             "description":
                 "After computing body confidence scores, bodies with lower confidence scores than\n"
                 "this threshold will not be assigned a body-level NT prediction.\n"
@@ -95,14 +95,14 @@ NeurotransmittersSchema = {
             "type": "number",
             "default": 0.5
         },
-        "body-min-presyn": {
+        "min-body-presyn": {
             "description":
                 "Bodies with fewer tbars than this cutoff will not be assigned a body-level NT prediction.\n"
                 "Instead, they'll be assigned 'unclear' as their NT prediction.\n",
             "type": "integer",
             "default": 50
         },
-        "celltype-min-presyn": {
+        "min-celltype-presyn": {
             "description":
                 "If the total number of tbars across all cells of a type does not meet this threshold,\n"
                 "the type-level prediction will be 'unclear.\n",
@@ -155,7 +155,7 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
     with Timer("Computing groupwise NT predictions for bodies and cell types", logger):
         body_nt = _compute_body_neurotransmitters(
             tbar_nt, gt_df, ann,
-            cfg['min-body-confidence'], cfg['min-body-presyn'], cfg['min-type-presyn']
+            cfg['min-body-confidence'], cfg['min-body-presyn'], cfg['min-celltype-presyn']
         )
 
     if cfg['export-mean-tbar-scores']:
@@ -229,10 +229,10 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
     # Append 'ground_truth' column using cell_type and GT table
     tbar_nt['ground_truth'] = tbar_nt['cell_type'].map(gt_mapping)
 
-    nt_cols = [c.split('_')[1] for c in tbar_nt.columns if c.startswith('nt_')]
+    nt_cols = [c for c in tbar_nt.columns if c.startswith('nt_')]
     tbar_nt['pred1'] = (
         tbar_nt[nt_cols]
-        .rename(columns={c.split('_')[1] for c in nt_cols})
+        .rename(columns={c: c.split('_')[1] for c in nt_cols})
         .idxmax(axis=1)
     )
 
