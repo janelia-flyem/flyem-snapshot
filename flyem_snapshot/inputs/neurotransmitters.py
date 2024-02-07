@@ -194,7 +194,7 @@ def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
     tbar_nt = tbar_nt.rename(columns={f'{k}_pre':k for k in 'xyz'})
     nt_cols = [col for col in tbar_nt.columns if col.startswith('nts')]
 
-    # Discard everything except
+    # Discard extraneous columns
     cols = [*'xyz', *nt_cols]
     if 'split' in tbar_nt.columns:
         cols.append('split')
@@ -271,7 +271,7 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
 
     # We don't return a separate table for celltype predictions.
     # Instead, append celltype prediction columns to the body table
-    # (with duplicated values for bodies with matching celll types).
+    # (with duplicated values for bodies with matching cell types).
     type_cols = ['cell_type', 'num_presyn', 'top_pred']
     if 'confidence' in type_df.columns:
         type_cols.append('confidence')

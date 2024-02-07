@@ -3,15 +3,13 @@
 Import synapses from disk, filter them, and associate each point with a body ID.
 """
 import os
-import json
 import logging
 
 import numpy as np
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64, dump_json
-from neuclease.dvid.labelmap import fetch_mapping, fetch_mutations, fetch_complete_mappings, fetch_bodies_for_many_points
+from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
 
 
 logger = logging.getLogger(__name__)
@@ -268,24 +266,3 @@ def _load_raw_synapses(cfg):
 
     logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners")
     return point_df, partner_df
-
-
-def _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag):
-    # FIXME:
-    #   In the case of an unlocked DVID node, there is a race condition
-    #   here between the mutations and mapping.
-    #   In principle, it's possible to fetch the mappings from the most recent
-    #   locked node and then update them according to the most recent mutations,
-    #   but that requires tracking the supervoxel movements across merges and cleaves.
-    mutations = fetch_mutations(*dvid_seg)
-
-    # Fetching the 'complete' mappings takes 2x as long as the minimal mappings,
-    # but it's more useful because it
-    mapping = fetch_complete_mappings(*dvid_seg, mutations)
-
-    feather.write_feather(
-        mapping.reset_index(),
-        f"tables/complete-nonsingleton-mapping-{snapshot_tag}.feather"
-    )
-
-    return mutations, mapping
