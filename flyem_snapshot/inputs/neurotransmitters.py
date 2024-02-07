@@ -238,9 +238,10 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
     tbar_nt['ground_truth'] = tbar_nt['cell_type'].map(gt_mapping)
 
     nt_cols = [c for c in tbar_nt.columns if c.startswith('nt_')]
+    nts = [c.split('_')[1] for c in nt_cols]
     tbar_nt['pred1'] = (
         tbar_nt[nt_cols]
-        .rename(columns={c: c.split('_')[1] for c in nt_cols})
+        .rename(columns=dict(zip(nt_cols, nts)))
         .idxmax(axis=1)
     )
 
@@ -251,6 +252,14 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
         .groupby(['ground_truth', 'pred1'])
         .size()
         .unstack(-1, 0.0)
+        # We reindex to ensure that the confusion matrix has rows/columns
+        # for all neurotransmitters in the ground_truth, even if some of
+        # them aren't in the 'test' set.  (This can happen when working
+        # with a small set of tbars, such as when working with a small ROI
+        # or when using test datasets.)
+        .reindex(nts)
+        .reindex(nts, axis=1)
+        .fillna(0.0)
     )
 
     body_nt = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'body')
