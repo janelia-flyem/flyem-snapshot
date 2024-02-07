@@ -332,6 +332,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     """
     jobcfg = cfg['job-settings']
     dvidcfg = cfg['inputs']['dvid-seg'] = cfg['inputs'].get('dvid-seg', {"server": None})
+    anncfg = cfg['inputs']['annotations']
     elmcfg = cfg['inputs']['elements']
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
@@ -364,26 +365,42 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # Relative paths are interpreted w.r.t. to the config file, not the cwd.
     # Overwrite the paths with their absolute versions so subsequent functions
     # don't have to worry about relative paths.
+    def make_abspath(d, key):
+        if d[key]:
+            d[key] = os.path.abspath(d[key])
+
     with switch_cwd(config_dir):
-        syncfg['syndir'] = os.path.abspath(syncfg['syndir'])
+        make_abspath(anncfg, 'body-annotations-table')
+        make_abspath(syncfg, 'syndir')
+
         if not syncfg['synapse-points'].startswith('{syndir}'):
-            syncfg['synapse-points'] = os.path.abspath(syncfg['synapse-points'])
+            make_abspath(syncfg, 'synapse-points')
         if not syncfg['synapse-partners'].startswith('{syndir}'):
-            syncfg['synapse-partners'] = os.path.abspath(syncfg['synapse-partners'])
+            make_abspath(syncfg, 'synapse-partners')
 
         # The 'syndir' keyword is also respected in the neurotransmitter filepath
         ntcfg = cfg['inputs']['neurotransmitters']
+        make_abspath(ntcfg, 'ground-truth')
+        make_abspath(ntcfg, 'experimental-groundruth')
         if ntcfg['synister-feather'].startswith('{syndir}'):
             ntcfg['synister-feather'] = ntcfg['synister-feather'].format(syndir=syncfg['syndir'])
-        elif ntcfg['synister-feather']:
-            ntcfg['synister-feather'] = os.path.abspath(ntcfg['synister-feather'])
+        else:
+            make_abspath(ntcfg, 'synister-feather')
 
-        bscfg = cfg['inputs']['body-sizes']
-        if bscfg['cache-file']:
-            bscfg['cache-file'] = os.path.abspath(bscfg['cache-file'])
+        make_abspath(cfg['inputs']['body-sizes'], 'cache-file')
 
-        neuprintcfg['meta'] = os.path.abspath(neuprintcfg['meta'])
-        neuprintcfg['neuroglancer']['json-state'] = os.path.abspath(neuprintcfg['neuroglancer']['json-state'])
+        make_abspath(neuprintcfg, 'meta')
+        make_abspath(neuprintcfg['neuroglancer'], 'json-state')
+
+        for elm_name, c in elmcfg.items():
+            if elm_name == 'processes':
+                continue
+            make_abspath(c, 'point-table')
+            make_abspath(c, 'distance-table')
+
+        for rs in roicfg['roi-sets'].values():
+            if isinstance(rs['rois'], str) and rs['rois'].endswith('.json'):
+                make_abspath(rs, 'rois')
 
     # If the user didn't specify an explicit subset of roi-sets
     # to insert into to the synapse table, insert them all.
