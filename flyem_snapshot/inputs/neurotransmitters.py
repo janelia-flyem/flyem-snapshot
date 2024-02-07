@@ -22,7 +22,7 @@ NeurotransmittersSchema = {
                 "Path to an Apache Feather file with neurotransmitter\n"
                 "predictions as produced via the 'synister' tool/method.\n"
                 "If body-level (and type-level) confidences are desired, then the table\n"
-                "must also include a 'split' column indicating which synapses were in the 'train' set\n"
+                "must also include a 'split' column indicating which synapses were in the 'train' and 'validation' sets\n"
                 "(so we can discard them before computing the confusion matrix).\n",
                 # FIXME: Specify required columns...
             "type": "string",
@@ -145,18 +145,21 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
     with Timer("Loading tbar NT predictions", logger):
         tbar_nt = _load_tbar_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
 
-    if cfg['ground-truth']:
+    if not cfg['ground-truth']:
+        gt_df = None
+    else:
         gt_df = pd.read_csv(cfg['ground-truth'])
         if not {*gt_df.columns} >= {'cell_type', 'ground_truth'}:
             raise RuntimeError("Neurotransmitter ground-truth table does not supply the necessary columns.")
-    else:
-        gt_df = None
+        if 'split' not in tbar_nt:
+            raise RuntimeError("Can't make use of your ground-truth because your point data does not contain a 'split' column.")
 
     with Timer("Computing groupwise NT predictions for bodies and cell types", logger):
         body_nt = _compute_body_neurotransmitters(
             tbar_nt, gt_df, ann,
             cfg['min-body-confidence'], cfg['min-body-presyn'], cfg['min-celltype-presyn']
         )
+    tbar_nt = tbar_nt.drop(columns=['split'], errors='ignore')
 
     if cfg['export-mean-tbar-scores']:
         # For consistency with MANC, we also list ALL mean neurotransmitter
@@ -190,7 +193,12 @@ def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
     tbar_nt = tbar_nt.rename(columns={f'pre_{k}':k for k in 'xyz'})
     tbar_nt = tbar_nt.rename(columns={f'{k}_pre':k for k in 'xyz'})
     nt_cols = [col for col in tbar_nt.columns if col.startswith('nts')]
-    tbar_nt = tbar_nt[[*'xyz', *nt_cols]]
+
+    # Discard everything except
+    cols = [*'xyz', *nt_cols]
+    if 'split' in tbar_nt.columns:
+        cols.append('split')
+    tbar_nt = tbar_nt[cols]
 
     # Apply user's coordinate scaling factor.
     tbar_nt[[*'xyz']] = (tbar_nt[[*'xyz']] * rescale).astype(np.int32)
