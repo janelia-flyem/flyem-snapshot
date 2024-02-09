@@ -4,7 +4,7 @@
     (See flyem_snapshot/outputs/neuprint/indexes.py)
 
     The rendered script is later executed via the neo4j
-    cypher-shell create indexes on Segment properties.
+    cypher-shell to create indexes on Segment properties.
     (See ingest-neuprint-snapshot-within-neo4j-container.sh)
 #}
 
@@ -33,11 +33,21 @@ RETURN datetime() as time, ":Synapse.location: Initiated index creation" as mess
 // I don't know what this mutationUuidAndId property is.
 // CREATE CONSTRAINT ON ( {{dataset}}segment:{{dataset}}_Segment ) ASSERT {{dataset}}segment.mutationUuidAndId IS UNIQUE;
 
-// I'm not sure why we index `type` separately here,
+// I'm not sure why we index `type` separately here
 // for the bare :Segment/:Neuron/:Synapse labels.
 CREATE INDEX ON :Segment(`type`);
 CREATE INDEX ON :Neuron(`type`);
 CREATE INDEX ON :Synapse(`type`);
+
+//
+// Element properties
+//
+{% for label, rois in element_rois_to_index.items() %}
+{% for roi in rois %}
+CREATE INDEX ON :`{{dataset}}_{{label}}`(`{{roi}}`);
+RETURN datetime() as time, ":{{label}} annotation property {{loop.index}}/{{rois|count}}: Initiated index creation for '{{roi}}'" as message;
+{% endfor %}
+{% endfor %}
 
 //
 // Segment/Neuron properties (other than ROIs)
@@ -45,7 +55,7 @@ CREATE INDEX ON :Synapse(`type`);
 {% for prop in segment_properties %}
 CREATE INDEX ON :`{{dataset}}_Segment`(`{{prop}}`);
 CREATE INDEX ON :`{{dataset}}_Neuron`(`{{prop}}`);
-RETURN datetime() as time, ":Segment/:Neuron annotation property #{{loop.index}}: Initiated index creation for '{{prop}}'" as message;
+RETURN datetime() as time, ":Segment/:Neuron annotation property {{loop.index}}/{{segment_properties|count}}: Initiated index creation for '{{prop}}'" as message;
 {% endfor %}
 
 //
@@ -54,7 +64,7 @@ RETURN datetime() as time, ":Segment/:Neuron annotation property #{{loop.index}}
 {% for roi in rois %}
 CREATE INDEX ON :`{{dataset}}_Segment`(`{{roi}}`);
 CREATE INDEX ON :`{{dataset}}_Neuron`(`{{roi}}`);
-RETURN datetime() as time, ":Segment/:Neuron ROI property #{{loop.index}}: Initiated index creation for '{{roi}}'" as message;
+RETURN datetime() as time, ":Segment/:Neuron ROI property {{loop.index}}/{{rois|count}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 
 // Indexing is performed in the background,

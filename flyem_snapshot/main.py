@@ -1,5 +1,6 @@
 import os
 import sys
+import pickle
 import logging
 from collections.abc import Mapping
 
@@ -9,9 +10,11 @@ from neuclease.util import Timer, switch_cwd
 from neuclease.dvid import set_default_dvid_session_timeout
 from neuclease.dvid.labelmap import resolve_snapshot_tag
 
-from .inputs.synapses import SnapshotSynapsesSchema, load_synapses
+from .inputs.dvidseg import DvidSegSchema, load_dvidseg
+from .inputs.elements import ElementTablesSchema, load_elements
+from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, export_synapse_cache
 from .inputs.annotations import AnnotationsSchema, load_annotations
-from .inputs.rois import RoisSchema, load_rois
+from .inputs.rois import RoisSchema, load_point_rois, merge_partner_rois
 from .inputs.sizes import BodySizesSchema, load_body_sizes
 from .inputs.neurotransmitters import NeurotransmittersSchema, load_neurotransmitters
 
@@ -44,6 +47,8 @@ ConfigSchema = {
             "default": {},
             "additionalProperties": False,
             "properties": {
+                "dvid-seg": DvidSegSchema,
+                "elements": ElementTablesSchema,
                 "synapses": SnapshotSynapsesSchema,
                 "annotations": AnnotationsSchema,
                 "rois": RoisSchema,
@@ -157,30 +162,105 @@ def export_all(cfg, config_dir):
 
     _finalize_config_and_output_dir(cfg, config_dir)
 
-    # These config settings are needed by stages other than
-    # the stage that "owns" the config setting,
-    # so we pass them via args instead of via the config.
-    snapshot_tag = cfg['job-settings']['snapshot-tag']
-    min_conf = cfg['inputs']['synapses']['min-confidence']
-    update_seg = cfg['inputs']['synapses']['update-to']
-    dvid_seg = (update_seg['server'], update_seg['uuid'], update_seg['instance'])
-
     # All subsequent processing occurs from within the output-dir
     output_dir = cfg['job-settings']['output-dir']
     logger.info(f"Working in {output_dir}")
     with switch_cwd(output_dir):
-        # Load inputs
-        ann = load_annotations(cfg['inputs']['annotations'], dvid_seg, snapshot_tag)
-        point_df, partner_df, last_mutation = load_synapses(cfg['inputs']['synapses'], snapshot_tag)
-        point_df, partner_df, roisets = load_rois(cfg['inputs']['rois'], snapshot_tag, point_df, partner_df)
-        body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvid_seg, point_df, snapshot_tag)
-        tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df)
+        (last_mutation, ann, element_tables, point_df, partner_df,
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt) = load_inputs(cfg)
 
-        # Produce outputs
-        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
-        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, ann, body_sizes, tbar_nt, body_nt, roisets, last_mutation)
-        export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
-        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+        produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
+                        syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
+
+
+def load_inputs(cfg):
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
+
+    #
+    # Segmentation parameters
+    #
+    dvidseg, last_mutation, pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
+
+    #
+    # Annotations
+    #
+    ann = load_annotations(
+        cfg['inputs']['annotations'],
+        dvidseg,
+        snapshot_tag
+    )
+
+    point_df, partner_df = load_synapses(
+        cfg['inputs']['synapses'],
+        snapshot_tag,
+        pointlabeler
+    )
+
+    #
+    # Synapses
+    #
+    point_df, syn_roisets = load_point_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
+
+    partner_df = merge_partner_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        partner_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
+
+    export_synapse_cache(point_df, partner_df, snapshot_tag)
+
+    #
+    # Elements
+    #
+    element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
+    element_roisets = {}
+    for elm_name in list(element_tables.keys()):
+        elm_points, elm_distances = element_tables[elm_name]
+        if elm_points is None:
+            continue
+        elm_points, elm_roisets = load_point_rois(
+            cfg['inputs']['rois'],
+            elm_points,
+            cfg['inputs']['elements'][elm_name]['roi-set-names']
+        )
+        element_tables[elm_name] = (elm_points, elm_distances)
+        element_roisets[elm_name] = elm_roisets
+
+    with open('tables/element_tables.pkl', 'wb') as f:
+        pickle.dump(element_tables, f)
+
+    #
+    # Body sizes (for synaptic bodies only)
+    #
+    body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvidseg, point_df, snapshot_tag)
+
+    #
+    # Neurotransmitters
+    #
+    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
+
+    return (last_mutation, ann, element_tables, point_df, partner_df,
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
+
+
+def produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
+                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt):
+
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
+    min_conf = cfg['inputs']['synapses']['min-confidence']
+
+    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
+
+    export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
+                    tbar_nt, body_nt, syn_roisets, element_roisets, last_mutation)
+
+    export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+    export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
 
 
 def determine_snapshot_tag(cfg, config_dir):
@@ -194,13 +274,13 @@ def determine_snapshot_tag(cfg, config_dir):
     FIXME: Ideally, we should also consult the annotation instance
             to see if it has even newer dates.
     """
-    syncfg = cfg['inputs']['synapses']
+    dvidcfg = cfg['inputs'].get('dvid-seg', {"server": None})
     uuid = None
-    if syncfg['update-to']:
+    if dvidcfg['server']:
         uuid, snapshot_tag = resolve_snapshot_tag(
-            syncfg['update-to']['server'],
-            syncfg['update-to']['uuid'],
-            syncfg['update-to']['instance']
+            dvidcfg['server'],
+            dvidcfg['uuid'],
+            dvidcfg['instance']
         )
 
     # If user supplied an explicit snapshot-tag in the config, use that.
@@ -208,9 +288,8 @@ def determine_snapshot_tag(cfg, config_dir):
 
     if not snapshot_tag:
         msg = (
-            "Since your synapses config does not refer to a DVID "
-            "snapshot UUID in the 'update-to' setting, you must supply "
-            "an explicit snapshot-tag to use in output file names."
+            "Since your config does not refer to a dvid-seg, you must "
+            "supply an explicit snapshot-tag to use in output file names."
         )
         raise RuntimeError(msg)
 
@@ -252,6 +331,9 @@ def _finalize_config_and_output_dir(cfg, config_dir):
            we should probably move some of this logic into the relevant pipeline steps.
     """
     jobcfg = cfg['job-settings']
+    dvidcfg = cfg['inputs']['dvid-seg'] = cfg['inputs'].get('dvid-seg', {"server": None})
+    anncfg = cfg['inputs']['annotations']
+    elmcfg = cfg['inputs']['elements']
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
@@ -262,15 +344,15 @@ def _finalize_config_and_output_dir(cfg, config_dir):
 
     if uuid:
         uuid, snapshot_tag = resolve_snapshot_tag(
-            syncfg['update-to']['server'],
-            syncfg['update-to']['uuid'],
-            syncfg['update-to']['instance']
+            dvidcfg['server'],
+            dvidcfg['uuid'],
+            dvidcfg['instance']
         )
         # Overwrite config UUID ref with the resolved (explicit) UUID
-        syncfg['update-to']['uuid'] = uuid
+        dvidcfg['uuid'] = uuid
 
-        # By default, the ROI config uses the same server/uuid as the synapses.
-        roicfg['dvid']['server'] = roicfg['dvid']['server'] or syncfg['update-to']['server']
+        # By default, the ROI config uses the main server/uuid.
+        roicfg['dvid']['server'] = roicfg['dvid']['server'] or dvidcfg['server']
         roicfg['dvid']['uuid'] = roicfg['dvid']['uuid'] or uuid
 
     # Some portions of the pipeline have their own setting for process count,
@@ -283,31 +365,59 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     # Relative paths are interpreted w.r.t. to the config file, not the cwd.
     # Overwrite the paths with their absolute versions so subsequent functions
     # don't have to worry about relative paths.
+    def make_abspath(d, key):
+        if d[key]:
+            d[key] = os.path.abspath(d[key])
+
     with switch_cwd(config_dir):
-        syncfg['syndir'] = os.path.abspath(syncfg['syndir'])
+        make_abspath(anncfg, 'body-annotations-table')
+        make_abspath(syncfg, 'syndir')
+
         if not syncfg['synapse-points'].startswith('{syndir}'):
-            syncfg['synapse-points'] = os.path.abspath(syncfg['synapse-points'])
+            make_abspath(syncfg, 'synapse-points')
         if not syncfg['synapse-partners'].startswith('{syndir}'):
-            syncfg['synapse-partners'] = os.path.abspath(syncfg['synapse-partners'])
+            make_abspath(syncfg, 'synapse-partners')
 
         # The 'syndir' keyword is also respected in the neurotransmitter filepath
         ntcfg = cfg['inputs']['neurotransmitters']
+        make_abspath(ntcfg, 'ground-truth')
+        make_abspath(ntcfg, 'experimental-groundruth')
         if ntcfg['synister-feather'].startswith('{syndir}'):
             ntcfg['synister-feather'] = ntcfg['synister-feather'].format(syndir=syncfg['syndir'])
-        elif ntcfg['synister-feather']:
-            ntcfg['synister-feather'] = os.path.abspath(ntcfg['synister-feather'])
+        else:
+            make_abspath(ntcfg, 'synister-feather')
 
-        bscfg = cfg['inputs']['body-sizes']
-        if bscfg['cache-file']:
-            bscfg['cache-file'] = os.path.abspath(bscfg['cache-file'])
+        make_abspath(cfg['inputs']['body-sizes'], 'cache-file')
 
-        neuprintcfg['meta'] = os.path.abspath(neuprintcfg['meta'])
-        neuprintcfg['neuroglancer']['json-state'] = os.path.abspath(neuprintcfg['neuroglancer']['json-state'])
+        make_abspath(neuprintcfg, 'meta')
+        make_abspath(neuprintcfg['neuroglancer'], 'json-state')
+
+        for elm_name, c in elmcfg.items():
+            if elm_name == 'processes':
+                continue
+            make_abspath(c, 'point-table')
+            make_abspath(c, 'distance-table')
+
+        for rs in roicfg['roi-sets'].values():
+            if isinstance(rs['rois'], str) and rs['rois'].endswith('.json'):
+                make_abspath(rs, 'rois')
+
+    # If the user didn't specify an explicit subset of roi-sets
+    # to insert into to the synapse table, insert them all.
+    if not syncfg['roi-set-names']:
+        syncfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
+
+    # Same for all generic Element sets.
+    for elm_name, c in elmcfg.items():
+        if elm_name == 'processes':
+            continue
+        if not c['roi-set-names']:
+            c['roi-set-names'] = list(roicfg['roi-sets'].keys())
 
     # If the user didn't specify an explicit subset
-    #  of roi-sets to include in neuprint, include them all.
+    # of roi-sets to include in neuprint, include them all.
     if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['roi-set-names']:
-        neuprintcfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
+        neuprintcfg['roi-set-names'] = syncfg['roi-set-names']
 
     # By default, the reports will use the first listed roiset.
     if cfg['outputs']['connectivity-reports']['reports'] and not cfg['outputs']['connectivity-reports']['report-roiset']:

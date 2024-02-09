@@ -49,6 +49,8 @@ META_ARG=--nodes=Neuprint_Meta.csv
 SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv
 NEURON_ARGS=$(for f in $(find Neuprint_Neurons/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 SYNAPSE_ARGS=$(for f in $(find Neuprint_Synapses/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+ELEMENT_ARGS=$(for f in $(find Neuprint_Elements/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+ELMSET_ARGS=$(for f in $(find Neuprint_ElementSets/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 
 if [[ -z "${NEURON_ARGS}" ]]
 then
@@ -71,10 +73,16 @@ fi
 
 # Relationship arguments.
 NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_Neuron_Connections.csv
-SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_SynapseSet_to_SynapseSet.csv
 SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=Neuprint_Synapse_Connections.csv
+ELEMENT_CLOSETO_ARGS=$(for f in $(find . -name "Neuprint_Elements_CloseTo_*.csv"); do printf -- "--relationships=CloseTo=$f "; done)
+
 NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=Neuprint_Neuron_to_SynapseSet.csv
 SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=Neuprint_SynapseSet_to_Synapses.csv
+SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_SynapseSet_to_SynapseSet.csv
+
+NEURON_CONTAINS_ELMSET_ARGS=$(for f in $(find . -name "Neuprint_Neuron_to_ElementSet_*.csv"); do printf -- "--relationships=Contains=$f "; done)
+ELMSET_CONTAINS_ELEMENT_ARGS=$(for f in $(find . -name "Neuprint_ElementSet_to_Element_*.csv"); do printf -- "--relationships=Contains=$f "; done)
+
 
 # The v4.4 docs say this about the HEAP_SIZE variable:
 # "If doing imports in the order of magnitude of 100 billion entities, 20G will be an appropriate value."
@@ -98,12 +106,17 @@ cat > ingestion-args.txt << EOF
 ${META_ARG}
 ${NEURON_ARGS}
 ${SYNAPSE_ARGS}
+${ELEMENT_ARGS}
 ${SYNSET_ARG}
+${ELMSET_ARGS}
 ${NEURON_CONNECTSTO_ARG}
 ${SYNSET_CONNECTSTO_ARG}
 ${SYNAPSE_SYNAPSESTO_ARG}
 ${NEURON_CONTAINS_SYNSET_ARG}
 ${SYNSET_CONTAINS_SYNAPSE_ARG}
+${ELEMENT_CLOSETO_ARGS}
+${NEURON_CONTAINS_ELMSET_ARGS}
+${ELMSET_CONTAINS_ELEMENT_ARGS}
 EOF
 
 if [[ ! -z "${DEBUG_SHELL}" ]]

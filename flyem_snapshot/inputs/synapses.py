@@ -1,17 +1,15 @@
 """
-Export a connectivity snapshot from a DVID segmentation,
-along with other denormalizations.
+
+Import synapses from disk, filter them, and associate each point with a body ID.
 """
 import os
-import json
 import logging
 
 import numpy as np
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64, dump_json
-from neuclease.dvid.labelmap import fetch_mapping, fetch_mutations, fetch_complete_mappings, fetch_bodies_for_many_points
+from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
 
 
 logger = logging.getLogger(__name__)
@@ -74,17 +72,6 @@ SnapshotSynapsesSchema = {
             "type": "string",
             # NO DEFAULT
         },
-        "update-to": {
-            "oneOf": [
-                LabelmapSchema,
-                {"type": "null"}
-            ],
-            "default": {},
-            "description":
-                "DVID labelmap instance to use for updating the synapse body IDs.\n"
-                "If not provided, the synapse point_df table must include a 'body' column,\n"
-                "which will be used without modifications.\n",
-        },
         "zone": {
             # TODO: Eliminate the 'zone' feature in favor of more flexibility in defining report ROIs.
             "description":
@@ -102,6 +89,21 @@ SnapshotSynapsesSchema = {
             "maximum": 1.0,
             "default": 0.0,
         },
+        "roi-set-names": {
+            "description":
+                "The list of ROI sets to include as columns in the synapse table.\n"
+                "If nothing is listed here, all ROI sets are used.",
+            "default": None,
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
         "processes": {
             "description":
                 "How many processes should be used to update synapse labels?\n"
@@ -114,7 +116,7 @@ SnapshotSynapsesSchema = {
 
 
 @PrefixFilter.with_context('synapses')
-def load_synapses(cfg, snapshot_tag):
+def load_synapses(cfg, snapshot_tag, pointlabeler):
     os.makedirs('tables', exist_ok=True)
 
     # Do the files already exist for this snapshot?
@@ -123,28 +125,13 @@ def load_synapses(cfg, snapshot_tag):
         logger.info("Loading previously-written synapse files")
         partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
         point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
-        last_mutation = json.load(open('tables/last-mutation.json', 'r'))
-        return point_df, partner_df, last_mutation
+        return point_df, partner_df
 
     point_df, partner_df = _load_raw_synapses(cfg)
-    last_mutation = {}
 
-    if cfg['update-to']:
-        dvid_seg = (
-            cfg['update-to']['server'],
-            cfg['update-to']['uuid'],
-            cfg['update-to']['instance'],
-        )
-
-        if len(point_df) < 1_000_000:
-            # This fast path is convenient for small tests.
-            point_df['body'] = fetch_mapping(*dvid_seg, point_df['sv'].values, batch_size=1000, threads=cfg['processes'])
-            mutations = fetch_mutations(*dvid_seg, dag_filter='leaf-only')
-        else:
-            mutations, mapping = _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag)
-            with Timer(f"Updating supervoxels/bodies for UUID {dvid_seg[1][:6]}", logger):
-                # This adds/updates 'sv' and 'body' columns to point_df
-                fetch_bodies_for_many_points(*dvid_seg, point_df, mutations, mapping, processes=cfg['processes'])
+    if pointlabeler:
+        with Timer(f"Updating supervoxels/bodies for UUID {pointlabeler.dvidseg.uuid[:6]}", logger):
+            pointlabeler.update_bodies_for_points(point_df, processes=cfg['processes'])
 
     if 'body' not in point_df.columns:
         raise RuntimeError(
@@ -157,12 +144,14 @@ def load_synapses(cfg, snapshot_tag):
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
 
     with Timer("Exporting filtered/updated synapse tables", logger):
-        if len(mutations) > 0:
-            last_mutation = mutations.iloc[-1].to_dict()
-            dump_json(last_mutation, 'tables/last-mutation.json')
-        else:
-            dump_json({}, 'tables/last-mutation.json')
+        export_synapse_cache(point_df, partner_df, snapshot_tag)
 
+    return point_df, partner_df
+
+
+def export_synapse_cache(point_df, partner_df, snapshot_tag):
+    # Overwrite the point_df we saved earlier now that we've updated the ROIs.
+    with Timer("Exporting filtered/updated synapse tables", logger):
         feather.write_feather(
             point_df.reset_index(),
             f'tables/point_df-{snapshot_tag}.feather'
@@ -171,7 +160,7 @@ def load_synapses(cfg, snapshot_tag):
             partner_df,
             f'tables/partner_df-{snapshot_tag}.feather'
         )
-    return point_df, partner_df, last_mutation
+    return point_df, partner_df
 
 
 def _load_raw_synapses(cfg):
@@ -277,24 +266,3 @@ def _load_raw_synapses(cfg):
 
     logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners")
     return point_df, partner_df
-
-
-def _fetch_and_export_complete_mappings(dvid_seg, snapshot_tag):
-    # FIXME:
-    #   In the case of an unlocked DVID node, there is a race condition
-    #   here between the mutations and mapping.
-    #   In principle, it's possible to fetch the mappings from the most recent
-    #   locked node and then update them according to the most recent mutations,
-    #   but that requires tracking the supervoxel movements across merges and cleaves.
-    mutations = fetch_mutations(*dvid_seg)
-
-    # Fetching the 'complete' mappings takes 2x as long as the minimal mappings,
-    # but it's more useful because it
-    mapping = fetch_complete_mappings(*dvid_seg, mutations)
-
-    feather.write_feather(
-        mapping.reset_index(),
-        f"tables/complete-nonsingleton-mapping-{snapshot_tag}.feather"
-    )
-
-    return mutations, mapping
