@@ -5,7 +5,7 @@ import logging
 from collections.abc import Mapping
 
 from confiddler import dump_default_config, load_config, dump_config
-from neuclease import configure_default_logging
+from neuclease import configure_default_logging, PrefixFilter
 from neuclease.util import Timer, switch_cwd
 from neuclease.dvid import set_default_dvid_session_timeout
 from neuclease.dvid.labelmap import resolve_snapshot_tag
@@ -190,27 +190,28 @@ def load_inputs(cfg):
         snapshot_tag
     )
 
+    #
+    # Synapses
+    #
     point_df, partner_df = load_synapses(
         cfg['inputs']['synapses'],
         snapshot_tag,
         pointlabeler
     )
 
-    #
-    # Synapses
-    #
-    point_df, syn_roisets = load_point_rois(
-        cfg['inputs']['rois'],
-        point_df,
-        cfg['inputs']['synapses']['roi-set-names']
-    )
+    with PrefixFilter.context('synapses'):
+        point_df, syn_roisets = load_point_rois(
+            cfg['inputs']['rois'],
+            point_df,
+            cfg['inputs']['synapses']['roi-set-names']
+        )
 
-    partner_df = merge_partner_rois(
-        cfg['inputs']['rois'],
-        point_df,
-        partner_df,
-        cfg['inputs']['synapses']['roi-set-names']
-    )
+        partner_df = merge_partner_rois(
+            cfg['inputs']['rois'],
+            point_df,
+            partner_df,
+            cfg['inputs']['synapses']['roi-set-names']
+        )
 
     export_synapse_cache(point_df, partner_df, snapshot_tag)
 
@@ -223,11 +224,12 @@ def load_inputs(cfg):
         elm_points, elm_distances = element_tables[elm_name]
         if elm_points is None:
             continue
-        elm_points, elm_roisets = load_point_rois(
-            cfg['inputs']['rois'],
-            elm_points,
-            cfg['inputs']['elements'][elm_name]['roi-set-names']
-        )
+        with PrefixFilter.context(elm_name):
+            elm_points, elm_roisets = load_point_rois(
+                cfg['inputs']['rois'],
+                elm_points,
+                cfg['inputs']['elements'][elm_name]['roi-set-names']
+            )
         element_tables[elm_name] = (elm_points, elm_distances)
         element_roisets[elm_name] = elm_roisets
 
