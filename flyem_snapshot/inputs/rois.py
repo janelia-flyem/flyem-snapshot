@@ -197,7 +197,7 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
         raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
 
     roi_vol, roi_box, roi_ids = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], dvid_cfg, processes)
-    extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=True)
+    extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=False)
 
     return roi_ids
 
