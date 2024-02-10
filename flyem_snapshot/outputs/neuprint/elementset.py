@@ -93,8 +93,8 @@ def _export_elementsets(cfg, config_name, point_df, synaptic_bodies):
     with Timer(f"Writing {fname}", logger):
         (
             point_df[['elmset_id', 'point_id']].rename(columns={
-                'elmset_id': ':START_ID(Body-ID)',
-                'point_id': 'END_ID(Element-ID)'
+                'elmset_id': ':START_ID(ElementSet-ID)',
+                'point_id': ':END_ID(Element-ID)'
             })
             .to_csv(f'neuprint/{fname}', index=False, header=True)
         )
