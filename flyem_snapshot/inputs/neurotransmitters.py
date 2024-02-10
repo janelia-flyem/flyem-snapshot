@@ -361,8 +361,11 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
     # using the group prediction as the 'ground_truth' NT.
     # (There is a 10x faster way to do this using Categoricals and numpy slicing,
     # but it's more verbose. This is good enough.)
-    group_pred_and_syn_pred = pd.MultiIndex.from_frame(pred_df[['group_pred', 'pred1']])
-    pred_df['confusion_score'] = confusion_df.stack().loc[group_pred_and_syn_pred].values
+
+    valid_rows = pred_df['group_pred'].notnull()
+    group_pred_and_syn_pred = pred_df.loc[valid_rows, ['group_pred', 'pred1']]
+    group_pred_and_syn_pred = pd.MultiIndex.from_frame(group_pred_and_syn_pred)
+    pred_df.loc[valid_rows, 'confusion_score'] = confusion_df.stack().loc[group_pred_and_syn_pred].values
     df['mean_confusion'] = pred_df.groupby(groupcol)['confusion_score'].mean()
 
     # Append 'ground_truth' column where possible
