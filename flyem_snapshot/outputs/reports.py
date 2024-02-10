@@ -129,8 +129,8 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
 
     # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
     roiset = cfg['report-roiset']
-    point_df = point_df.drop(columns=['roi'], errors='ignore').rename({roiset: 'roi'})
-    partner_df = partner_df.drop(columns=['roi'], errors='ignore').rename({roiset: 'roi'})
+    point_df = point_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
+    partner_df = partner_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
 
     if roiset not in partner_df.columns:
         partner_df = partner_df.merge(point_df['roi'].rename_axis('post_id'), 'left', on='post_id')
