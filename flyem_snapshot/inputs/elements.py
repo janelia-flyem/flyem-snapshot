@@ -71,13 +71,7 @@ ElementTablesSchema = {
             "default": None
         },
     },
-    "default": {
-        "my-elements": {
-            "point-table": "/path/to/my-elements.feather",
-            "distance-table": "/optional/path/distance-table.feather"
-        },
-        "processes": None
-    }
+    "default": {}
 }
 
 

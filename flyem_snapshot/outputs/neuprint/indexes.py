@@ -29,10 +29,7 @@ IndexesSettingsSchema = {
                 "Presumably this is more useful when you are working with relatively\n"
                 "sparse Elements or small ROIs (or both).\n",
             "type": "array",
-            "default": [{
-                "neuprint-label": ":Example",
-                "roisets": ["medulla_column"]
-            }],
+            "default": [],
             "items": {
                 "type": "object",
                 "properties": {
