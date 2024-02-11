@@ -293,7 +293,7 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
             'num_presyn_celltype': 'celltype_total_presyn',
         })
     )
-
+    body_nt = body_nt.set_index('body')
     return body_nt
 
 

@@ -41,6 +41,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
     neuron_df = body_stats.merge(ann, 'left', on='body')
 
     if body_nt is not None:
+        assert body_nt.index.name == 'body'
         body_nt = body_nt.rename(columns={
             c: snakecase_to_camelcase(c) for c in body_nt.columns
         })
@@ -55,6 +56,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
     _assign_segment_label(cfg, neuron_df)
 
     # We include bodyId as a property column AND as the node ID column for neo4j ingestion.
+    assert neuron_df.index.name == 'body'
     neuron_df['bodyId'] = neuron_df.index
     neuron_df = neuron_df.rename_axis(':ID(Body-ID)').reset_index()
     neuron_df = append_neo4j_type_suffixes(neuron_df, exclude=['roiset_hash'])
