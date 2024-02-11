@@ -18,6 +18,8 @@ def export_neuprint_elements(cfg, element_tables):
     Export generic (non-Synapse) Element nodes and relationships.
     (Synapses are exported elsewhere.)
     """
+    if not element_tables:
+        return
     element_dir = 'neuprint/Neuprint_Elements'
     if os.path.exists(element_dir):
         shutil.rmtree(element_dir)

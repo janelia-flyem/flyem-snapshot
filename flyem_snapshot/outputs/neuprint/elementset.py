@@ -15,11 +15,11 @@ def export_neuprint_elementsets(cfg, element_tables, connectome):
     synaptic_bodies = pd.concat(
         (connectome['body_pre'].rename('body'),
          connectome['body_post'].rename('body')), ignore_index=True).drop_duplicates()
-
-    all_points = pd.concat((points for points, _ in element_tables.values() if points is not None))
-    if len(all_points) == 0:
+    all_points = [points for points, _ in element_tables.values() if points is not None]
+    if len(all_points) == 0 or sum(map(len, all_points)) == 0:
         return
 
+    all_points = pd.concat(all_points)
     for elm_type, points in all_points.groupby('type'):
         _export_elementsets(cfg, elm_type, points, synaptic_bodies)
 
