@@ -129,10 +129,11 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
 
     # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
     roiset = cfg['report-roiset']
+    assert roiset in point_df.columns, f"roiset not found in point_df: {roiset}.  Columns are: {point_df.columns.tolist()}"
     point_df = point_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
     partner_df = partner_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
 
-    if roiset not in partner_df.columns:
+    if 'roi' not in partner_df.columns:
         partner_df = partner_df.merge(point_df['roi'].rename_axis('post_id'), 'left', on='post_id')
 
     with Timer("Flagging captured bodies", logger):
@@ -148,6 +149,9 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
         # all, which could happen early in a reconstruction.)
         partner_df['captured_pre'] = partner_df['captured_pre'].astype(pd.CategoricalDtype([False, True]))
         partner_df['captured_post'] = partner_df['captured_post'].astype(pd.CategoricalDtype([False, True]))
+
+    assert 'roi' in point_df, f"point_df columns are: {point_df.columns}"
+    assert 'roi' in partner_df, f"partner_df columns are: {partner_df.columns}"
 
     with Timer("Grouping by ROI", logger):
         roi_point_dfs = {roi: df for roi, df in point_df.groupby('roi')}
