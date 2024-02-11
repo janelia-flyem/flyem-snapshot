@@ -16,22 +16,17 @@ def export_neuprint_elementsets(cfg, element_tables, connectome):
         (connectome['body_pre'].rename('body'),
          connectome['body_post'].rename('body')), ignore_index=True).drop_duplicates()
 
-    for config_name, (points, _) in element_tables.items():
-        _export_elementsets(cfg, config_name, points, synaptic_bodies)
-
-
-def _export_elementsets(cfg, config_name, point_df, synaptic_bodies):
-    if point_df is None:
+    all_points = pd.concat((points for points, _ in element_tables.values() if points is not None))
+    if len(all_points) == 0:
         return
 
+    for elm_type, points in all_points.groupby('type'):
+        _export_elementsets(cfg, elm_type, points, synaptic_bodies)
+
+
+def _export_elementsets(cfg, elm_type, point_df, synaptic_bodies):
     dataset = cfg['meta']['dataset']
     label = f"ElementSet;{dataset}_ElementSet"
-
-    specific_label = cfg['element-labels'].get(config_name, '')
-    if specific_label.startswith(':'):
-        specific_label = specific_label[1:]
-    if specific_label:
-        label += f";{specific_label}Set;{dataset}_{specific_label}Set"
 
     point_df = point_df.reset_index()
     point_df['elmset_id'] = point_df['body'].astype(str) + '_' + point_df['type']
@@ -39,7 +34,7 @@ def _export_elementsets(cfg, config_name, point_df, synaptic_bodies):
     elmset_df = point_df.drop_duplicates('elmset_id')
 
     os.makedirs('neuprint/Neuprint_ElementSets', exist_ok=True)
-    fname = f"Neuprint_ElementSet_{config_name}.csv"
+    fname = f"Neuprint_ElementSet_{elm_type}.csv"
     with Timer(f"Writing {fname}", logger):
         (
             elmset_df[['elmset_id', 'type']]
@@ -52,7 +47,7 @@ def _export_elementsets(cfg, config_name, point_df, synaptic_bodies):
             .to_csv(f'neuprint/Neuprint_ElementSets/{fname}', index=False, header=True)
         )
 
-    fname = f"Neuprint_Neuron_to_ElementSet_{config_name}.csv"
+    fname = f"Neuprint_Neuron_to_ElementSet_{elm_type}.csv"
     with Timer(f"Writing {fname}", logger):
         # Currently, neuprint does not create any :Segment nodes
         # for non-synaptic bodies (including body 0).
@@ -89,7 +84,7 @@ def _export_elementsets(cfg, config_name, point_df, synaptic_bodies):
             .to_csv(f'neuprint/{fname}', index=False, header=True)
         )
 
-    fname = f"Neuprint_ElementSet_to_Element_{config_name}.csv"
+    fname = f"Neuprint_ElementSet_to_Element_{elm_type}.csv"
     with Timer(f"Writing {fname}", logger):
         (
             point_df[['elmset_id', 'point_id']].rename(columns={
