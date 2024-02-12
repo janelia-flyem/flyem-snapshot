@@ -257,11 +257,13 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
         # or when using test datasets.)
         .reindex(nts)
         .reindex(nts, axis=1)
-        .fillna(0.0)
     )
 
     # Normalize the rows
     confusion_df /= confusion_df.sum(axis=1).values[:, None]
+
+    # NaNs might exist due to the reindex() above.
+    confusion_df = confusion_df.fillna(0.0)
 
     body_nt = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'body')
     type_df = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'cell_type')
