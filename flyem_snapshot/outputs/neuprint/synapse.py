@@ -51,7 +51,9 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
     # Note that :Synapses are :Elements and must be referenced that way in :CloseTo relationships.
     # Therefore, we use an ID space named "Element-ID", which is shared by Element nodes.
     point_df = point_df.rename(columns={
-        'point_id': ':ID(Element-ID)'
+        'point_id': ':ID(Element-ID)',
+        'kind': 'type:string',
+        'conf': 'confidence:float',
     })
 
     logger.info(f"Non-ROI Synapse properties: {prop_cols}")
