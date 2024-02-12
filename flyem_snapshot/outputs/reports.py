@@ -127,6 +127,9 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
     os.makedirs("png", exist_ok=True)
     os.makedirs("html", exist_ok=True)
 
+    logger.info(f"point_df.columns: {point_df.columns.tolist()}")
+    logger.info(f"partner_df.columns: {partner_df.columns.tolist()}")
+
     # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
     roiset = cfg['report-roiset']
     assert roiset in point_df.columns, f"roiset not found in point_df: {roiset}.  Columns are: {point_df.columns.tolist()}"
@@ -150,12 +153,18 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
         partner_df['captured_pre'] = partner_df['captured_pre'].astype(pd.CategoricalDtype([False, True]))
         partner_df['captured_post'] = partner_df['captured_post'].astype(pd.CategoricalDtype([False, True]))
 
-    assert 'roi' in point_df, f"point_df columns are: {point_df.columns}"
-    assert 'roi' in partner_df, f"partner_df columns are: {partner_df.columns}"
+    try:
+        assert 'roi' in point_df, f"point_df columns are: {point_df.columns}"
+        assert 'roi' in partner_df, f"partner_df columns are: {partner_df.columns}"
 
-    with Timer("Grouping by ROI", logger):
-        roi_point_dfs = {roi: df for roi, df in point_df.groupby('roi')}
-        roi_partner_dfs = {roi: df for roi, df in partner_df.groupby('roi')}
+        with Timer("Grouping by ROI", logger):
+            roi_point_dfs = {roi: df for roi, df in point_df.groupby('roi')}
+            roi_partner_dfs = {roi: df for roi, df in partner_df.groupby('roi')}
+    except Exception:
+        # I'm trying to debug some weird problem...
+        feather.write_feather(point_df, "tables/point_df-DEBUG.feather")
+        feather.write_feather(partner_df, "tables/partner_df-DEBUG.feather")
+        raise
 
     all_status_stats = []
     all_syncounts = []
