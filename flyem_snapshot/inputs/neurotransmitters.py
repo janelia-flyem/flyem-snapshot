@@ -107,7 +107,7 @@ NeurotransmittersSchema = {
                 "If the total number of tbars across all cells of a type does not meet this threshold,\n"
                 "the type-level prediction will be 'unclear.\n",
             "type": "integer",
-            "default": 50
+            "default": 100
         },
         "export-mean-tbar-scores": {
             "description":
