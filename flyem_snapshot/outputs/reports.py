@@ -6,6 +6,7 @@ import os
 import json
 import logging
 from functools import cache
+from itertools import chain
 
 import requests
 import numpy as np
@@ -20,6 +21,7 @@ from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES
 from neuclease.misc.neuroglancer import format_nglink
 from neuclease.misc.completeness import (
     completeness_forecast,
+    plot_connectivity_forecast,
     plot_categorized_connectivity_forecast,
     variable_width_hbar,
 )
@@ -226,6 +228,10 @@ def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, r
 
 
 def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
+    if all_status_stats[0] is None:
+        # We can't export any capture summaries if no body statuses were given.
+        return
+
     names = [report['name'] for report in cfg['reports']]
     names_df = pd.DataFrame({'report_index': np.arange(len(names)), 'name': names})
 
@@ -236,13 +242,27 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         .unstack()
         .fillna(0.0)
     )
-    status_dtype = pd.CategoricalDtype(DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
-    all_status_stats = pd.concat(all_status_stats, ignore_index=True)
-    all_status_stats['status'] = all_status_stats['status'].astype(status_dtype)
-
     # We don't plot anything with empty status or worse.
-    all_status_stats = all_status_stats.query('status > ""')
-    relevant_statuses = all_status_stats['status'].unique().astype(str)
+    all_status_stats = [s.query('status > ""') for s in all_status_stats]
+
+    # All present statuses, in priority-sorted order.
+    relevant_statuses = pd.concat(all_status_stats)['status'].sort_values().unique().astype(str)
+
+    # Must make sure all relevant statuses are present (with default values)
+    # in all dataframes before concatenating
+    all_status_stats = [
+        s
+        .set_index('status')
+        .reindex(relevant_statuses)
+        .reset_index()
+        .ffill()
+        .fillna(0.0)
+        for s in all_status_stats
+    ]
+    all_status_stats = pd.concat(all_status_stats, ignore_index=True)
+
+    status_dtype = pd.CategoricalDtype(DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
+    all_status_stats['status'] = all_status_stats['status'].astype(status_dtype)
 
     # This unstack() will result in multi-level columns:
     # level 0: traced_presyn_frac                            traced_postsyn_frac                        ...
@@ -251,7 +271,6 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         all_status_stats
         .set_index(['name', 'status'])
         .unstack()
-        .ffill(axis=1)
     )
     # This might be overly pedantic, but we want to scale the ROI
     # bars according to the relevant synapse count (pre or post),
@@ -282,11 +301,12 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
             .merge(names_df, 'left', on='name')
             .sort_values('report_index')
         )
-        df.to_csv(f'tables/{level0}-by-status.csv', index=False, header=True)
+        df.to_csv(f'tables/cumulative-{level0}-by-status.csv', index=False, header=True)
 
         # The dataframe has cumulative connectivity,
         # but for the stacked bar chart we don't want cumulative.
         df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
+        df.to_csv(f'tables/{level0}-by-status.csv', index=False, header=True)
 
         p = variable_width_hbar(
             df,
@@ -308,6 +328,25 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
             titles[level0]
         )
 
+        # Export again, but sorting the bars by total
+        p = variable_width_hbar(
+            df.assign(total=df[relevant_statuses].sum(axis=1)).sort_values('total'),
+            'name',
+            size_cols[level0],
+            relevant_statuses,
+            legend='bottom_right',
+            width=800,
+            height=1200,
+            flip_yaxis=True,
+            vlim=(0, 1),
+            title=titles[level0]
+        )
+        export_bokeh(
+            p,
+            f"{fname}-sorted.html",
+            titles[level0]
+        )
+
 
 @PrefixFilter.with_context("capture forecast")
 def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *, name):
@@ -315,11 +354,23 @@ def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *,
     selection_link = _get_neuroglancer_base_link(cfg['neuroglancer-base-state'])
     _name = '-'.join(name.split())
 
+    sort_by = ['SynWeight', 'PreSyn', 'PostSyn']
+    if 'status' not in ann.columns:
+        ann = None
+    else:
+        # Pass status along and make sure it's categorical if possible.
+        ann = ann[['status']]
+        if ann['status'].dtype != 'category' and set(ann['status'].unique()) <= {np.nan, *DEFAULT_BODY_STATUS_CATEGORIES}:
+            ann['status'] = pd.Categorical(ann['status'], DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
+
+        if ann['status'].dtype == 'category':
+            sort_by.insert(0, 'status')
+
     # This takes 10-15 minutes for the whole brain, even with precomputed body_pre, body_post.
     with Timer("Generating sorted connection completeness table and synapse counts", logger):
         conn_df, syn_counts_df = completeness_forecast(
-            point_df, partner_df, None, ann[['status']], roi=roi,
-            sort_by=['status', 'SynWeight', 'PreSyn', 'PostSyn'],
+            point_df, partner_df, None, ann, roi=roi,
+            sort_by=sort_by,
             stop_at_rank=stop_at_rank
         )
 
@@ -335,21 +386,31 @@ def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *,
 
     with Timer("Generating completeness curve plot"):
         title = f'{name}: Cumulative connectivity by ranked body ({snapshot_tag})'
-        p = plot_categorized_connectivity_forecast(
-            conn_df, 'status', max_rank=None, plotted_points=20_000, hover_cols=['presyn', 'postsyn', 'synweight'],
-            title=title, selection_link=selection_link,
-            secondary_range=[0, 250]
-        )
-        export_bokeh(
-            p,
-            f'{_name}-cumulative-connectivity-with-links-{snapshot_tag}.html',
-            title
-        )
-
-        status_stats = conn_df.drop_duplicates('status', keep='last')[['status', *CAPTURE_STATS]]
-        status_stats['name'] = name
-
-    return status_stats
+        if 'status' in ann.columns:
+            p = plot_categorized_connectivity_forecast(
+                conn_df, 'status', max_rank=None, plotted_points=20_000, hover_cols=['presyn', 'postsyn', 'synweight'],
+                title=title, selection_link=selection_link,
+                secondary_range=[0, 250]
+            )
+            export_bokeh(
+                p,
+                f'{_name}-cumulative-connectivity-with-links-{snapshot_tag}.html',
+                title
+            )
+            status_stats = conn_df.drop_duplicates('status', keep='last')[['status', *CAPTURE_STATS]]
+            status_stats['name'] = name
+            return status_stats
+        else:
+            p = plot_connectivity_forecast(
+                conn_df, max_rank=None, plotted_points=20_000, hover_cols=['presyn', 'postsyn', 'synweight'],
+                title=title
+            )
+            export_bokeh(
+                p,
+                f'{_name}-cumulative-connectivity-{snapshot_tag}.html',
+                title
+            )
+            return None
 
 
 @cache
