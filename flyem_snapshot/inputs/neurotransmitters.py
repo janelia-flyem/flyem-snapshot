@@ -179,10 +179,15 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
         # body_nt['predicted_nt'] = body_nt.idxmax(axis=1).map(col_to_nt)
 
     if (path := cfg['experimental-groundruth']):
-        exp_map = pd.read_csv(path).set_index('cell_type')['ground_truth']
-        body_nt['consensus_nt'] = body_nt['celltype_top_pred']
-        body_nt['consensus_nt'].update(body_nt['celltype_top_pred'].map(exp_map))
+        exp_df = pd.read_csv(path)
+        exp_map = exp_df.set_index('cell_type')['ground_truth']
+        body_nt['consensus_nt'] = body_nt['celltype_predicted_nt']
+        body_nt['consensus_nt'].update(body_nt['cell_type'].map(exp_map))
+        if 'reference' in exp_df.columns:
+            ref_map = exp_df.set_index('cell_type')['reference'].dropna()
+            body_nt['nt_reference'] = body_nt['cell_type'].map(ref_map)
 
+    body_nt = body_nt.drop(columns=['cell_type'], errors='ignore')
     return tbar_nt, body_nt
 
 
