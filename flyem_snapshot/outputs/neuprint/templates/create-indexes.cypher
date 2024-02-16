@@ -17,14 +17,13 @@ RETURN datetime() as time, "Creating uniqueness constraint on bodyId" as message
 CREATE CONSTRAINT ON ( `{{dataset}}segment`:`{{dataset}}_Segment` ) ASSERT `{{dataset}}segment`.bodyId IS UNIQUE;
 CREATE CONSTRAINT ON ( `{{dataset}}neuron`:`{{dataset}}_Neuron` ) ASSERT `{{dataset}}neuron`.bodyId IS UNIQUE;
 
-// This is a good constraint to check, since the assumption that synapse
-// points are unique is baked in to the neuprint data model.
-// However, this will implicitly create an index on all synapse locations.
-// I'm not sure how costly that is and what benefit that brings.
-// We should consider dropping this unless we can think of queries that benefit from this index.
-RETURN datetime() as time, ":Synapse.location: Requesting index creation" as message;
-CREATE CONSTRAINT ON ( `{{dataset}}synapse`:`{{dataset}}_Synapse` ) ASSERT `{{dataset}}synapse`.location IS UNIQUE;
-RETURN datetime() as time, ":Synapse.location: Initiated index creation" as message;
+// This is a good constraint to check, since the assumption that
+// all Element points are unique is baked in to the neuprint data model.
+// This will implicitly create an index on all Element locations,
+// which is essential for spatial queries.
+RETURN datetime() as time, ":Element.location: Requesting index creation" as message;
+CREATE CONSTRAINT ON ( `{{dataset}}element`:`{{dataset}}_Element` ) ASSERT `{{dataset}}element`.location IS UNIQUE;
+RETURN datetime() as time, ":Element.location: Initiated index creation" as message;
 
 // I have no idea what this DataModel node is, so it's possible this line
 // is erroneously left over from an earlier neuprint prototype.
