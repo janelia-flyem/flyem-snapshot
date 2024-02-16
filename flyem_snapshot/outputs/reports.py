@@ -33,7 +33,7 @@ _ = hvplot.pandas  # linting
 logger = logging.getLogger(__name__)
 
 CAPTURE_STATS = ['traced_presyn_frac', 'traced_postsyn_frac', 'traced_synweight_frac', 'traced_conn_frac']
-
+STATUS_DTYPE = pd.CategoricalDtype(DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
 
 #
 # TODO
@@ -244,9 +244,10 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
     )
     # We don't plot anything with empty status or worse.
     all_status_stats = [s.query('status > ""') for s in all_status_stats]
+    assert all(s['status'].dtype == 'category' for s in all_status_stats)
 
     # All present statuses, in priority-sorted order.
-    relevant_statuses = pd.concat(all_status_stats)['status'].sort_values().unique().astype(str)
+    relevant_statuses = pd.concat(all_status_stats)['status'].astype(STATUS_DTYPE).sort_values().drop_duplicates()
 
     # Must make sure all relevant statuses are present (with default values)
     # in all dataframes before concatenating
@@ -260,9 +261,8 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         for s in all_status_stats
     ]
     all_status_stats = pd.concat(all_status_stats, ignore_index=True)
-
-    status_dtype = pd.CategoricalDtype(DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
-    all_status_stats['status'] = all_status_stats['status'].astype(status_dtype)
+    all_status_stats['status'] = all_status_stats['status'].astype(STATUS_DTYPE)
+    all_status_stats.to_csv('tables/all-status-stats.csv', index=False, header=True)
 
     # This unstack() will result in multi-level columns:
     # level 0: traced_presyn_frac                            traced_postsyn_frac                        ...
