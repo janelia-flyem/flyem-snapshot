@@ -244,7 +244,6 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
     )
     # We don't plot anything with empty status or worse.
     all_status_stats = [s.query('status > ""') for s in all_status_stats]
-    assert all(s['status'].dtype == 'category' for s in all_status_stats)
 
     # All present statuses, in priority-sorted order.
     relevant_statuses = pd.concat(all_status_stats)['status'].astype(STATUS_DTYPE).sort_values().drop_duplicates()
