@@ -94,8 +94,10 @@ def load_annotations(cfg, dvidseg, snapshot_tag):
         ann = fetch_body_annotations(dvidseg.server, dvidseg.uuid, dvidseg.instance + '_annotations')
 
         # Feather seems to have a hard time if empty strings are in otherwise int columns.
-        # Currently, it's legitimate to replace '' with None for all neuprint properties we have so far.
-        ann = ann.replace([''], [None])
+        # Currently, it's legitimate to replace '' with None for all neuprint properties we have so far,
+        # except for 'status', since that would mess up the category dtype!
+        nonstatus_cols = [c for c in ann.columns if c != 'status']
+        ann[nonstatus_cols] = ann[nonstatus_cols].replace([''], [None])
 
         # The result includes the original json as an extra column,
         # but that's not necessary for anything in this code.
