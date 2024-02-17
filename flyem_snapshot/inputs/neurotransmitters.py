@@ -233,14 +233,10 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
     """
     FIXME: The output column names still need to be finalized.
     """
-    gt_mapping = gt_df.set_index('cell_type')['ground_truth']
-
     # Append 'cell_type' column to point table
     tbar_nt = tbar_nt.merge(ann['type'].rename('cell_type'), 'left', on='body')
 
-    # Append 'ground_truth' column using cell_type and GT table
-    tbar_nt['ground_truth'] = tbar_nt['cell_type'].map(gt_mapping)
-
+    # Determine top prediction (pred1) for each point
     nt_cols = [c for c in tbar_nt.columns if c.startswith('nt_')]
     nts = [c.split('_')[1] for c in nt_cols]
     tbar_nt['pred1'] = (
@@ -249,27 +245,34 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
         .idxmax(axis=1)
     )
 
-    # Compute confusion matrix for the 'test' set only.
-    confusion_df = (
-        tbar_nt
-        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
-        .groupby(['ground_truth', 'pred1'])
-        .size()
-        .unstack(-1, 0.0)
-        # We reindex to ensure that the confusion matrix has rows/columns
-        # for all neurotransmitters in the ground_truth, even if some of
-        # them aren't in the 'test' set.  (This can happen when working
-        # with a small set of tbars, such as when working with a small ROI
-        # or when using test datasets.)
-        .reindex(nts)
-        .reindex(nts, axis=1)
-    )
+    if gt_df is None:
+        confusion_df = None
+    else:
+        # Append 'ground_truth' column using cell_type and GT table
+        gt_mapping = gt_df.set_index('cell_type')['ground_truth']
+        tbar_nt['ground_truth'] = tbar_nt['cell_type'].map(gt_mapping)
 
-    # Normalize the rows
-    confusion_df /= confusion_df.sum(axis=1).values[:, None]
+        # Compute confusion matrix for the 'test' set only.
+        confusion_df = (
+            tbar_nt
+            .query('split != "train" and split != "validation" and not ground_truth.isnull()')
+            .groupby(['ground_truth', 'pred1'])
+            .size()
+            .unstack(-1, 0.0)
+            # We reindex to ensure that the confusion matrix has rows/columns
+            # for all neurotransmitters in the ground_truth, even if some of
+            # them aren't in the 'test' set.  (This can happen when working
+            # with a small set of tbars, such as when working with a small ROI
+            # or when using testing datasets.)
+            .reindex(nts)
+            .reindex(nts, axis=1)
+        )
 
-    # NaNs might exist due to the reindex() above.
-    confusion_df = confusion_df.fillna(0.0)
+        # Normalize the rows
+        confusion_df /= confusion_df.sum(axis=1).values[:, None]
+
+        # NaNs might exist due to the reindex() above.
+        confusion_df = confusion_df.fillna(0.0)
 
     body_nt = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'body')
     type_df = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'cell_type')
@@ -364,7 +367,7 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
         cols = ['cell_type', 'body', 'num_presyn', 'top_pred']
         if groupcol == 'cell_type':
             cols.remove('body')
-        return df[cols]
+        return df.reset_index()[cols]
 
     pred_df = pred_df.merge(group_pred, 'left', on=groupcol)
 
