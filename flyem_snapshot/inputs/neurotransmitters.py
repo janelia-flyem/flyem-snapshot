@@ -62,8 +62,9 @@ NeurotransmittersSchema = {
             "description": "Drop synapses outside the given region before computing aggregate body and cell type scores and confidences.",
             "default": {},
             "type": "object",
+            "additional-properties": False,
             "properties": {
-                "roi-set": {
+                "roiset": {
                     "type": "string",
                     "default": ""
                 },
