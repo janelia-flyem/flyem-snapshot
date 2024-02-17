@@ -10,6 +10,7 @@ import pandas as pd
 # We want to emit actual ints in the CSV.
 NEUPRINT_TYPE_OVERRIDES = {
     'bodyId': 'long',
+    #'sv': 'long',
     'group': 'long',
     'hemibrainBodyid': 'long',
     'size': 'long',
