@@ -223,9 +223,13 @@ def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
     tbar_nt['point_id'] = encode_coords_to_uint64(tbar_nt[[*'zyx']].values)
     tbar_nt = tbar_nt.set_index('point_id')
 
-    # Drop predictions which correspond to synapses we don't have.
+    # Drop predictions which correspond to synapses we don't have
+    # (due to ROI selection, for example).
+    # Note:
+    #   If there are synapses in point_df which are not present in the tbar
+    #   predictions, they will have NaN predictions after this merge.
     presyn_df = point_df.query('kind == "PreSyn"')
-    tbar_nt = presyn_df[['body']].merge(tbar_nt, 'inner', on='point_id')
+    tbar_nt = presyn_df[['body']].merge(tbar_nt, 'left', on='point_id')
     return tbar_nt
 
 
@@ -346,13 +350,14 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
     #     to ensure predictable ordering in case of a tie.
     group_pred = (
         pred_df[[groupcol, 'pred1']]
-        .value_counts()
+        .value_counts(dropna=False)
         .rename('count')
         .reset_index(1)
         .sort_values(['count', 'pred1'], ascending=[False, True])
         .groupby(groupcol)
         .head(1)
-        ['pred1'].rename('group_pred')
+        ['pred1']
+        .rename('group_pred')
     )
     df = group_pred.to_frame()
     df['num_presyn'] = pred_df.groupby(groupcol).size()
@@ -363,6 +368,11 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
     if gt_df is None:
+        # If there were no tbar NT predictions provided at all
+        # for some bodies, those bodies get 'unclear' NT.
+        df['group_pred'].fillna('unclear', inplace=True)
+
+        # Rearrange/rename columns to match expected output
         df = df.rename(columns={'group_pred': 'top_pred'})
         cols = ['cell_type', 'body', 'num_presyn', 'top_pred']
         if groupcol == 'cell_type':
@@ -376,11 +386,15 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
     # (There is a 10x faster way to do this using Categoricals and numpy slicing,
     # but it's more verbose. This is good enough.)
 
-    valid_rows = pred_df['group_pred'].notnull()
+    valid_rows = pred_df[['group_pred', 'pred1']].notnull().all(axis=1)
     group_pred_and_syn_pred = pred_df.loc[valid_rows, ['group_pred', 'pred1']]
     group_pred_and_syn_pred = pd.MultiIndex.from_frame(group_pred_and_syn_pred)
     pred_df.loc[valid_rows, 'confusion_score'] = confusion_df.stack().loc[group_pred_and_syn_pred].values
-    df['mean_confusion'] = pred_df.groupby(groupcol)['confusion_score'].mean()
+    df['mean_confusion'] = pred_df.groupby(groupcol)['confusion_score'].mean().fillna(0.0)
+
+    # If there were no tbar NT predictions provided at all
+    # for some bodies, those bodies get 'unclear' NT.
+    df['group_pred'].fillna('unclear', inplace=True)
 
     # Append 'ground_truth' column where possible
     df = df.reset_index().merge(gt_df, 'left', on='cell_type')
