@@ -156,6 +156,14 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
     roi = cfg['restrict-to-roi']['roi']
     point_df, _ = restrict_synapses_to_roi(roiset, roi, point_df, partner_df)
 
+    # We only care about annotations with a 'type', and only for bodies which exist in point_df.
+    # Note:
+    #   We do include bodies which contain only post-synapses.  Even though they lack
+    #   pre-synapses (and therefore lack tbar NT predictions), we will still assign
+    #   them a celltype_nt and consensus_nt.
+    bodies = point_df['body'].unique()
+    ann = ann.loc[ann['type'].notnull() & ann.index.isin(bodies), ['type']]
+
     with Timer("Loading tbar NT predictions", logger):
         tbar_nt = _load_tbar_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
 
@@ -276,49 +284,20 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
         .rename(columns=dict(zip(nt_cols, nts)))
         .idxmax(axis=1)
     )
-
-    if gt_df is None:
-        confusion_df = None
-    else:
-        # Append 'ground_truth' column using cell_type and GT table
-        gt_mapping = gt_df.set_index('cell_type')['ground_truth']
-        tbar_nt['ground_truth'] = tbar_nt['cell_type'].map(gt_mapping)
-
-        # Compute confusion matrix for the 'test' set only.
-        confusion_df = (
-            tbar_nt
-            .query('split != "train" and split != "validation" and not ground_truth.isnull()')
-            .groupby(['ground_truth', 'pred1'])
-            .size()
-            .unstack(-1, 0.0)
-            # We reindex to ensure that the confusion matrix has rows/columns
-            # for all neurotransmitters in the ground_truth, even if some of
-            # them aren't in the 'test' set.  (This can happen when working
-            # with a small set of tbars, such as when working with a small ROI
-            # or when using testing datasets.)
-            .reindex(nts)
-            .reindex(nts, axis=1)
-        )
-
-        # Normalize the rows
-        confusion_df /= confusion_df.sum(axis=1).values[:, None]
-
-        # NaNs might exist due to the reindex() above.
-        confusion_df = confusion_df.fillna(0.0)
-
-    body_nt = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'body')
-    type_df = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], confusion_df, gt_df, 'cell_type')
+    confusion_df = _confusion_matrix(tbar_nt, gt_df, nts)
+    body_nt = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], ann, confusion_df, gt_df, 'body')
+    type_df = _calc_group_predictions(tbar_nt[['body', 'cell_type', 'pred1']], ann, confusion_df, gt_df, 'cell_type')
 
     if 'confidence' in body_nt:
         # Apply thresholds to erase unreliable predictions.
         body_nt.loc[body_nt['confidence'] < min_body_conf, 'top_pred'] = 'unclear'
-        body_nt.loc[body_nt['num_presyn'] < min_body_presyn, 'top_pred'] = 'unclear'
-        type_df.loc[type_df['num_presyn'] < min_type_presyn, 'top_pred'] = 'unclear'
+        body_nt.loc[body_nt['num_tbar_nt_predictions'] < min_body_presyn, 'top_pred'] = 'unclear'
+        type_df.loc[type_df['num_tbar_nt_predictions'] < min_type_presyn, 'top_pred'] = 'unclear'
 
     # We don't return a separate table for celltype predictions.
     # Instead, append celltype prediction columns to the body table
     # (with duplicated values for bodies with matching cell types).
-    type_cols = ['cell_type', 'num_presyn', 'top_pred']
+    type_cols = ['cell_type', 'num_tbar_nt_predictions', 'top_pred']
     if 'confidence' in type_df.columns:
         type_cols.append('confidence')
 
@@ -330,25 +309,64 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
             on='cell_type',
             suffixes=['', '_celltype']
         )
-        .drop(columns=['num_presyn'])
+        .drop(columns=['num_tbar_nt_predictions'])
         .rename(columns={
             'top_pred': 'predicted_nt',
             'top_pred_celltype': 'celltype_predicted_nt',
             'confidence': 'predicted_nt_confidence',
             'confidence_celltype': 'celltype_predicted_nt_confidence',
-            'num_presyn_celltype': 'celltype_total_presyn',
+            'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
         })
     )
     body_nt = body_nt.set_index('body')
     return body_nt
 
 
-def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
+def _confusion_matrix(tbar_nt, gt_df, all_nts):
+    if gt_df is None:
+        return None
+
+    # Generate 'ground_truth' column using cell_type and GT table
+    gt_mapping = gt_df.set_index('cell_type')['ground_truth']
+    tbar_gt = tbar_nt['cell_type'].map(gt_mapping)
+
+    # Compute confusion matrix for the 'test' set only.
+    confusion_df = (
+        tbar_nt
+        .assign(ground_truth=tbar_gt)
+        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
+        .groupby(['ground_truth', 'pred1'])
+        .size()
+        .unstack(-1, 0.0)
+        # We reindex to ensure that the confusion matrix has rows/columns
+        # for all neurotransmitters in the ground_truth, even if some of
+        # them aren't in the 'test' set.  (This can happen when working
+        # with a small set of tbars, such as when working with a small ROI
+        # or when using testing datasets.)
+        .reindex(all_nts)
+        .reindex(all_nts, axis=1)
+    )
+
+    # Normalize the rows
+    confusion_df /= confusion_df.sum(axis=1).values[:, None]
+
+    # NaNs might exist due to the reindex() above.
+    confusion_df = confusion_df.fillna(0.0)
+    return confusion_df
+
+
+def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     """
     Args:
         pred_df:
             synapse prediction table with columns:
                 ['body', 'cell_type', 'pred1']
+
+        ann:
+            body annotations table, just for the `type` column.
+            This is used to ensure that the results include all bodies/types,
+            even if some annotated bodies had no tbars and therefore are not
+            present in pred_df.
 
         confusion_df:
             Confusion matrix of NT predictions, as a DataFrame
@@ -364,7 +382,7 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
 
     Returns:
         DataFrame of group-wise predictions with columns (but 'body' is omitted if groupcol='cell_type'):
-        ['cell_type', 'body', 'num_presyn', 'confidence', 'top_pred', 'ground_truth']
+        ['cell_type', 'body', 'num_tbar_nt_predictions', 'confidence', 'top_pred', 'ground_truth']
     """
     assert groupcol in ('body', 'cell_type')
 
@@ -388,9 +406,15 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
         .rename('group_pred')
     )
     df = group_pred.to_frame()
-    df['num_presyn'] = pred_df.groupby(groupcol).size()
+
+    # Ensure that our final results will include all bodies (or types)
+    # in the annotations, even if they weren't present in pred_df
+    df = df.merge(ann['type'].rename('cell_type'), 'outer', on=groupcol)
+
+    df['num_tbar_nt_predictions'] = pred_df.groupby(groupcol)['pred1'].count()
     if groupcol == 'body':
         df['cell_type'] = pred_df.groupby(groupcol)['cell_type'].agg('first')
+
     df = df.sort_values(groupcol)
 
     # Without groundtruth, all we can provide are
@@ -402,7 +426,7 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
 
         # Rearrange/rename columns to match expected output
         df = df.rename(columns={'group_pred': 'top_pred'})
-        cols = ['cell_type', 'body', 'num_presyn', 'top_pred']
+        cols = ['cell_type', 'body', 'num_tbar_nt_predictions', 'top_pred']
         if groupcol == 'cell_type':
             cols.remove('body')
         return df.reset_index()[cols]
@@ -430,7 +454,7 @@ def _calc_group_predictions(pred_df, confusion_df, gt_df, groupcol):
     # Rearrange/rename columns to match expected output
     df = df.rename(columns={'mean_confusion': 'confidence',
                             'group_pred': 'top_pred'})
-    cols = ['cell_type', 'body', 'num_presyn', 'confidence', 'top_pred', 'ground_truth']
+    cols = ['cell_type', 'body', 'num_tbar_nt_predictions', 'confidence', 'top_pred', 'ground_truth']
     if groupcol == 'cell_type':
         cols.remove('body')
     return df[cols]
