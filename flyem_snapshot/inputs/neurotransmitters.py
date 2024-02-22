@@ -96,7 +96,8 @@ NeurotransmittersSchema = {
         "experimental-groundruth": {
             "description":
                 "Optional. Table of high-confidence experimental groundtruth, used to override type-level\n"
-                "predictions in the 'consensus' preduction column.\n",
+                "predictions in the 'consensus' preduction column.\n"
+                "Columns: cell_type, ground_truth, reference, [other_gt], [other_ref]",
             "type": "string",
             "default": ""
         },
@@ -206,6 +207,14 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
         if 'reference' in exp_df.columns:
             ref_map = exp_df.set_index('cell_type')['reference'].dropna()
             body_nt['nt_reference'] = body_nt['cell_type'].map(ref_map)
+
+        if 'other_gt' in exp_df.columns:
+            other_map = exp_df.set_index('cell_type')['other_gt'].dropna()
+            body_nt['other_nt'] = body_nt['cell_type'].map(other_map)
+
+        if 'other_ref' in exp_df.columns:
+            other_ref_map = exp_df.set_index('cell_type')['other_ref'].dropna()
+            body_nt['other_nt_reference'] = body_nt['cell_type'].map(other_ref_map)
 
     body_nt = body_nt.drop(columns=['cell_type'], errors='ignore')
     return tbar_nt, body_nt
