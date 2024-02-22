@@ -58,6 +58,18 @@ NeurotransmittersSchema = {
                 "type": "string"
             }
         },
+        "override-celltype-before-consensus": {
+            "description":
+                "Some NT predictions may be considered unreliable unless there is experimental data to back them up.\n"
+                "This column can be used to override the celltype prediction immediately before the 'consensus' column is produced.\n"
+                "So, the celltype prediction column (property) will NOT be overridden in the end result, but the 'consensus'\n"
+                "column will only use the override value, if at all.\n",
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "restrict-to-roi": {
             "description": "Drop synapses outside the given region before computing aggregate body and cell type scores and confidences.",
             "default": {},
@@ -180,10 +192,17 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
         # body_nt['predicted_nt'] = body_nt.idxmax(axis=1).map(col_to_nt)
 
     if (path := cfg['experimental-groundruth']):
+        # Start with the celltype majority prediction...
+        body_nt['consensus_nt'] = body_nt['celltype_predicted_nt']
+
+        # Apply user-provided overrides (e.g. replace 'octopamine' with 'unclear').
+        body_nt['consensus_nt'].update(body_nt['consensus_nt'].map(cfg['override-celltype-before-consensus']))
+
+        # Overwrite cases where experimental groundtruth is available.
         exp_df = pd.read_csv(path)
         exp_map = exp_df.set_index('cell_type')['ground_truth']
-        body_nt['consensus_nt'] = body_nt['celltype_predicted_nt']
         body_nt['consensus_nt'].update(body_nt['cell_type'].map(exp_map))
+
         if 'reference' in exp_df.columns:
             ref_map = exp_df.set_index('cell_type')['reference'].dropna()
             body_nt['nt_reference'] = body_nt['cell_type'].map(ref_map)
