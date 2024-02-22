@@ -93,7 +93,7 @@ NeurotransmittersSchema = {
             "type": "string",
             "default": ""
         },
-        "experimental-groundruth": {
+        "experimental-groundtruth": {
             "description":
                 "Optional. Table of high-confidence experimental groundtruth, used to override type-level\n"
                 "predictions in the 'consensus' preduction column.\n"
@@ -200,7 +200,7 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
         # col_to_nt = {c: c.split('_')[1] for c in body_nt.columns}
         # body_nt['predicted_nt'] = body_nt.idxmax(axis=1).map(col_to_nt)
 
-    if (path := cfg['experimental-groundruth']):
+    if (path := cfg['experimental-groundtruth']):
         # Start with the celltype majority prediction...
         body_nt['consensus_nt'] = body_nt['celltype_predicted_nt']
 

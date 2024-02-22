@@ -383,7 +383,7 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         # The 'syndir' keyword is also respected in the neurotransmitter filepath
         ntcfg = cfg['inputs']['neurotransmitters']
         make_abspath(ntcfg, 'ground-truth')
-        make_abspath(ntcfg, 'experimental-groundruth')
+        make_abspath(ntcfg, 'experimental-groundtruth')
         if ntcfg['synister-feather'].startswith('{syndir}'):
             ntcfg['synister-feather'] = ntcfg['synister-feather'].format(syndir=syncfg['syndir'])
         else:
