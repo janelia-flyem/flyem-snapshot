@@ -612,6 +612,9 @@ def _load_neuron_columns(metacfg, neuron_df):
         col = item['id']
         item['visible'] = (col in metacfg['neuronColumnsVisible'])
         item['name'] = (item['name'] or col)
+        if col not in neuron_df.columns:
+            logger.error(f"Meta config lists column '{col}' which is not present in the data.")
+            continue
         if item['choices'] == 'auto':
             # Note:
             #   Empty strings were already removed when the annotations
