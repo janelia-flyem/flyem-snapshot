@@ -310,12 +310,12 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
             on='cell_type',
             suffixes=['', '_celltype']
         )
-        .drop(columns=['num_tbar_nt_predictions'])
         .rename(columns={
             'top_pred': 'predicted_nt',
             'top_pred_celltype': 'celltype_predicted_nt',
             'confidence': 'predicted_nt_confidence',
             'confidence_celltype': 'celltype_predicted_nt_confidence',
+            'num_tbar_nt_predictions': 'total_nt_predictions',
             'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
         })
     )

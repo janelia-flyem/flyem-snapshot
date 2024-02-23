@@ -1,18 +1,20 @@
 import os
 import sys
+import copy
+import json
 import pickle
 import logging
 from collections.abc import Mapping
 
 from confiddler import dump_default_config, load_config, dump_config
 from neuclease import configure_default_logging, PrefixFilter
-from neuclease.util import Timer, switch_cwd
+from neuclease.util import Timer, switch_cwd, dump_json
 from neuclease.dvid import set_default_dvid_session_timeout
 from neuclease.dvid.labelmap import resolve_snapshot_tag
 
 from .inputs.dvidseg import DvidSegSchema, load_dvidseg
 from .inputs.elements import ElementTablesSchema, load_elements
-from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, export_synapse_cache
+from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, RawSynapseSerializer
 from .inputs.annotations import AnnotationsSchema, load_annotations
 from .inputs.rois import RoisSchema, load_point_rois, merge_partner_rois
 from .inputs.sizes import BodySizesSchema, load_body_sizes
@@ -24,6 +26,7 @@ from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
 
+from .caches import cached, SerializerBase
 from .util import log_lsf_details
 
 logger = logging.getLogger(__name__)
@@ -175,24 +178,63 @@ def export_all(cfg, config_dir):
 
 def load_inputs(cfg):
     snapshot_tag = cfg['job-settings']['snapshot-tag']
+    pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
+    ann = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
+    point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
+    element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
+    body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], pointlabeler, point_df, snapshot_tag)
+    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
+    return (pointlabeler, ann, element_tables, point_df, partner_df,
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
 
-    #
-    # Segmentation parameters
-    #
-    dvidseg, last_mutation, pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
 
-    #
-    # Annotations
-    #
-    ann = load_annotations(
-        cfg['inputs']['annotations'],
-        dvidseg,
-        snapshot_tag
-    )
+def produce_outputs(cfg, pointlabeler, ann, element_tables, point_df, partner_df,
+                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt):
 
-    #
-    # Synapses
-    #
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
+    min_conf = cfg['inputs']['synapses']['min-confidence']
+
+    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
+
+    export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
+                    tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
+
+    export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+    export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+
+
+class SynapsesWithRoiSerializer(SerializerBase):
+
+    def get_cache_key(self, cfg, pointlabeler):
+        snapshot_tag = cfg['job-settings']['snapshot-tag']
+        cfg = copy.deepcopy(cfg)
+        cfg['synapses']['processes'] = 0
+        cfg['rois']['processes'] = 0
+        syn_hash = abs(hash(json.dumps(cfg['synapses'], sort_keys=True)))
+        roi_hash = abs(hash(json.dumps(cfg['rois'], sort_keys=True)))
+
+        if pointlabeler is None:
+            return f'{snapshot_tag}-syn-{syn_hash}-roi-{roi_hash}'
+
+        mutid = pointlabeler.last_mutation["mutid"]
+        return f'{snapshot_tag}-seg-{mutid}-syn-{syn_hash}-roi-{roi_hash}'
+
+    def save_to_file(self, result, path):
+        point_df, partner_df, syn_roisets = result
+        os.makedirs(path, exist_ok=True)
+        RawSynapseSerializer().save_to_file((point_df, partner_df), path)
+        dump_json(syn_roisets, f'{path}/roisets.json')
+
+    def load_from_file(self, path):
+        point_df, partner_df = RawSynapseSerializer().load_from_file(path)
+        with open(f'{path}/roisets.json', 'r') as f:
+            syn_roisets = json.load(f)
+        return point_df, partner_df, syn_roisets
+
+
+@cached(SynapsesWithRoiSerializer(), 'labeled-synapses-with-rois')
+def load_synapses_and_rois(cfg, pointlabeler):
+    snapshot_tag = cfg['job-settings']['snapshot-tag']
     point_df, partner_df = load_synapses(
         cfg['inputs']['synapses'],
         snapshot_tag,
@@ -213,11 +255,39 @@ def load_inputs(cfg):
             cfg['inputs']['synapses']['roi-set-names']
         )
 
-    export_synapse_cache(point_df, partner_df, snapshot_tag)
+    return point_df, partner_df, syn_roisets
 
-    #
-    # Elements
-    #
+
+class ElementsWithRoiSerializer(SerializerBase):
+
+    def get_cache_key(self, cfg, pointlabeler):
+        snapshot_tag = cfg['job-settings']['snapshot-tag']
+        cfg = copy.deepcopy(cfg)
+        cfg['elements']['processes'] = 0
+        cfg['rois']['processes'] = 0
+        elm_hash = abs(hash(json.dumps(cfg['elements'], sort_keys=True)))
+        roi_hash = abs(hash(json.dumps(cfg['rois'], sort_keys=True)))
+
+        if pointlabeler is None:
+            return f'{snapshot_tag}-elm-{elm_hash}-roi-{roi_hash}'
+
+        mutid = pointlabeler.last_mutation["mutid"]
+        return f'{snapshot_tag}-seg-{mutid}-elm-{elm_hash}-roi-{roi_hash}'
+
+    def save_to_file(self, result, path):
+        os.makedirs(path, exist_ok=True)
+        element_tables, element_roisets = result
+        with open(f'{path}/element-cache.pkl', 'wb') as f:
+            pickle.dump((element_tables, element_roisets), f)
+
+    def load_from_file(self, path):
+        with open(f'{path}/element-cache.pkl', 'rb') as f:
+            element_tables, element_roisets = pickle.load(f)
+        return element_tables, element_roisets
+
+
+@cached(ElementsWithRoiSerializer(), 'labeled-synapses-with-rois')
+def load_elements_and_rois(cfg, pointlabeler):
     element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
     element_roisets = {}
     for elm_name in list(element_tables.keys()):
@@ -233,36 +303,7 @@ def load_inputs(cfg):
         element_tables[elm_name] = (elm_points, elm_distances)
         element_roisets[elm_name] = elm_roisets
 
-    with open('tables/element_tables.pkl', 'wb') as f:
-        pickle.dump(element_tables, f)
-
-    #
-    # Body sizes (for synaptic bodies only)
-    #
-    body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], dvidseg, point_df, snapshot_tag)
-
-    #
-    # Neurotransmitters
-    #
-    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
-
-    return (last_mutation, ann, element_tables, point_df, partner_df,
-            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
-
-
-def produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
-                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt):
-
-    snapshot_tag = cfg['job-settings']['snapshot-tag']
-    min_conf = cfg['inputs']['synapses']['min-confidence']
-
-    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
-
-    export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
-                    tbar_nt, body_nt, syn_roisets, element_roisets, last_mutation)
-
-    export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
-    export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+    return element_tables, element_roisets
 
 
 def determine_snapshot_tag(cfg, config_dir):
@@ -275,6 +316,12 @@ def determine_snapshot_tag(cfg, config_dir):
 
     FIXME: Ideally, we should also consult the annotation instance
             to see if it has even newer dates.
+
+    Example default snapshot tags:
+
+        - 2023-11-03-abc123
+        - 2023-11-04-def456-unlocked
+
     """
     dvidcfg = cfg['inputs'].get('dvid-seg', {"server": None})
     uuid = None
