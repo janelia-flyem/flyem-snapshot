@@ -125,14 +125,18 @@ class SynapseSerializerBase(SerializerBase):
     def save_to_file(self, result, path):
         point_df, partner_df = result
         os.makedirs(path, exist_ok=True)
-        snapshot_tag = re.search('synapses-(.+)-cfg', path).groups()[0]
+
+        # It's not really necessary to put the snapshot tag, etc. in the file names,
+        # since that stuff is already in the directory name.
+        # But it's convenient if we want to copy these files for other people to use.
+        name = os.path.split(path)[-1]
         feather.write_feather(
             point_df.reset_index(),
-            f'{path}/point_df-{snapshot_tag}.feather'
+            f'{path}/point_df-{name}.feather'
         )
         feather.write_feather(
             partner_df,
-            f'{path}/partner_df-{snapshot_tag}.feather'
+            f'{path}/partner_df-{name}.feather'
         )
 
     def load_from_file(self, path):
