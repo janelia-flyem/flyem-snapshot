@@ -208,10 +208,10 @@ class SynapsesWithRoiSerializer(SerializerBase):
     def get_cache_key(self, cfg, pointlabeler):
         snapshot_tag = cfg['job-settings']['snapshot-tag']
         cfg = copy.deepcopy(cfg)
-        cfg['synapses']['processes'] = 0
-        cfg['rois']['processes'] = 0
-        syn_hash = abs(hash(json.dumps(cfg['synapses'], sort_keys=True)))
-        roi_hash = abs(hash(json.dumps(cfg['rois'], sort_keys=True)))
+        cfg['inputs']['synapses']['processes'] = 0
+        cfg['inputs']['rois']['processes'] = 0
+        syn_hash = abs(hash(json.dumps(cfg['inputs']['synapses'], sort_keys=True)))
+        roi_hash = abs(hash(json.dumps(cfg['inputs']['rois'], sort_keys=True)))
 
         if pointlabeler is None:
             return f'{snapshot_tag}-syn-{syn_hash}-roi-{roi_hash}'
@@ -263,10 +263,10 @@ class ElementsWithRoiSerializer(SerializerBase):
     def get_cache_key(self, cfg, pointlabeler):
         snapshot_tag = cfg['job-settings']['snapshot-tag']
         cfg = copy.deepcopy(cfg)
-        cfg['elements']['processes'] = 0
-        cfg['rois']['processes'] = 0
-        elm_hash = abs(hash(json.dumps(cfg['elements'], sort_keys=True)))
-        roi_hash = abs(hash(json.dumps(cfg['rois'], sort_keys=True)))
+        cfg['inputs']['elements']['processes'] = 0
+        cfg['inputs']['rois']['processes'] = 0
+        elm_hash = abs(hash(json.dumps(cfg['inputs']['elements'], sort_keys=True)))
+        roi_hash = abs(hash(json.dumps(cfg['inputs']['rois'], sort_keys=True)))
 
         if pointlabeler is None:
             return f'{snapshot_tag}-elm-{elm_hash}-roi-{roi_hash}'
