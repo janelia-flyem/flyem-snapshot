@@ -116,7 +116,24 @@ RoisSchema = {
 def load_point_rois(cfg, point_df, roiset_names):
     """
     For each named ROI set in the config,
-    add a column to point_df for the ROI of the PostSyn side.
+    add a column to point_df for the ROI of the PostSyn side,
+    and return the modified point_df table.
+
+    Also returns the dict-of-dict for roi names and IDs, structured like this:
+
+        {
+            roiset-name: {
+                roi-name: int,
+                roi-name: int,
+                ...
+            },
+            roiset-name: {
+                roi-name: int,
+                roi-name: int,
+                ...
+            },
+            ...
+        }
     """
     if point_df is None:
         return None, {}

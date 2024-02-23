@@ -199,7 +199,7 @@ NeuprintSchema = {
 
 @PrefixFilter.with_context('neuprint')
 def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
-                    syn_roisets, element_roisets, last_mutation):
+                    syn_roisets, element_roisets, pointlabeler):
     """
     Export CSV files for each of the following:
 
@@ -227,6 +227,8 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
         return
 
     os.makedirs('neuprint', exist_ok=True)
+
+    last_mutation = pointlabeler and pointlabeler.last_mutation
 
     # Drop body 0 entirely.
     point_df = point_df.loc[point_df['body'] != 0]

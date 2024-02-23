@@ -79,19 +79,28 @@ AnnotationsSchema = {
 
 
 @PrefixFilter.with_context('annotations')
-def load_annotations(cfg, dvidseg, snapshot_tag):
+def load_annotations(cfg, pointlabeler, snapshot_tag):
     """
     Load body annotations, either from a feather file or from DVID.
     If from a file, it MUST contain a 'body' column.
 
     If a list of 'point-annotations' instances are listed,
     they will be used to add (or overwrite) columns in the
+
+    Note:
+        We don't cache the annotation results because there's not really
+        a faster way to determine if the annotations in DVID have changed
+        that is much faster than just loading them from scratch anyway.
     """
     if cfg['body-annotations-table']:
         logger.info("Reading body annotations table from disk INSTEAD of reading from DVID.")
         ann = feather.read_feather(cfg['body-annotations-table']).set_index('body')
     else:
-        ann = fetch_body_annotations(dvidseg.server, dvidseg.uuid, dvidseg.instance + '_annotations')
+        ann = fetch_body_annotations(
+            pointlabeler.dvidseg.server,
+            pointlabeler.dvidseg.uuid,
+            pointlabeler.dvidseg.instance + '_annotations'
+        )
 
         # Feather seems to have a hard time if empty strings are in otherwise int columns.
         # Currently, it's legitimate to replace '' with None for all neuprint properties we have so far,
@@ -133,7 +142,7 @@ def load_annotations(cfg, dvidseg, snapshot_tag):
         else:
             raise
 
-    if cfg['point-annotations'] and not dvidseg:
+    if cfg['point-annotations'] and not pointlabeler:
         raise RuntimeError("Can't read point-annotations without a dvid segmentation.")
 
     # Anything mentioned in the point-annotations config
@@ -141,10 +150,15 @@ def load_annotations(cfg, dvidseg, snapshot_tag):
     for pa in cfg['point-annotations']:
         col = pa['column-name'] or pa['instance']
         with PrefixFilter.context(pa['instance']):
-            df = fetch_all_elements(dvidseg.server, dvidseg.uuid, pa['instance'], format='pandas')
+            df = fetch_all_elements(
+                pointlabeler.dvidseg.server,
+                pointlabeler.dvidseg.uuid,
+                pa['instance'],
+                format='pandas'
+            )
             df = df.sort_values([*'zyx'])
             df['body'] = fetch_labels_batched(
-                *dvidseg,
+                *pointlabeler.dvidseg,
                 df[[*'zyx']].values,
                 processes=cfg['processes']
             )
