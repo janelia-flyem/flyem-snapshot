@@ -246,7 +246,14 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
     all_status_stats = [s.query('status > ""') for s in all_status_stats]
 
     # All present statuses, in priority-sorted order.
-    relevant_statuses = pd.concat(all_status_stats)['status'].astype(STATUS_DTYPE).sort_values().drop_duplicates()
+    relevant_statuses = (
+        pd.concat(all_status_stats)
+        ['status']
+        .astype(STATUS_DTYPE)
+        .sort_values()
+        .drop_duplicates()
+        .tolist()
+    )
 
     # Must make sure all relevant statuses are present (with default values)
     # in all dataframes before concatenating
