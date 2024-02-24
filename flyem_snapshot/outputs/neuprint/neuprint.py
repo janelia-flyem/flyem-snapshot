@@ -198,8 +198,24 @@ NeuprintSchema = {
 }
 
 
+class NeuprintSentinelSerializer(SentinelSerializer):
+
+    def get_cache_key(self, cfg, point_df, partner_df, element_tables,
+                      ann, body_sizes, tbar_nt, body_nt,
+                      syn_roisets, element_roisets, pointlabeler):
+
+        key = super().get_cache_key(cfg, point_df, partner_df, element_tables,
+                                    ann, body_sizes, tbar_nt, body_nt,
+                                    syn_roisets, element_roisets)
+
+        if pointlabeler is not None:
+            key = f'{key}-seg-{pointlabeler.last_mutation["mutid"]}'
+
+        return f'{self.name}-{key}.sentinel'
+
+
 @PrefixFilter.with_context('neuprint')
-@cached(SentinelSerializer('neuprint-export'), 'sentinels')
+@cached(NeuprintSentinelSerializer('neuprint-export'), 'sentinels')
 def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
                     syn_roisets, element_roisets, pointlabeler):
     """
