@@ -415,15 +415,17 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         # Append the 'cell_type' column
         assert df.index.name == ann_types.index.name == 'body'
         df = df.merge(ann_types, 'outer', on='body')
-        df = df.reset_index()
-        assert 'body' in df.columns
+        assert df.index.name == ann_types.index.name == 'body'
     else:
+        # Make sure all cell_types from ann are listed in df
         ann_types = ann_types.drop_duplicates()
-        df = df.merge(ann_types, 'outer', on='cell_type')
+        df = df.merge(ann_types, 'outer', on='cell_type').set_index('cell_type')
 
-    assert 'cell_type' in df.columns
     df['num_tbar_nt_predictions'] = pred_df.groupby(groupcol)['pred1'].count()
-    df = df.sort_values(groupcol)
+    df['num_tbar_nt_predictions'].fillna(0, inplace=True)
+
+    assert df.index.name == groupcol
+    df = df.sort_index().reset_index()
 
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
