@@ -425,7 +425,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     df['num_tbar_nt_predictions'].fillna(0, inplace=True)
 
     assert df.index.name == groupcol
-    df = df.sort_index().reset_index()
+    df = df.sort_index()
 
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
@@ -439,7 +439,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         cols = ['cell_type', 'body', 'num_tbar_nt_predictions', 'top_pred']
         if groupcol == 'cell_type':
             cols.remove('body')
-        return df[cols]
+        return df.reset_index()[cols]
 
     pred_df = pred_df.merge(group_pred, 'left', on=groupcol)
 
@@ -459,7 +459,8 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     df['group_pred'].fillna('unclear', inplace=True)
 
     # Append 'ground_truth' column where possible
-    df = df.merge(gt_df, 'left', on='cell_type')
+    df = df.merge(gt_df.set_index('cell_type'), 'left', on='cell_type')
+    assert df.index.name == groupcol
 
     # Rearrange/rename columns to match expected output
     df = df.rename(columns={'mean_confusion': 'confidence',
@@ -467,4 +468,4 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     cols = ['cell_type', 'body', 'num_tbar_nt_predictions', 'confidence', 'top_pred', 'ground_truth']
     if groupcol == 'cell_type':
         cols.remove('body')
-    return df[cols]
+    return df.reset_index()[cols]
