@@ -6,6 +6,8 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import Timer
 
+from ..caches import cached, SentinelSerializer
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +47,7 @@ NeurotransmiterExportSchema = {
 
 
 @PrefixFilter.with_context('neurotransmitters')
+@cached(SentinelSerializer('neurotransmitter-export'), 'sentinels')
 def export_neurotransmitters(cfg, tbar_nt, body_nt, point_df):
     if not cfg['export-neurotransmitters']:
         return

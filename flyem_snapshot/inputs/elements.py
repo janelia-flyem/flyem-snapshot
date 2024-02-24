@@ -75,7 +75,6 @@ ElementTablesSchema = {
 }
 
 
-@PrefixFilter.with_context('elements')
 def load_elements(cfg, pointlabeler):
     element_dfs = {}
     for name, table_cfg in cfg.items():

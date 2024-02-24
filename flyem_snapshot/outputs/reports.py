@@ -6,7 +6,6 @@ import os
 import json
 import logging
 from functools import cache
-from itertools import chain
 
 import requests
 import numpy as np
@@ -27,6 +26,7 @@ from neuclease.misc.completeness import (
 )
 
 from ..util import export_bokeh
+from ..caches import cached, SentinelSerializer
 
 _ = hvplot.pandas  # linting
 
@@ -121,6 +121,7 @@ ReportsSchema = {
 
 
 @PrefixFilter.with_context('Report')
+@cached(SentinelSerializer('reports'), 'sentinels')
 def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
     if len(cfg['reports']) == 0:
         logger.info("No reports requested.")

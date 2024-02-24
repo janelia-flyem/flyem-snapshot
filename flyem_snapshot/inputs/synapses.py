@@ -15,7 +15,7 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
 
-from ..util import det_hash
+from ..util import checksum
 from ..caches import cached, SerializerBase
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ class RawSynapseSerializer(SynapseSerializerBase):
     def get_cache_key(self, cfg, snapshot_tag, pointlabeler):
         cfg = copy.deepcopy(cfg)
         cfg['processes'] = 0
-        cfg_hash = hex(det_hash(json.dumps(cfg, sort_keys=True)))
+        cfg_hash = hex(checksum(cfg))
 
         if pointlabeler is None:
             return f'synapses-{snapshot_tag}-cfg-{cfg_hash}'
@@ -162,7 +162,7 @@ class RawSynapseSerializer(SynapseSerializerBase):
         return f'{snapshot_tag}-seg-{mutid}-syn-{cfg_hash}'
 
 
-@cached(RawSynapseSerializer(), 'labeled-synapses')
+@cached(RawSynapseSerializer('labeled-synapses'))
 def load_synapses(cfg, snapshot_tag, pointlabeler):
     point_df, partner_df = _load_raw_synapses(cfg)
 

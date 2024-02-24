@@ -27,7 +27,7 @@ from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
 
 from .caches import cached, SerializerBase
-from .util import det_hash, log_lsf_details
+from .util import checksum, log_lsf_details
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +210,8 @@ class SynapsesWithRoiSerializer(SerializerBase):
         cfg = copy.deepcopy(cfg)
         cfg['inputs']['synapses']['processes'] = 0
         cfg['inputs']['rois']['processes'] = 0
-        syn_hash = hex(det_hash(json.dumps(cfg['inputs']['synapses'], sort_keys=True)))
-        roi_hash = hex(det_hash(json.dumps(cfg['inputs']['rois'], sort_keys=True)))
+        syn_hash = hex(checksum(cfg['inputs']['synapses']))
+        roi_hash = hex(checksum(cfg['inputs']['rois']))
 
         if pointlabeler is None:
             return f'{snapshot_tag}-syn-{syn_hash}-roi-{roi_hash}'
@@ -222,18 +222,18 @@ class SynapsesWithRoiSerializer(SerializerBase):
     def save_to_file(self, result, path):
         point_df, partner_df, syn_roisets = result
         os.makedirs(path, exist_ok=True)
-        RawSynapseSerializer().save_to_file((point_df, partner_df), path)
+        RawSynapseSerializer('').save_to_file((point_df, partner_df), path)
         dump_json(syn_roisets, f'{path}/roisets.json')
 
     def load_from_file(self, path):
-        point_df, partner_df = RawSynapseSerializer().load_from_file(path)
+        point_df, partner_df = RawSynapseSerializer('').load_from_file(path)
         with open(f'{path}/roisets.json', 'r') as f:
             syn_roisets = json.load(f)
         return point_df, partner_df, syn_roisets
 
 
 @PrefixFilter.with_context('synapses')
-@cached(SynapsesWithRoiSerializer(), 'labeled-synapses-with-rois')
+@cached(SynapsesWithRoiSerializer('labeled-synapses-with-rois'))
 def load_synapses_and_rois(cfg, pointlabeler):
     snapshot_tag = cfg['job-settings']['snapshot-tag']
     point_df, partner_df = load_synapses(
@@ -265,8 +265,8 @@ class ElementsWithRoiSerializer(SerializerBase):
         cfg = copy.deepcopy(cfg)
         cfg['inputs']['elements']['processes'] = 0
         cfg['inputs']['rois']['processes'] = 0
-        elm_hash = abs(hash(json.dumps(cfg['inputs']['elements'], sort_keys=True)))
-        roi_hash = abs(hash(json.dumps(cfg['inputs']['rois'], sort_keys=True)))
+        elm_hash = hex(checksum(cfg['inputs']['elements']))
+        roi_hash = hex(checksum(cfg['inputs']['rois']))
 
         if pointlabeler is None:
             return f'{snapshot_tag}-elm-{elm_hash}-roi-{roi_hash}'
@@ -286,7 +286,8 @@ class ElementsWithRoiSerializer(SerializerBase):
         return element_tables, element_roisets
 
 
-@cached(ElementsWithRoiSerializer(), 'labeled-synapses-with-rois')
+@PrefixFilter.with_context('elements')
+@cached(ElementsWithRoiSerializer('labeled-elements-with-rois'))
 def load_elements_and_rois(cfg, pointlabeler):
     element_tables = load_elements(cfg['inputs']['elements'], pointlabeler)
     element_roisets = {}

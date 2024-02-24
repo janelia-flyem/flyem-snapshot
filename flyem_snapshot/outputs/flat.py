@@ -7,6 +7,8 @@ from neuclease import PrefixFilter
 from neuclease.util import Timer, decode_coords_from_uint64
 from neuclease.misc.completeness import ranked_synapse_counts
 
+from ..caches import cached, SentinelSerializer
+
 logger = logging.getLogger(__name__)
 
 FlatConnectomeSchema = {
@@ -28,6 +30,7 @@ FlatConnectomeSchema = {
 
 
 @PrefixFilter.with_context('Connectome Export')
+@cached(SentinelSerializer('flat-connectome'), 'sentinels')
 def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_conf):
     """
     Export the full list of pre-post partners in not-so-compact form,
