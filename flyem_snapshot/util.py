@@ -18,7 +18,14 @@ def rm_f(path):
 
 
 def det_hash(s, nbytes=4):
-    """Deterministic hash of a string, using sha1"""
+    """
+    Deterministic hash of a string, using sha1 but
+    only taking the last N bytes to create an int.
+    Note:
+        Python's builtin hash() is NOT deterministic across
+        interpreter startup or from one process to the next
+        (e.g. with multiprocessing).
+    """
     return int.from_bytes(hashlib.sha1(s.encode('utf-8')).digest()[-nbytes:], 'little')
 
 

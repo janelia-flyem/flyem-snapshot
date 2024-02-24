@@ -162,7 +162,6 @@ class RawSynapseSerializer(SynapseSerializerBase):
         return f'{snapshot_tag}-seg-{mutid}-syn-{cfg_hash}'
 
 
-@PrefixFilter.with_context('synapses')
 @cached(RawSynapseSerializer(), 'labeled-synapses')
 def load_synapses(cfg, snapshot_tag, pointlabeler):
     point_df, partner_df = _load_raw_synapses(cfg)

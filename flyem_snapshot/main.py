@@ -232,6 +232,7 @@ class SynapsesWithRoiSerializer(SerializerBase):
         return point_df, partner_df, syn_roisets
 
 
+@PrefixFilter.with_context('synapses')
 @cached(SynapsesWithRoiSerializer(), 'labeled-synapses-with-rois')
 def load_synapses_and_rois(cfg, pointlabeler):
     snapshot_tag = cfg['job-settings']['snapshot-tag']
@@ -241,19 +242,18 @@ def load_synapses_and_rois(cfg, pointlabeler):
         pointlabeler
     )
 
-    with PrefixFilter.context('synapses'):
-        point_df, syn_roisets = load_point_rois(
-            cfg['inputs']['rois'],
-            point_df,
-            cfg['inputs']['synapses']['roi-set-names']
-        )
+    point_df, syn_roisets = load_point_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
 
-        partner_df = merge_partner_rois(
-            cfg['inputs']['rois'],
-            point_df,
-            partner_df,
-            cfg['inputs']['synapses']['roi-set-names']
-        )
+    partner_df = merge_partner_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        partner_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
 
     return point_df, partner_df, syn_roisets
 
