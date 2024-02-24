@@ -19,6 +19,7 @@ from .synapseset import export_synapsesets
 from .element import export_neuprint_elements, export_neuprint_elements_closeto
 from .elementset import export_neuprint_elementsets
 from ...util import restrict_synapses_to_roi
+from ...caches import cached, SentinelSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -197,9 +198,26 @@ NeuprintSchema = {
 }
 
 
+class NeuprintSentinelSerializer(SentinelSerializer):
+
+    def get_cache_key(self, cfg, point_df, partner_df, element_tables,
+                      ann, body_sizes, tbar_nt, body_nt,
+                      syn_roisets, element_roisets, pointlabeler):
+
+        key = super().get_cache_key(cfg, point_df, partner_df, element_tables,
+                                    ann, body_sizes, tbar_nt, body_nt,
+                                    syn_roisets, element_roisets)
+
+        if pointlabeler is not None:
+            key = f'{key}-seg-{pointlabeler.last_mutation["mutid"]}'
+
+        return f'{self.name}-{key}.sentinel'
+
+
 @PrefixFilter.with_context('neuprint')
+@cached(NeuprintSentinelSerializer('neuprint-export'), 'sentinels')
 def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
-                    syn_roisets, element_roisets, last_mutation):
+                    syn_roisets, element_roisets, pointlabeler):
     """
     Export CSV files for each of the following:
 
@@ -227,6 +245,8 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
         return
 
     os.makedirs('neuprint', exist_ok=True)
+
+    last_mutation = pointlabeler and pointlabeler.last_mutation
 
     # Drop body 0 entirely.
     point_df = point_df.loc[point_df['body'] != 0]

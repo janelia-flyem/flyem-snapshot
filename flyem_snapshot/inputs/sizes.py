@@ -48,7 +48,7 @@ BodySizesSchema = {
 
 
 @PrefixFilter.with_context('body-sizes')
-def load_body_sizes(cfg, dvidseg, df, snapshot_tag):
+def load_body_sizes(cfg, pointlabeler, df, snapshot_tag):
     """
     Load/export the sizes of all bodies listed in df
     (in either the index or the 'body' column).
@@ -60,6 +60,7 @@ def load_body_sizes(cfg, dvidseg, df, snapshot_tag):
         logger.info("Body sizes will not be emitted due to load-sizes: false")
         return None
 
+    dvidseg = pointlabeler and pointlabeler.dvidseg
     cache_file = cfg['cache-file']
     cache_uuid = cfg['cache-uuid']
     if not cache_file and not dvidseg:

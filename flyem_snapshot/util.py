@@ -1,9 +1,13 @@
 import os
-import platform
 import time
+import platform
+
+from zlib import adler32
 from datetime import datetime
 from subprocess import check_output
+from collections.abc import Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 from bokeh.plotting import output_file, save as bokeh_save
 from bokeh.io import export_png
@@ -14,6 +18,51 @@ def rm_f(path):
         os.unlink(path)
     except FileNotFoundError:
         pass
+
+
+def dataframe_checksum(df):
+    checksums = []
+    for c in df.columns:
+        if df[c].dtype == 'category':
+            s = adler32(df[c].cat.codes.values)
+        else:
+            s = adler32(df[c].values)
+        checksums.append(s)
+    return adler32(np.array(checksums))
+
+
+def checksum(data):
+    if data is None:
+        return 999999999
+    if isinstance(data, str):
+        return adler32(data.encode('utf-8'))
+    if isinstance(data, (int, float)) or np.issubdtype(type(data), np.number):
+        return adler32(str(data).encode('utf-8'))
+    if isinstance(data, np.ndarray):
+        return adler32(data)
+    if isinstance(data, pd.DataFrame):
+        return dataframe_checksum(data)
+    if isinstance(data, pd.Series):
+        return dataframe_checksum(data.to_frame())
+    if isinstance(data, Sequence):
+        try:
+            a = np.array(data)
+        except ValueError:
+            pass
+        else:
+            if np.issubdtype(a.dtype, np.number):
+                return adler32(a)
+            return adler32(np.array([checksum(e) for e in data]))
+    if isinstance(data, Mapping):
+        csums = []
+        for k,v in sorted(data.items()):
+            csums.append(checksum(k))
+            csums.append(checksum(v))
+        return adler32(np.array(csums))
+
+    # Doesn't match any supported types, but we can see if the object
+    # can be checksummed directly (i.e. supports buffer protocol)
+    return adler32(data)
 
 
 def export_bokeh(p, filename, title):

@@ -310,12 +310,12 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
             on='cell_type',
             suffixes=['', '_celltype']
         )
-        .drop(columns=['num_tbar_nt_predictions'])
         .rename(columns={
             'top_pred': 'predicted_nt',
             'top_pred_celltype': 'celltype_predicted_nt',
             'confidence': 'predicted_nt_confidence',
             'confidence_celltype': 'celltype_predicted_nt_confidence',
+            'num_tbar_nt_predictions': 'total_nt_predictions',
             'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
         })
     )
@@ -415,16 +415,19 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         # Append the 'cell_type' column
         assert df.index.name == ann_types.index.name == 'body'
         df = df.merge(ann_types, 'outer', on='body')
-        df = df.reset_index()
-        assert 'body' in df.columns
+        assert df.index.name == ann_types.index.name == 'body'
     else:
+        # Make sure all cell_types from ann are listed in df
         ann_types = ann_types.drop_duplicates()
-        df = df.merge(ann_types, 'outer', on='cell_type')
+        df = df.merge(ann_types, 'outer', on='cell_type').set_index('cell_type')
 
-    assert 'cell_type' in df.columns
     df['num_tbar_nt_predictions'] = pred_df.groupby(groupcol)['pred1'].count()
-    df = df.sort_values(groupcol)
+    df['num_tbar_nt_predictions'].fillna(0, inplace=True)
 
+    assert df.index.name == groupcol
+    df = df.sort_index().reset_index()
+
+    df = df.sort_index()
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
     if gt_df is None:
@@ -437,7 +440,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         cols = ['cell_type', 'body', 'num_tbar_nt_predictions', 'top_pred']
         if groupcol == 'cell_type':
             cols.remove('body')
-        return df[cols]
+        return df.reset_index()[cols]
 
     pred_df = pred_df.merge(group_pred, 'left', on=groupcol)
 
@@ -457,7 +460,8 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     df['group_pred'].fillna('unclear', inplace=True)
 
     # Append 'ground_truth' column where possible
-    df = df.merge(gt_df, 'left', on='cell_type')
+    # (First reset index so it isn't lost in this merge.)
+    df = df.reset_index().merge(gt_df, 'left', on='cell_type')
 
     # Rearrange/rename columns to match expected output
     df = df.rename(columns={'mean_confusion': 'confidence',

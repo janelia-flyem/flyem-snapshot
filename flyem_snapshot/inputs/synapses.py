@@ -3,6 +3,10 @@
 Import synapses from disk, filter them, and associate each point with a body ID.
 """
 import os
+import re
+import copy
+import glob
+import json
 import logging
 
 import numpy as np
@@ -11,6 +15,8 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
 
+from ..util import checksum
+from ..caches import cached, SerializerBase
 
 logger = logging.getLogger(__name__)
 
@@ -115,18 +121,49 @@ SnapshotSynapsesSchema = {
 }
 
 
-@PrefixFilter.with_context('synapses')
-def load_synapses(cfg, snapshot_tag, pointlabeler):
-    os.makedirs('tables', exist_ok=True)
+class SynapseSerializerBase(SerializerBase):
 
-    # Do the files already exist for this snapshot?
-    # If so, just load those and return.
-    if os.path.exists(f'tables/partner_df-{snapshot_tag}.feather'):
-        logger.info("Loading previously-written synapse files")
-        partner_df = feather.read_feather(f'tables/partner_df-{snapshot_tag}.feather')
-        point_df = feather.read_feather(f'tables/point_df-{snapshot_tag}.feather').set_index('point_id')
+    def save_to_file(self, result, path):
+        point_df, partner_df = result
+        os.makedirs(path, exist_ok=True)
+
+        # It's not really necessary to put the snapshot tag, etc. in the file names,
+        # since that stuff is already in the directory name.
+        # But it's convenient if we want to copy these files for other people to use.
+        name = os.path.split(path)[-1]
+        feather.write_feather(
+            point_df.reset_index(),
+            f'{path}/point_df-{name}.feather'
+        )
+        feather.write_feather(
+            partner_df,
+            f'{path}/partner_df-{name}.feather'
+        )
+
+    def load_from_file(self, path):
+        point_path = glob.glob(f'{path}/point_df-*.feather')[0]
+        partner_path = glob.glob(f'{path}/partner_df-*.feather')[0]
+        point_df = feather.read_feather(point_path).set_index('point_id')
+        partner_df = feather.read_feather(partner_path)
         return point_df, partner_df
 
+
+class RawSynapseSerializer(SynapseSerializerBase):
+
+    def get_cache_key(self, cfg, snapshot_tag, pointlabeler):
+        cfg = copy.deepcopy(cfg)
+        cfg['processes'] = 0
+        cfg_hash = hex(checksum(cfg))
+
+        if pointlabeler is None:
+            return f'synapses-{snapshot_tag}-cfg-{cfg_hash}'
+
+        mutid = pointlabeler.last_mutation["mutid"]
+        return f'{snapshot_tag}-seg-{mutid}-syn-{cfg_hash}'
+
+
+@cached(RawSynapseSerializer('labeled-synapses'))
+def load_synapses(cfg, snapshot_tag, pointlabeler):
     point_df, partner_df = _load_raw_synapses(cfg)
 
     if pointlabeler:
@@ -143,23 +180,6 @@ def load_synapses(cfg, snapshot_tag, pointlabeler):
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='pre_id', right_index=True)
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
 
-    with Timer("Exporting filtered/updated synapse tables", logger):
-        export_synapse_cache(point_df, partner_df, snapshot_tag)
-
-    return point_df, partner_df
-
-
-def export_synapse_cache(point_df, partner_df, snapshot_tag):
-    # Overwrite the point_df we saved earlier now that we've updated the ROIs.
-    with Timer("Exporting filtered/updated synapse tables", logger):
-        feather.write_feather(
-            point_df.reset_index(),
-            f'tables/point_df-{snapshot_tag}.feather'
-        )
-        feather.write_feather(
-            partner_df,
-            f'tables/partner_df-{snapshot_tag}.feather'
-        )
     return point_df, partner_df
 
 

@@ -1,9 +1,7 @@
-from collections import namedtuple
 import pyarrow.feather as feather
 
 from neuclease.util import dump_json
-from neuclease.dvid.repo import fetch_branch_nodes
-from neuclease.dvid.labelmap import fetch_complete_mappings, fetch_mutations
+from neuclease.dvid.labelmap import fetch_complete_mappings
 from neuclease.dvid.labelmap.pointlabeler import PointLabeler, DvidSeg
 
 DvidSegSchema = {
@@ -51,15 +49,6 @@ def load_dvidseg(cfg, snapshot_tag):
             f"tables/complete-nonsingleton-mapping-{snapshot_tag}.feather"
         )
 
-    # Look for the last mutation, searching backwards in the DAG until a non-empty UUID is found.
-    last_mutation = {}
-    branch_nodes = fetch_branch_nodes(dvidseg.server, dvidseg.uuid)
-    for uuid in branch_nodes[::-1]:
-        muts = fetch_mutations(dvidseg.server, uuid, dvidseg.instance, dag_filter='leaf-only')
-        if len(muts):
-            last_mutation = muts.iloc[-1].to_dict()
-            break
-
-    dump_json(last_mutation, 'tables/last-mutation.json')
     pointlabeler = PointLabeler(*dvidseg, mapping=mapping)
-    return dvidseg, last_mutation, pointlabeler
+    dump_json(pointlabeler.last_mutation, 'tables/last-mutation.json')
+    return pointlabeler
