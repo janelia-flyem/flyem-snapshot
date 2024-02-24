@@ -27,7 +27,7 @@ from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
 
 from .caches import cached, SerializerBase
-from .util import log_lsf_details
+from .util import det_hash, log_lsf_details
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +210,8 @@ class SynapsesWithRoiSerializer(SerializerBase):
         cfg = copy.deepcopy(cfg)
         cfg['inputs']['synapses']['processes'] = 0
         cfg['inputs']['rois']['processes'] = 0
-        syn_hash = abs(hash(json.dumps(cfg['inputs']['synapses'], sort_keys=True)))
-        roi_hash = abs(hash(json.dumps(cfg['inputs']['rois'], sort_keys=True)))
+        syn_hash = hex(det_hash(json.dumps(cfg['inputs']['synapses'], sort_keys=True)))
+        roi_hash = hex(det_hash(json.dumps(cfg['inputs']['rois'], sort_keys=True)))
 
         if pointlabeler is None:
             return f'{snapshot_tag}-syn-{syn_hash}-roi-{roi_hash}'
@@ -232,6 +232,7 @@ class SynapsesWithRoiSerializer(SerializerBase):
         return point_df, partner_df, syn_roisets
 
 
+@PrefixFilter.with_context('synapses')
 @cached(SynapsesWithRoiSerializer(), 'labeled-synapses-with-rois')
 def load_synapses_and_rois(cfg, pointlabeler):
     snapshot_tag = cfg['job-settings']['snapshot-tag']
@@ -241,19 +242,18 @@ def load_synapses_and_rois(cfg, pointlabeler):
         pointlabeler
     )
 
-    with PrefixFilter.context('synapses'):
-        point_df, syn_roisets = load_point_rois(
-            cfg['inputs']['rois'],
-            point_df,
-            cfg['inputs']['synapses']['roi-set-names']
-        )
+    point_df, syn_roisets = load_point_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
 
-        partner_df = merge_partner_rois(
-            cfg['inputs']['rois'],
-            point_df,
-            partner_df,
-            cfg['inputs']['synapses']['roi-set-names']
-        )
+    partner_df = merge_partner_rois(
+        cfg['inputs']['rois'],
+        point_df,
+        partner_df,
+        cfg['inputs']['synapses']['roi-set-names']
+    )
 
     return point_df, partner_df, syn_roisets
 
