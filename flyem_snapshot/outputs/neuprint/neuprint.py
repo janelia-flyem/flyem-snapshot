@@ -19,6 +19,7 @@ from .synapseset import export_synapsesets
 from .element import export_neuprint_elements, export_neuprint_elements_closeto
 from .elementset import export_neuprint_elementsets
 from ...util import restrict_synapses_to_roi
+from ...caches import cached, SentinelSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,7 @@ NeuprintSchema = {
 
 
 @PrefixFilter.with_context('neuprint')
+@cached(SentinelSerializer('neuprint-export'), 'sentinels')
 def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
                     syn_roisets, element_roisets, pointlabeler):
     """

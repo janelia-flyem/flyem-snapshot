@@ -11,7 +11,7 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
 
-from ...util import det_hash
+from ...util import checksum
 from .util import append_neo4j_type_suffixes
 
 logger = logging.getLogger(__name__)
@@ -287,7 +287,7 @@ def _make_roi_infos(batch_df):
         # (In those cases, it will be an empty dict.)
         roi_info.pop("<unspecified>", None)
 
-        roi_hash = det_hash(str(sorted(roi_info.keys())))
+        roi_hash = checksum(str(sorted(roi_info.keys())))
         roi_info = ujson.dumps(roi_info)
 
         bodies.append(body)
