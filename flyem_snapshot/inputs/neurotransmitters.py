@@ -1,3 +1,6 @@
+import os
+import copy
+import shutil
 import logging
 
 import numpy as np
@@ -7,7 +10,8 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import Timer, encode_coords_to_uint64
 
-from ..util import restrict_synapses_to_roi
+from ..util import restrict_synapses_to_roi, checksum
+from ..caches import cached, SerializerBase
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +139,34 @@ NeurotransmittersSchema = {
 }
 
 
+class NeurotransmitterSerializer(SerializerBase):
+
+    def get_cache_key(self, cfg, point_df, partner_df, ann):
+        cfg = copy.copy(cfg)
+        cfg['processes'] = 0
+        cfg_hash = hex(checksum(cfg))
+        arg_hash = hex(checksum([point_df, partner_df, ann]))
+        return f'nt-{cfg_hash}-{arg_hash}'
+
+    def save_to_file(self, result, path):
+        tbar_nt, body_nt = result
+        if tbar_nt is None:
+            shutil.rmtree(path)
+            return
+        os.makedirs(path, exist_ok=True)
+        assert tbar_nt.index.name == 'point_id'
+        assert body_nt.index.name == 'body'
+        feather.write_feather(tbar_nt.reset_index(), f'{path}/nt-tbar.feather')
+        feather.write_feather(body_nt.reset_index(), f'{path}/nt-body.feather')
+
+    def load_from_file(self, path):
+        tbar_nt = feather.read_feather(f'{path}/nt-tbar.feather').set_index('point_id')
+        body_nt = feather.read_feather(f'{path}/nt-body.feather').set_index('body')
+        return tbar_nt, body_nt
+
+
 @PrefixFilter.with_context('neurotransmitters')
+@cached(NeurotransmitterSerializer('neurotransmitters'))
 def load_neurotransmitters(cfg, point_df, partner_df, ann):
     """
     Load the synister neurotransmitter predictions, but tweak the column
