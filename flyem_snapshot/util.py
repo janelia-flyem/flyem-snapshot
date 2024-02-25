@@ -22,13 +22,17 @@ def rm_f(path):
 
 def dataframe_checksum(df):
     checksums = []
+    checksums.append(series_checksum(df.index))
     for c in df.columns:
-        if df[c].dtype == 'category':
-            s = adler32(df[c].cat.codes.values)
-        else:
-            s = adler32(df[c].values)
-        checksums.append(s)
+        checksums.append(series_checksum(df[c]))
     return adler32(np.array(checksums))
+
+
+def series_checksum(s):
+    if s.dtype == 'category':
+        return adler32(s.cat.codes.values)
+    else:
+        return adler32(s.values)
 
 
 def checksum(data):
@@ -45,14 +49,9 @@ def checksum(data):
     if isinstance(data, pd.Series):
         return dataframe_checksum(data.to_frame())
     if isinstance(data, Sequence):
-        try:
-            a = np.array(data)
-        except ValueError:
-            pass
-        else:
-            if np.issubdtype(a.dtype, np.number):
-                return adler32(a)
-            return adler32(np.array([checksum(e) for e in data]))
+        if all(isinstance(d, (int, float)) for d in data):
+            return adler32(np.array(data))
+        return adler32(np.array([checksum(e) for e in data]))
     if isinstance(data, Mapping):
         csums = []
         for k,v in sorted(data.items()):
