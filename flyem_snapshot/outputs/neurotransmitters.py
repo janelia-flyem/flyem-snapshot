@@ -47,7 +47,7 @@ NeurotransmiterExportSchema = {
 
 
 @PrefixFilter.with_context('neurotransmitters')
-@cached(SentinelSerializer('neurotransmitter-export'), 'sentinels')
+@cached(SentinelSerializer('neurotransmitter-export'))
 def export_neurotransmitters(cfg, tbar_nt, body_nt, point_df):
     if not cfg['export-neurotransmitters']:
         return

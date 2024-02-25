@@ -121,7 +121,7 @@ ReportsSchema = {
 
 
 @PrefixFilter.with_context('Report')
-@cached(SentinelSerializer('reports'), 'sentinels')
+@cached(SentinelSerializer('reports'))
 def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
     if len(cfg['reports']) == 0:
         logger.info("No reports requested.")

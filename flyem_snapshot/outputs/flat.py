@@ -30,7 +30,7 @@ FlatConnectomeSchema = {
 
 
 @PrefixFilter.with_context('Connectome Export')
-@cached(SentinelSerializer('flat-connectome'), 'sentinels')
+@cached(SentinelSerializer('flat-connectome'))
 def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_conf):
     """
     Export the full list of pre-post partners in not-so-compact form,

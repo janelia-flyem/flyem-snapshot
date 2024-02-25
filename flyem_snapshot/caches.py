@@ -12,7 +12,7 @@ from .util import checksum
 logger = logging.getLogger(__name__)
 
 
-def cached(serializer, cache_dir='tables'):
+def cached(serializer, cache_dir='cache'):
     def decorator(f):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
