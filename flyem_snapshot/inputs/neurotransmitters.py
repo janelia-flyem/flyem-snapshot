@@ -151,7 +151,7 @@ class NeurotransmitterSerializer(SerializerBase):
     def save_to_file(self, result, path):
         tbar_nt, body_nt = result
         if tbar_nt is None:
-            shutil.rmtree(path)
+            shutil.rmtree(path, ignore_errors=True)
             return
         os.makedirs(path, exist_ok=True)
         assert tbar_nt.index.name == 'point_id'
