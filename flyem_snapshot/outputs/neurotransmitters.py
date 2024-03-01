@@ -48,7 +48,7 @@ NeurotransmiterExportSchema = {
 
 @PrefixFilter.with_context('neurotransmitters')
 @cached(SentinelSerializer('neurotransmitter-export'))
-def export_neurotransmitters(cfg, tbar_nt, body_nt, point_df):
+def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
     if not cfg['export-neurotransmitters']:
         return
 
@@ -67,3 +67,6 @@ def export_neurotransmitters(cfg, tbar_nt, body_nt, point_df):
         os.makedirs('nt', exist_ok=True)
         feather.write_feather(tbar_df, 'nt/tbar-neurotransmitters.feather')
         feather.write_feather(body_nt, 'nt/body-neurotransmitters.feather')
+
+        if nt_confusion is not None:
+            nt_confusion.to_csv('nt/neurotransmitter-confusion.csv', index=True, header=True)

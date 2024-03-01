@@ -149,20 +149,27 @@ class NeurotransmitterSerializer(SerializerBase):
         return f'nt-{cfg_hash}-{arg_hash}'
 
     def save_to_file(self, result, path):
-        tbar_nt, body_nt = result
+        tbar_nt, body_nt, confusion_df = result
         if tbar_nt is None:
             shutil.rmtree(path, ignore_errors=True)
             return
         os.makedirs(path, exist_ok=True)
         assert tbar_nt.index.name == 'point_id'
         assert body_nt.index.name == 'body'
+        assert confusion_df.index.name == 'ground_truth'
         feather.write_feather(tbar_nt.reset_index(), f'{path}/nt-tbar.feather')
         feather.write_feather(body_nt.reset_index(), f'{path}/nt-body.feather')
+        if confusion_df is not None:
+            feather.write_feather(confusion_df.reset_index(), f'{path}/nt-confusion.feather')
 
     def load_from_file(self, path):
         tbar_nt = feather.read_feather(f'{path}/nt-tbar.feather').set_index('point_id')
         body_nt = feather.read_feather(f'{path}/nt-body.feather').set_index('body')
-        return tbar_nt, body_nt
+        if os.path.exists(f'{path}/nt-confusion.feather'):
+            confusion_df = feather.read_feather(f'{path}/nt-confusion.feather').set_index('ground_truth')
+        else:
+            confusion_df = None
+        return tbar_nt, body_nt, confusion_df
 
 
 @PrefixFilter.with_context('neurotransmitters')
@@ -180,7 +187,7 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
     using the 'body' column in point_df.
     """
     if not (path := cfg['synister-feather']):
-        return None, None
+        return None, None, None
 
     # Filter the points according to the ROI, which will cause the tbar predictions to be filtered, too.
     roiset = cfg['restrict-to-roi']['roiset']
@@ -199,7 +206,7 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
         tbar_nt = _load_tbar_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
 
     if not cfg['ground-truth']:
-        gt_df = None
+        gt_df = confusion_df = None
     else:
         gt_df = pd.read_csv(cfg['ground-truth'])
         if not {*gt_df.columns} >= {'cell_type', 'ground_truth'}:
@@ -208,7 +215,7 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
             raise RuntimeError("Can't make use of your ground-truth because your point data does not contain a 'split' column.")
 
     with Timer("Computing groupwise NT predictions for bodies and cell types", logger):
-        body_nt = _compute_body_neurotransmitters(
+        body_nt, confusion_df = _compute_body_neurotransmitters(
             tbar_nt, gt_df, ann,
             cfg['min-body-confidence'], cfg['min-body-presyn'], cfg['min-celltype-presyn']
         )
@@ -256,7 +263,7 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
             body_nt['other_nt_reference'] = body_nt['cell_type'].map(other_ref_map)
 
     body_nt = body_nt.drop(columns=['cell_type'], errors='ignore')
-    return tbar_nt, body_nt
+    return tbar_nt, body_nt, confusion_df
 
 
 def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
@@ -351,7 +358,7 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
         })
     )
     body_nt = body_nt.set_index('body')
-    return body_nt
+    return body_nt, confusion_df
 
 
 def _confusion_matrix(tbar_nt, gt_df, all_nts):

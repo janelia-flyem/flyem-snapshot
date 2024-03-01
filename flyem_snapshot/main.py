@@ -170,10 +170,10 @@ def export_all(cfg, config_dir):
     logger.info(f"Working in {output_dir}")
     with switch_cwd(output_dir):
         (last_mutation, ann, element_tables, point_df, partner_df,
-            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt) = load_inputs(cfg)
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion) = load_inputs(cfg)
 
         produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
-                        syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
+                        syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion)
 
 
 def load_inputs(cfg):
@@ -183,18 +183,18 @@ def load_inputs(cfg):
     point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
     element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
     body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], pointlabeler, point_df, snapshot_tag)
-    tbar_nt, body_nt = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
+    tbar_nt, body_nt, nt_confusion = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
     return (pointlabeler, ann, element_tables, point_df, partner_df,
-            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt)
+            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion)
 
 
 def produce_outputs(cfg, pointlabeler, ann, element_tables, point_df, partner_df,
-                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt):
+                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion):
 
     snapshot_tag = cfg['job-settings']['snapshot-tag']
     min_conf = cfg['inputs']['synapses']['min-confidence']
 
-    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, point_df)
+    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
 
     export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                     tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
