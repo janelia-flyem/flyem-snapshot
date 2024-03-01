@@ -68,12 +68,12 @@ ReportSchema = {
     }
 }
 
-ReportsSchema = {
+ReportSetSchema = {
     "description": "Specs for connectivity reports to generate from the snapshot data.\n",
     "default": {},
     "additionalProperties": False,
     "properties": {
-        "report-roiset": {
+        "roiset": {
             "description":
                 "Reports can be ROI-based, but only from the ROIs in just\n"
                 "one of your ROI sets (a column in point_df).\n"
@@ -119,11 +119,18 @@ ReportsSchema = {
     }
 }
 
+ReportsSchema = {
+    "description": "Specs for sets of connectivity reports (each set uses a different roiset layer)\n",
+    "default": [],
+    "type": "array",
+    "items": ReportSetSchema
+}
 
-@PrefixFilter.with_context('Report')
+
+@PrefixFilter.with_context('reports')
 @cached(SentinelSerializer('reports'))
 def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
-    if len(cfg['reports']) == 0:
+    if len(cfg) == 0:
         logger.info("No reports requested.")
         return
 
@@ -133,8 +140,14 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
     logger.info(f"point_df.columns: {point_df.columns.tolist()}")
     logger.info(f"partner_df.columns: {partner_df.columns.tolist()}")
 
+    for reportset_cfg in cfg:
+        roiset = reportset_cfg['roiset']
+        _export_reportset(reportset_cfg, point_df, partner_df, ann, snapshot_tag, roiset=roiset)
+
+
+@PrefixFilter.with_context('{roiset}')
+def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
     # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
-    roiset = cfg['report-roiset']
     assert roiset in point_df.columns, f"roiset not found in point_df: {roiset}.  Columns are: {point_df.columns.tolist()}"
     point_df = point_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
     partner_df = partner_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})

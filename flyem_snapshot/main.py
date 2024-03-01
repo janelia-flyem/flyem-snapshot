@@ -65,10 +65,10 @@ ConfigSchema = {
             "additionalProperties": False,
             "properties": {
                 # TODO: BigQuery exports
+                "neurotransmitters": NeurotransmiterExportSchema,
+                "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
-                "flat-connectome": FlatConnectomeSchema,
-                "neurotransmitters": NeurotransmiterExportSchema,
             }
         },
         "job-settings": {
@@ -469,23 +469,20 @@ def _finalize_config_and_output_dir(cfg, config_dir):
     if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['roi-set-names']:
         neuprintcfg['roi-set-names'] = syncfg['roi-set-names']
 
-    # By default, the reports will use the first listed roiset.
-    if cfg['outputs']['connectivity-reports']['reports'] and not cfg['outputs']['connectivity-reports']['report-roiset']:
-        raise RuntimeError("You must list a report-roiset if you want to generate reports.")
-
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
-    for report in cfg['outputs']['connectivity-reports']['reports']:
-        if report['name']:
-            continue
-        if report['rois']:
-            report['name'] = '-'.join(report['rois'])
-        elif syncfg['zone'] == 'brain':
-            report['name'] = 'brain'
-        elif syncfg['zone'] == 'vnc':
-            report['name'] = 'vnc'
-        else:
-            report['name'] = 'all'
+    for reportset_cfg in cfg['outputs']['connectivity-reports']:
+        for report in reportset_cfg['reports']:
+            if report['name']:
+                continue
+            if report['rois']:
+                report['name'] = '-'.join(report['rois'])
+            elif syncfg['zone'] == 'brain':
+                report['name'] = 'brain'
+            elif syncfg['zone'] == 'vnc':
+                report['name'] = 'vnc'
+            else:
+                report['name'] = 'all'
 
     # Ensure output directories exist.
     os.makedirs(f"{output_dir}/tables", exist_ok=True)
