@@ -8,7 +8,7 @@ import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer, encode_coords_to_uint64
+from neuclease.util import timed, encode_coords_to_uint64
 
 from ..util import restrict_synapses_to_roi, checksum
 from ..caches import cached, SerializerBase
@@ -202,70 +202,13 @@ def load_neurotransmitters(cfg, point_df, partner_df, ann):
     bodies = point_df['body'].unique()
     ann = ann.loc[ann['type'].notnull() & ann.index.isin(bodies), ['type']]
 
-    with Timer("Loading tbar NT predictions", logger):
-        tbar_nt = _load_tbar_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
-
-    if not cfg['ground-truth']:
-        gt_df = confusion_df = None
-    else:
-        gt_df = pd.read_csv(cfg['ground-truth'])
-        if not {*gt_df.columns} >= {'cell_type', 'ground_truth'}:
-            raise RuntimeError("Neurotransmitter ground-truth table does not supply the necessary columns.")
-        if 'split' not in tbar_nt:
-            raise RuntimeError("Can't make use of your ground-truth because your point data does not contain a 'split' column.")
-
-    with Timer("Computing groupwise NT predictions for bodies and cell types", logger):
-        body_nt, confusion_df = _compute_body_neurotransmitters(
-            tbar_nt, gt_df, ann,
-            cfg['min-body-confidence'], cfg['min-body-presyn'], cfg['min-celltype-presyn']
-        )
+    tbar_nt = _load_tbar_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], point_df)
+    body_nt, confusion_df = _compute_body_neurotransmitters(cfg, tbar_nt, ann)
     tbar_nt = tbar_nt.drop(columns=['split'], errors='ignore')
-
-    if cfg['export-mean-tbar-scores']:
-        # For consistency with MANC, we also list ALL mean neurotransmitter
-        # predictions as separate columns (neuprint properties).
-        nt_cols = [col for col in tbar_nt.columns if col.startswith('nt')]
-        body_nt = body_nt.merge(
-            tbar_nt.groupby('body')[nt_cols].mean(),
-            'left',
-            on='body'
-        )
-
-        # NOTE:
-        #   For manc, the body prediction was the one with the highest mean tbar score.
-        #   But going forward, we pick the most frequent max tbar score.
-        #
-        # col_to_nt = {c: c.split('_')[1] for c in body_nt.columns}
-        # body_nt['predicted_nt'] = body_nt.idxmax(axis=1).map(col_to_nt)
-
-    if (path := cfg['experimental-groundtruth']):
-        # Start with the celltype majority prediction...
-        body_nt['consensus_nt'] = body_nt['celltype_predicted_nt']
-
-        # Apply user-provided overrides (e.g. replace 'octopamine' with 'unclear').
-        body_nt['consensus_nt'].update(body_nt['consensus_nt'].map(cfg['override-celltype-before-consensus']))
-
-        # Overwrite cases where experimental groundtruth is available.
-        exp_df = pd.read_csv(path)
-        exp_map = exp_df.set_index('cell_type')['ground_truth']
-        body_nt['consensus_nt'].update(body_nt['cell_type'].map(exp_map))
-
-        if 'reference' in exp_df.columns:
-            ref_map = exp_df.set_index('cell_type')['reference'].dropna()
-            body_nt['nt_reference'] = body_nt['cell_type'].map(ref_map)
-
-        if 'other_gt' in exp_df.columns:
-            other_map = exp_df.set_index('cell_type')['other_gt'].dropna()
-            body_nt['other_nt'] = body_nt['cell_type'].map(other_map)
-
-        if 'other_ref' in exp_df.columns:
-            other_ref_map = exp_df.set_index('cell_type')['other_ref'].dropna()
-            body_nt['other_nt_reference'] = body_nt['cell_type'].map(other_ref_map)
-
-    body_nt = body_nt.drop(columns=['cell_type'], errors='ignore')
     return tbar_nt, body_nt, confusion_df
 
 
+@timed("Loading tbar NT predictions", logger)
 def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
     tbar_nt = feather.read_feather(path)
 
@@ -307,10 +250,18 @@ def _load_tbar_neurotransmitters(path, rescale, translations, point_df):
     return tbar_nt
 
 
-def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body_presyn, min_type_presyn):
-    """
-    FIXME: The output column names still need to be finalized.
-    """
+@timed("Computing groupwise NT predictions for bodies and cell types", logger)
+def _compute_body_neurotransmitters(cfg, tbar_nt, ann):
+    if not cfg['ground-truth']:
+        gt_df = None
+    else:
+        gt_df = pd.read_csv(cfg['ground-truth'])
+        if not {*gt_df.columns} >= {'cell_type', 'ground_truth'}:
+            raise RuntimeError("Neurotransmitter ground-truth table does not supply the necessary columns.")
+        if 'split' not in tbar_nt:
+            msg = "Can't make use of your ground-truth because your point data does not contain a 'split' column."
+            raise RuntimeError(msg)
+
     # Append 'cell_type' column to point table
     tbar_nt = tbar_nt.merge(ann['type'].rename('cell_type'), 'left', on='body')
 
@@ -329,69 +280,34 @@ def _compute_body_neurotransmitters(tbar_nt, gt_df, ann, min_body_conf, min_body
 
     if 'confidence' in body_nt:
         # Apply thresholds to erase unreliable predictions.
-        body_nt.loc[body_nt['confidence'] < min_body_conf, 'top_pred'] = 'unclear'
-        body_nt.loc[body_nt['num_tbar_nt_predictions'] < min_body_presyn, 'top_pred'] = 'unclear'
-        type_df.loc[type_df['num_tbar_nt_predictions'] < min_type_presyn, 'top_pred'] = 'unclear'
+        body_nt.loc[body_nt['confidence'] < cfg['min-body-confidence'], 'top_pred'] = 'unclear'
+        body_nt.loc[body_nt['num_tbar_nt_predictions'] < cfg['min-body-presyn'], 'top_pred'] = 'unclear'
+        type_df.loc[type_df['num_tbar_nt_predictions'] < cfg['min-celltype-presyn'], 'top_pred'] = 'unclear'
 
-    # We don't return a separate table for celltype predictions.
-    # Instead, append celltype prediction columns to the body table
-    # (with duplicated values for bodies with matching cell types).
-    type_cols = ['cell_type', 'num_tbar_nt_predictions', 'top_pred']
-    if 'confidence' in type_df.columns:
-        type_cols.append('confidence')
-
-    body_nt = (
-        body_nt
-        .merge(
-            type_df[type_cols],
-            'left',
-            on='cell_type',
-            suffixes=['', '_celltype']
-        )
-        .rename(columns={
-            'top_pred': 'predicted_nt',
-            'top_pred_celltype': 'celltype_predicted_nt',
-            'confidence': 'predicted_nt_confidence',
-            'confidence_celltype': 'celltype_predicted_nt_confidence',
-            'num_tbar_nt_predictions': 'total_nt_predictions',
-            'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
-        })
-    )
+    body_nt = _append_celltype_predictions_to_body_df(body_nt, type_df)
     body_nt = body_nt.set_index('body')
+
+    # For consistency with MANC, we can optionally list ALL mean neurotransmitter
+    # predictions as separate columns (which become neuprint properties).
+    if cfg['export-mean-tbar-scores']:
+        nt_cols = [col for col in tbar_nt.columns if col.startswith('nt')]
+        body_nt = body_nt.merge(
+            tbar_nt.groupby('body')[nt_cols].mean(),
+            'left',
+            on='body'
+        )
+
+        # NOTE:
+        #   For manc, the body prediction was the one with the highest mean tbar score.
+        #   But going forward, we pick the most frequent max tbar score.
+        #
+        # col_to_nt = {c: c.split('_')[1] for c in body_nt.columns}
+        # body_nt['predicted_nt'] = body_nt.idxmax(axis=1).map(col_to_nt)
+
+    _set_body_exp_gt_based_columns(cfg, body_nt)
+    body_nt = body_nt.drop(columns=['cell_type'], errors='ignore')
+
     return body_nt, confusion_df
-
-
-def _confusion_matrix(tbar_nt, gt_df, all_nts):
-    if gt_df is None:
-        return None
-
-    # Generate 'ground_truth' column using cell_type and GT table
-    gt_mapping = gt_df.set_index('cell_type')['ground_truth']
-    tbar_gt = tbar_nt['cell_type'].map(gt_mapping)
-
-    # Compute confusion matrix for the 'test' set only.
-    confusion_df = (
-        tbar_nt
-        .assign(ground_truth=tbar_gt)
-        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
-        .groupby(['ground_truth', 'pred1'])
-        .size()
-        .unstack(-1, 0.0)
-        # We reindex to ensure that the confusion matrix has rows/columns
-        # for all neurotransmitters in the ground_truth, even if some of
-        # them aren't in the 'test' set.  (This can happen when working
-        # with a small set of tbars, such as when working with a small ROI
-        # or when using testing datasets.)
-        .reindex(all_nts)
-        .reindex(all_nts, axis=1)
-    )
-
-    # Normalize the rows
-    confusion_df /= confusion_df.sum(axis=1).values[:, None]
-
-    # NaNs might exist due to the reindex() above.
-    confusion_df = confusion_df.fillna(0.0)
-    return confusion_df
 
 
 def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
@@ -508,3 +424,97 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     if groupcol == 'cell_type':
         cols.remove('body')
     return df[cols]
+
+
+def _confusion_matrix(tbar_nt, gt_df, all_nts):
+    if gt_df is None:
+        return None
+
+    # Generate 'ground_truth' column using cell_type and GT table
+    gt_mapping = gt_df.set_index('cell_type')['ground_truth']
+    tbar_gt = tbar_nt['cell_type'].map(gt_mapping)
+
+    # Compute confusion matrix for the 'test' set only.
+    confusion_df = (
+        tbar_nt
+        .assign(ground_truth=tbar_gt)
+        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
+        .groupby(['ground_truth', 'pred1'])
+        .size()
+        .unstack(-1, 0.0)
+        # We reindex to ensure that the confusion matrix has rows/columns
+        # for all neurotransmitters in the ground_truth, even if some of
+        # them aren't in the 'test' set.  (This can happen when working
+        # with a small set of tbars, such as when working with a small ROI
+        # or when using testing datasets.)
+        .reindex(all_nts)
+        .reindex(all_nts, axis=1)
+    )
+
+    # Normalize the rows
+    confusion_df /= confusion_df.sum(axis=1).values[:, None]
+
+    # NaNs might exist due to the reindex() above.
+    confusion_df = confusion_df.fillna(0.0)
+    return confusion_df
+
+
+def _append_celltype_predictions_to_body_df(body_nt, type_df):
+    # We don't return a separate table for celltype predictions.
+    # Instead, append celltype prediction columns to the body table
+    # (with duplicated values for bodies with matching cell types).
+    type_cols = ['cell_type', 'num_tbar_nt_predictions', 'top_pred']
+    if 'confidence' in type_df.columns:
+        type_cols.append('confidence')
+
+    body_nt = (
+        body_nt
+        .merge(
+            type_df[type_cols],
+            'left',
+            on='cell_type',
+            suffixes=['', '_celltype']
+        )
+        .rename(columns={
+            'top_pred': 'predicted_nt',
+            'top_pred_celltype': 'celltype_predicted_nt',
+            'confidence': 'predicted_nt_confidence',
+            'confidence_celltype': 'celltype_predicted_nt_confidence',
+            'num_tbar_nt_predictions': 'total_nt_predictions',
+            'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
+        })
+    )
+    return body_nt
+
+
+def _set_body_exp_gt_based_columns(cfg, body_nt):
+    """
+    Some columns in the body table depend on the 'experimental-groundtruth' input table.
+    If it's available, this function adds the corresponding columns.
+    Works in-place.
+    """
+    if not (path := cfg['experimental-groundtruth']):
+        return
+
+    # Start with the celltype majority prediction...
+    body_nt['consensus_nt'] = body_nt['celltype_predicted_nt']
+
+    # Apply user-provided overrides (e.g. replace 'octopamine' with 'unclear').
+    body_nt['consensus_nt'].update(body_nt['consensus_nt'].map(cfg['override-celltype-before-consensus']))
+
+    # Overwrite cases where experimental groundtruth is available.
+    exp_df = pd.read_csv(path)
+    exp_map = exp_df.set_index('cell_type')['ground_truth']
+    body_nt['consensus_nt'].update(body_nt['cell_type'].map(exp_map))
+
+    if 'reference' in exp_df.columns:
+        ref_map = exp_df.set_index('cell_type')['reference'].dropna()
+        body_nt['nt_reference'] = body_nt['cell_type'].map(ref_map)
+
+    if 'other_gt' in exp_df.columns:
+        other_map = exp_df.set_index('cell_type')['other_gt'].dropna()
+        body_nt['other_nt'] = body_nt['cell_type'].map(other_map)
+
+    if 'other_ref' in exp_df.columns:
+        other_ref_map = exp_df.set_index('cell_type')['other_ref'].dropna()
+        body_nt['other_nt_reference'] = body_nt['cell_type'].map(other_ref_map)
