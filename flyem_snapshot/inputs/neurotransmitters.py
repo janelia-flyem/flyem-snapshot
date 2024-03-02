@@ -266,7 +266,7 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     #   If there are synapses in synpoint_df which are not present in the tbar
     #   predictions, they will have NaN predictions after this merge.
     presyn_df = synpoint_df.query('kind == "PreSyn"')
-    tbar_df = presyn_df[['body']].merge(tbar_df, 'left', on='point_id')
+    tbar_df = presyn_df[['body', *'xyz']].merge(tbar_df.drop(columns=[*'xyz']), 'left', on='point_id')
     return tbar_df
 
 
