@@ -140,6 +140,9 @@ NeurotransmittersSchema = {
 
 
 class NeurotransmitterSerializer(SerializerBase):
+    """
+    Cache handling for load_transmitters()
+    """
 
     def get_cache_key(self, cfg, synpoint_df, synpartner_df, ann):
         cfg = copy.copy(cfg)
@@ -176,15 +179,24 @@ class NeurotransmitterSerializer(SerializerBase):
 @cached(NeurotransmitterSerializer('neurotransmitters'))
 def load_neurotransmitters(cfg, synpoint_df, synpartner_df, ann):
     """
-    Load the synister neurotransmitter predictions, but tweak the column
-    names into the form nt_{transmitter}_prob and exclude columns other than
-    the predictions and xyz.
+    Load neurotransmitter tbar predictions from disk, filter/rescale/translate
+    according to the user's configuration, and aggregate them into per-body
+    and per-celltype predictions.
 
-    Also, a 'body' column is added to the table,
-    and the point_id is stored in the index.
+    Args:
+        cfg:
+            The ['inputs']['neurotransmitter'] section of the config.
+        synpoint_df:
+            Synapse point DataFrame, with 'point_id' index and 'body' column.
+            Used to assign a body to each tbar prediction.
+        synpartner_df:
+            Synapse partner DataFrame, used to filter synapses by ROI
+            before processing NT predictions.
+        ann:
+            Annotation table. Must have a 'type' column, indexed by body,
 
-    Furthermore, a table of bodywise aggregate scores is generated,
-    using the 'body' column in synpoint_df.
+    Returns:
+        tbar_df, body_df, confusion_df
     """
     if not (path := cfg['synister-feather']):
         return None, None, None
@@ -212,6 +224,12 @@ def load_neurotransmitters(cfg, synpoint_df, synpartner_df, ann):
 
 @timed("Loading tbar NT predictions", logger)
 def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
+    """
+    Load the tbar NT predictions from the given path to a feather
+    file with synister-style column names.
+    Drop predictions which fall outside of the known synapse set
+    (as listed in synpoint_df).
+    """
     tbar_df = feather.read_feather(path)
 
     # Rename columns pre_x, pre_y, pre_z -> x,y,z
@@ -254,6 +272,23 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
 
 @timed("Computing groupwise NT predictions for bodies and cell types", logger)
 def _compute_body_neurotransmitters(cfg, tbar_df, ann):
+    """
+    Compute aggregate per-body NT prediction columns, including celltype prediction columns.
+    The body and celltype predictions are merely the most frequent NT
+    prediction from the set of tbars it contains.
+
+    If a table of 'ground-truth' (cell type -> NT) is provided in the config,
+    then a confusion matrix is computed for the tbar predictions, and that matrix is used
+    to compute a 'confidence' for each body and celltype aggregate prediction.
+
+    Additionally, if high-confidence 'experimental-groundtruth' is provided in the config,
+    then a 'consensus' column is populated with:
+
+        - the groundtruth NT prediction (when the cell type is known and listed
+          in the groundtruth table) OR
+        - the celltype prediction (when the cell type is known but without groundtruth) OR
+        - the body prediction (when no cell type is available)
+    """
     if not cfg['ground-truth']:
         gt_df = None
     else:
@@ -312,8 +347,88 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
     return body_df, confusion_df
 
 
+def _confusion_matrix(tbar_df, gt_df, all_nts):
+    """
+    Compute the confusion matrix for non-training tbar predictions
+    in the given table, using given groundtruth NT mapping
+    (cell_type, ground_truth).
+
+    Args:
+        tbar_df:
+            tbar prediction table with columns (cell_type, ground_truth, split, pred1),
+            where 'pred1' is the top NT prediction and ground_truth is the true NT.
+            The 'split' column is used to distinguish between traning and
+            non-training points.  We discard rows labeled 'train' or 'validation'
+            before computing the confusion.
+        gt_df:
+            Table of known NT labels (cell_type, ground_truth).
+        all_nts:
+            The superset of NT names to include in the output rows/columns.
+            We ask for this explicitly instead of merely using the values from the input data.
+            This is convenient when we test this code with small subsets of data,
+            in which not all neurotransmitters may be present but we want the output
+            to have the expected rows/columns.
+
+    Returns:
+        DataFrame, indexed by 'ground_truth' neurotransmitter, with predicted neurotransmitter ('pred1') in the columns.
+
+         Example (note the names of the index and column index):
+
+            pred1          acetylcholine  dopamine      gaba  glutamate  histamine  octopamine  serotonin
+            ground_truth
+            acetylcholine       0.933063  0.034370  0.008257   0.012560   0.004381    0.001211   0.006158
+            dopamine            0.000000  0.971299  0.002590   0.001295   0.000432    0.000000   0.024385
+            gaba                0.029723  0.036046  0.893162   0.023048   0.001155    0.001538   0.015328
+            glutamate           0.030444  0.032100  0.030863   0.879269   0.007699    0.004446   0.015179
+            histamine           0.009424  0.010358  0.005934   0.010852   0.960560    0.001360   0.001511
+            octopamine          0.003435  0.028827  0.002041   0.005029   0.001046    0.907194   0.052427
+            serotonin           0.002505  0.095601  0.002104   0.003107   0.000100    0.003407   0.893176
+    """
+    if gt_df is None:
+        return None
+
+    # Generate 'ground_truth' column using cell_type and GT table
+    gt_mapping = gt_df.set_index('cell_type')['ground_truth']
+    tbar_gt = tbar_df['cell_type'].map(gt_mapping)
+
+    # Compute confusion matrix for the 'test' set only.
+    confusion_df = (
+        tbar_df
+        .assign(ground_truth=tbar_gt)
+        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
+        .groupby(['ground_truth', 'pred1'])
+        .size()
+        .unstack(-1, 0.0)
+        # We reindex to ensure that the confusion matrix has rows/columns
+        # for all neurotransmitters in the ground_truth, even if some of
+        # them aren't in the 'test' set.  (This can happen when working
+        # with a small set of tbars, such as when working with a small ROI
+        # or when using testing datasets.)
+        .reindex(all_nts)
+        .reindex(all_nts, axis=1)
+    )
+
+    # Normalize the rows
+    confusion_df /= confusion_df.sum(axis=1).values[:, None]
+
+    # NaNs might exist due to the reindex() above.
+    confusion_df = confusion_df.fillna(0.0)
+    return confusion_df
+
+
 def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     """
+    Calculate aggregate predictions, either for each body or each celltype.
+    (Since the calculation steps are the same in each case, we use this
+    function for both per-body and per-celltype aggregation.)
+
+    The aggregate body (or celltype) prediction is defined as the most
+    frequent tbar NT prediction in each body (or celltype).
+
+    Additionally a 'confidence' is computed for the aggregate prediction,
+    defined as the mean confusion for the tbar predictions within the body
+    (or celltype), according to the given confusion matrix.
+
     Args:
         pred_df:
             synapse prediction table with columns:
@@ -383,7 +498,6 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     assert df.index.name == groupcol
     df = df.sort_index().reset_index()
 
-    df = df.sort_index()
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
     if gt_df is None:
@@ -428,43 +542,12 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     return df[cols]
 
 
-def _confusion_matrix(tbar_df, gt_df, all_nts):
-    if gt_df is None:
-        return None
-
-    # Generate 'ground_truth' column using cell_type and GT table
-    gt_mapping = gt_df.set_index('cell_type')['ground_truth']
-    tbar_gt = tbar_df['cell_type'].map(gt_mapping)
-
-    # Compute confusion matrix for the 'test' set only.
-    confusion_df = (
-        tbar_df
-        .assign(ground_truth=tbar_gt)
-        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
-        .groupby(['ground_truth', 'pred1'])
-        .size()
-        .unstack(-1, 0.0)
-        # We reindex to ensure that the confusion matrix has rows/columns
-        # for all neurotransmitters in the ground_truth, even if some of
-        # them aren't in the 'test' set.  (This can happen when working
-        # with a small set of tbars, such as when working with a small ROI
-        # or when using testing datasets.)
-        .reindex(all_nts)
-        .reindex(all_nts, axis=1)
-    )
-
-    # Normalize the rows
-    confusion_df /= confusion_df.sum(axis=1).values[:, None]
-
-    # NaNs might exist due to the reindex() above.
-    confusion_df = confusion_df.fillna(0.0)
-    return confusion_df
-
-
 def _append_celltype_predictions_to_body_df(body_df, type_df):
-    # We don't return a separate table for celltype predictions.
-    # Instead, append celltype prediction columns to the body table
-    # (with duplicated values for bodies with matching cell types).
+    """
+    We don't return a separate table for celltype predictions.
+    Instead, we append celltype prediction columns to the body table
+    (with duplicated values for bodies with matching cell types).
+    """
     type_cols = ['cell_type', 'num_tbar_nt_predictions', 'top_pred']
     if 'confidence' in type_df.columns:
         type_cols.append('confidence')
@@ -492,8 +575,10 @@ def _append_celltype_predictions_to_body_df(body_df, type_df):
 def _set_body_exp_gt_based_columns(cfg, body_df):
     """
     Some columns in the body table depend on the 'experimental-groundtruth' input table.
-    If it's available, this function adds the corresponding columns.
-    Works in-place.
+    If that table is available, this function adds the corresponding columns,
+    the most notable of which is 'consensus_nt'.
+
+    Modifies body_df IN-PLACE.
     """
     if not (path := cfg['experimental-groundtruth']):
         return
