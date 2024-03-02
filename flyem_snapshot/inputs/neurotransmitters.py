@@ -590,18 +590,18 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
     body_df['consensus_nt'].update(body_df['consensus_nt'].map(cfg['override-celltype-before-consensus']))
 
     # Overwrite cases where experimental groundtruth is available.
-    exp_df = pd.read_csv(path)
-    exp_map = exp_df.set_index('cell_type')['ground_truth']
-    body_df['consensus_nt'].update(body_df['cell_type'].map(exp_map))
+    exp_df = pd.read_csv(path).set_index('cell_type')
+    gt_map = exp_df['ground_truth']
+    body_df['consensus_nt'].update(body_df['cell_type'].map(gt_map))
 
     if 'reference' in exp_df.columns:
-        ref_map = exp_df.set_index('cell_type')['reference'].dropna()
+        ref_map = exp_df['reference'].dropna()
         body_df['nt_reference'] = body_df['cell_type'].map(ref_map)
 
     if 'other_gt' in exp_df.columns:
-        other_map = exp_df.set_index('cell_type')['other_gt'].dropna()
+        other_map = exp_df['other_gt'].dropna()
         body_df['other_nt'] = body_df['cell_type'].map(other_map)
 
     if 'other_ref' in exp_df.columns:
-        other_ref_map = exp_df.set_index('cell_type')['other_ref'].dropna()
+        other_ref_map = exp_df['other_ref'].dropna()
         body_df['other_nt_reference'] = body_df['cell_type'].map(other_ref_map)
