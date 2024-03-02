@@ -208,6 +208,9 @@ class NeuprintSentinelSerializer(SentinelSerializer):
                                     ann, body_sizes, tbar_nt, body_nt,
                                     syn_roisets, element_roisets)
 
+        assert key.endswith('.sentinel')
+        key = key[:-len('.sentinel')]
+
         if pointlabeler is not None:
             key = f'{key}-seg-{pointlabeler.last_mutation["mutid"]}'
 
