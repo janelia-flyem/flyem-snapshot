@@ -246,6 +246,7 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         # We can't export any capture summaries if no body statuses were given.
         return
 
+    roiset = cfg['roiset']
     names = [report['name'] for report in cfg['reports']]
     names_df = pd.DataFrame({'report_index': np.arange(len(names)), 'name': names})
 
@@ -282,7 +283,7 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
     ]
     all_status_stats = pd.concat(all_status_stats, ignore_index=True)
     all_status_stats['status'] = all_status_stats['status'].astype(STATUS_DTYPE)
-    all_status_stats.to_csv('tables/all-status-stats.csv', index=False, header=True)
+    all_status_stats.to_csv(f'tables/{roiset}-all-status-stats.csv', index=False, header=True)
 
     # This unstack() will result in multi-level columns:
     # level 0: traced_presyn_frac                            traced_postsyn_frac                        ...
@@ -306,10 +307,10 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         'traced_synweight_frac': 'PostSyn',
     }
     titles = {
-        'traced_presyn_frac': 'Captured PreSyn by Status and ROI',
-        'traced_postsyn_frac': 'Captured PostSyn by Status',
-        'traced_conn_frac': 'Captured Connectivity by Status and ROI',
-        'traced_synweight_frac': 'Captured SynWeight by Status and ROI',
+        'traced_presyn_frac': f'{roiset} Captured PreSyn by Status and ROI',
+        'traced_postsyn_frac': f'{roiset} Captured PostSyn by Status and ROI',
+        'traced_conn_frac': f'{roiset} Captured Connectivity by Status and ROI',
+        'traced_synweight_frac': f'{roiset} Captured SynWeight by Status and ROI',
     }
 
     for level0 in CAPTURE_STATS:
@@ -321,12 +322,12 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
             .merge(names_df, 'left', on='name')
             .sort_values('report_index')
         )
-        df.to_csv(f'tables/cumulative-{level0}-by-status.csv', index=False, header=True)
+        df.to_csv(f'tables/{roiset}-cumulative-{level0}-by-status.csv', index=False, header=True)
 
         # The dataframe has cumulative connectivity,
         # but for the stacked bar chart we don't want cumulative.
         df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
-        df.to_csv(f'tables/{level0}-by-status.csv', index=False, header=True)
+        df.to_csv(f'tables/{roiset}-{level0}-by-status.csv', index=False, header=True)
 
         p = variable_width_hbar(
             df,
