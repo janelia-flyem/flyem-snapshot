@@ -31,6 +31,8 @@ def dataframe_checksum(df):
 def series_checksum(s):
     if s.dtype == 'category':
         return adler32(s.cat.codes.values)
+    if s.dtype == 'object':
+        return adler32(s.astype(str).values.astype(str))
     else:
         return adler32(s.values)
 
