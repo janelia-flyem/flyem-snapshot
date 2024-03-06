@@ -103,6 +103,19 @@ ConfigSchema = {
                     "description": "Timeout for dvid requests, in seconds. Used for both 'connect' and 'read' timeout.",
                     "type": "number",
                     "default": 300.0,
+                },
+                "logging-config": {
+                    "description": "Incremental logging configuration updates as described in:\n"
+                                   "https://docs.python.org/3/library/logging.config.html#logging-config-dictschema\n",
+                    "type": "object",
+                    "default": {
+                        "loggers": {
+                            "flyem_snapshot": {
+                                "level": "INFO",
+                            }
+                        },
+                        "incremental": True
+                    }
                 }
             }
         }
@@ -152,6 +165,13 @@ def main(args):
         return
 
     configure_default_logging()
+    log_cfg = cfg['job-settings']['logging-config']
+    assert log_cfg.setdefault('version', 1) == 1, \
+        "Python logging config version should be 1"
+    assert log_cfg.setdefault('incremental', True), \
+        "Only incremenetal logging configuration is supported via the config file."
+    logging.config.dictConfig(log_cfg)
+
     log_lsf_details(logger)
 
     with Timer("Exporting snapshot denormalizations", logger, log_start=False):
@@ -208,6 +228,7 @@ class SynapsesWithRoiSerializer(SerializerBase):
     def get_cache_key(self, cfg, pointlabeler):
         snapshot_tag = cfg['job-settings']['snapshot-tag']
         cfg = copy.deepcopy(cfg)
+        del cfg['job-settings']
         cfg['inputs']['synapses']['processes'] = 0
         cfg['inputs']['rois']['processes'] = 0
         syn_hash = hex(checksum(cfg['inputs']['synapses']))
@@ -263,6 +284,7 @@ class ElementsWithRoiSerializer(SerializerBase):
     def get_cache_key(self, cfg, pointlabeler):
         snapshot_tag = cfg['job-settings']['snapshot-tag']
         cfg = copy.deepcopy(cfg)
+        del cfg['job-settings']
         cfg['inputs']['elements']['processes'] = 0
         cfg['inputs']['rois']['processes'] = 0
         elm_hash = hex(checksum(cfg['inputs']['elements']))
