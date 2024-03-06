@@ -2,7 +2,9 @@
 Export a connectivity snapshot in the form of CSV files that can be converted to a neo4j neuprint database.
 """
 import os
+import copy
 import logging
+from itertools import chain
 
 import pandas as pd
 
@@ -19,7 +21,7 @@ from .synapseset import export_synapsesets
 from .element import export_neuprint_elements, export_neuprint_elements_closeto
 from .elementset import export_neuprint_elementsets
 from ...util import restrict_synapses_to_roi
-from ...caches import cached, SentinelSerializer
+from ...caches import cached, SentinelSerializer, checksum
 
 logger = logging.getLogger(__name__)
 
@@ -204,12 +206,19 @@ class NeuprintSentinelSerializer(SentinelSerializer):
                       ann, body_sizes, tbar_nt, body_nt,
                       syn_roisets, element_roisets, pointlabeler):
 
-        key = super().get_cache_key(cfg, point_df, partner_df, element_tables,
-                                    ann, body_sizes, tbar_nt, body_nt,
-                                    syn_roisets, element_roisets)
+        cfg = copy.copy(cfg)
+        cfg['processes'] = 0
 
-        assert key.endswith('.sentinel')
-        key = key[:-len('.sentinel')]
+        with Timer("Computing data checksum", logger, log_start=False):
+            csums = [
+                checksum(data) for data in (
+                    cfg, point_df, partner_df, element_tables,
+                    ann, body_sizes, tbar_nt, body_nt,
+                    syn_roisets, element_roisets
+                )
+            ]
+            logger.debug(str([hex(c) for c in csums]))
+            key = hex(checksum(csums))
 
         if pointlabeler is not None:
             key = f'{key}-seg-{pointlabeler.last_mutation["mutid"]}'
