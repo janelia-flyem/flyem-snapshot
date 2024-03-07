@@ -3,19 +3,16 @@
 Import synapses from disk, filter them, and associate each point with a body ID.
 """
 import os
-import re
 import copy
 import glob
-import json
 import logging
 
 import numpy as np
 import pyarrow.feather as feather
 
-from neuclease import PrefixFilter
 from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
 
-from ..util import checksum
+from ..util import checksum, cache_dataframe
 from ..caches import cached, SerializerBase
 
 logger = logging.getLogger(__name__)
@@ -131,11 +128,11 @@ class SynapseSerializerBase(SerializerBase):
         # since that stuff is already in the directory name.
         # But it's convenient if we want to copy these files for other people to use.
         name = os.path.split(path)[-1]
-        feather.write_feather(
+        cache_dataframe(
             point_df.reset_index(),
             f'{path}/point_df-{name}.feather'
         )
-        feather.write_feather(
+        cache_dataframe(
             partner_df,
             f'{path}/partner_df-{name}.feather'
         )

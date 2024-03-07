@@ -10,7 +10,7 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import timed, encode_coords_to_uint64
 
-from ..util import restrict_synapses_to_roi, checksum
+from ..util import restrict_synapses_to_roi, checksum, cache_dataframe, replace_object_nan_with_none
 from ..caches import cached, SerializerBase
 
 logger = logging.getLogger(__name__)
@@ -160,10 +160,10 @@ class NeurotransmitterSerializer(SerializerBase):
         assert tbar_df.index.name == 'point_id'
         assert body_df.index.name == 'body'
         assert confusion_df.index.name == 'ground_truth'
-        feather.write_feather(tbar_df.reset_index(), f'{path}/nt-tbar.feather')
-        feather.write_feather(body_df.reset_index(), f'{path}/nt-body.feather')
+        cache_dataframe(tbar_df.reset_index(), f'{path}/nt-tbar.feather')
+        cache_dataframe(body_df.reset_index(), f'{path}/nt-body.feather')
         if confusion_df is not None:
-            feather.write_feather(confusion_df.reset_index(), f'{path}/nt-confusion.feather')
+            cache_dataframe(confusion_df.reset_index(), f'{path}/nt-confusion.feather')
 
     def load_from_file(self, path):
         tbar_df = feather.read_feather(f'{path}/nt-tbar.feather').set_index('point_id')
@@ -344,6 +344,7 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
     _set_body_exp_gt_based_columns(cfg, body_df)
     body_df = body_df.drop(columns=['cell_type'], errors='ignore')
 
+    replace_object_nan_with_none(body_df)
     return body_df, confusion_df
 
 
