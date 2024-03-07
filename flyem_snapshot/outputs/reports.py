@@ -292,6 +292,8 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         all_status_stats
         .set_index(['name', 'status'])
         .unstack()
+        # Make sure cumulative capture stats list 'good' statuses first.
+        .sort_index(axis=1, level='status', ascending=False)
     )
     # This might be overly pedantic, but we want to scale the ROI
     # bars according to the relevant synapse count (pre or post),
