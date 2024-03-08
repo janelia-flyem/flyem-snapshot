@@ -207,7 +207,17 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         all_syncounts.append(syncounts)
         all_status_stats.append(status_stats)
 
-    _export_capture_summaries(cfg, all_syncounts, all_status_stats)
+    import pickle
+    with open(f'tables/{roiset}-all_syncounts.pkl', 'wb') as f:
+        pickle.dump(all_syncounts, f)
+
+    with open(f'tables/{roiset}-all_status_stats.pkl', 'wb') as f:
+        pickle.dump(all_status_stats, f)
+
+    try:
+        _export_capture_summaries(cfg, all_syncounts, all_status_stats)
+    except Exception:
+        logger.error("Failed to export capture summaries!")
 
 
 @PrefixFilter.with_context('{name}')
