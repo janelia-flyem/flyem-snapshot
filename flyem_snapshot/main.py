@@ -12,6 +12,7 @@ from neuclease.util import Timer, switch_cwd, dump_json
 from neuclease.dvid import set_default_dvid_session_timeout
 from neuclease.dvid.labelmap import resolve_snapshot_tag
 
+from . import __version__
 from .inputs.dvidseg import DvidSegSchema, load_dvidseg
 from .inputs.elements import ElementTablesSchema, load_elements
 from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, RawSynapseSerializer
@@ -172,6 +173,7 @@ def main(args):
         "Only incremenetal logging configuration is supported via the config file."
     logging.config.dictConfig(log_cfg)
 
+    logger.info(f"Running with flyem-snapshot {__version__}")
     log_lsf_details(logger)
 
     with Timer("Exporting snapshot denormalizations", logger, log_start=False):
