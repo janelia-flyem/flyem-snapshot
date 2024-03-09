@@ -159,10 +159,10 @@ class NeurotransmitterSerializer(SerializerBase):
         os.makedirs(path, exist_ok=True)
         assert tbar_df.index.name == 'point_id'
         assert body_df.index.name == 'body'
-        assert confusion_df.index.name == 'ground_truth'
         cache_dataframe(tbar_df.reset_index(), f'{path}/nt-tbar.feather')
         cache_dataframe(body_df.reset_index(), f'{path}/nt-body.feather')
         if confusion_df is not None:
+            assert confusion_df.index.name == 'ground_truth'
             cache_dataframe(confusion_df.reset_index(), f'{path}/nt-confusion.feather')
 
     def load_from_file(self, path):
