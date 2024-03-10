@@ -182,9 +182,10 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         feather.write_feather(partner_df, "tables/partner_df-DEBUG.feather")
         raise
 
-    all_status_stats = []
-    all_syncounts = []
+    all_status_stats = {}
+    all_syncounts = {}
     for report in cfg['reports']:
+        name = report['name']
         if report['rois']:
             report_point_df = pd.concat((roi_point_dfs[roi] for roi in report['rois']))
             report_partner_df = pd.concat(
@@ -202,10 +203,10 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
             report_partner_df,
             ann,
             report['rois'],
-            name=report['name']
+            name=name
         )
-        all_syncounts.append(syncounts)
-        all_status_stats.append(status_stats)
+        all_syncounts[name] = syncounts
+        all_status_stats[name] = status_stats
 
     import pickle
     with open(f'tables/{roiset}-all_syncounts.pkl', 'wb') as f:
@@ -249,7 +250,7 @@ def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, r
 
 
 def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
-    if all_status_stats[0] is None:
+    if next(iter(all_status_stats.values())) is None:
         # We can't export any capture summaries if no body statuses were given.
         return
 
@@ -258,18 +259,18 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
     names_df = pd.DataFrame({'report_index': np.arange(len(names)), 'name': names})
 
     all_syncounts = (
-        pd.concat(all_syncounts, ignore_index=True)
+        pd.concat(all_syncounts.values(), ignore_index=True)
         .set_index(['name', 'kind'])['count']
         .astype(np.float32)
         .unstack()
         .fillna(0.0)
     )
     # We don't plot anything with empty status or worse.
-    all_status_stats = [s.query('status > ""') for s in all_status_stats]
+    all_status_stats = {name: s.query('status > ""') for name, s in all_status_stats.items()}
 
     # All present statuses, in priority-sorted order.
     relevant_statuses = (
-        pd.concat(all_status_stats)
+        pd.concat(all_status_stats.values())
         ['status']
         .astype(STATUS_DTYPE)
         .sort_values(ascending=False)
@@ -279,16 +280,16 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
 
     # Must make sure all relevant statuses are present (with default values)
     # in all dataframes before concatenating
-    all_status_stats = [
-        s
-        .set_index('status')
-        .reindex(relevant_statuses)
-        .reset_index()
-        .ffill()
-        .fillna(0.0)
-        for s in all_status_stats
-    ]
-    all_status_stats = pd.concat(all_status_stats, ignore_index=True)
+    all_status_stats = {
+        name: s.set_index('status')
+               .reindex(relevant_statuses)
+               .assign(name=name)
+               .reset_index()
+               .ffill()
+               .fillna(0.0)
+        for name, s in all_status_stats.items()
+    }
+    all_status_stats = pd.concat(all_status_stats.values(), ignore_index=True)
     all_status_stats['status'] = all_status_stats['status'].astype(STATUS_DTYPE)
     all_status_stats.to_csv(f'tables/{roiset}-all-status-stats.csv', index=False, header=True)
 
