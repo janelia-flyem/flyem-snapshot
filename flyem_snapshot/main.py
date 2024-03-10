@@ -435,6 +435,10 @@ def _finalize_config_and_output_dir(cfg, config_dir):
         if isinstance(subcfg, Mapping) and 'processes' in subcfg and subcfg['processes'] is None:
             subcfg['processes'] = jobcfg['processes']
 
+    for reportset_cfg in cfg['outputs']['connectivity-reports']:
+        if reportset_cfg['processes'] is None:
+            reportset_cfg['processes'] = jobcfg['processes']
+
     # Convert file paths to absolute (if necessary).
     # Relative paths are interpreted w.r.t. to the config file, not the cwd.
     # Overwrite the paths with their absolute versions so subsequent functions

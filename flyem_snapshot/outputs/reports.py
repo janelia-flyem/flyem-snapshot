@@ -15,7 +15,7 @@ import holoviews as hv
 import hvplot.pandas
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer
+from neuclease.util import Timer, compute_parallel
 from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES
 from neuclease.misc.neuroglancer import format_nglink
 from neuclease.misc.completeness import (
@@ -36,10 +36,7 @@ CAPTURE_STATS = ['traced_presyn_frac', 'traced_postsyn_frac', 'traced_synweight_
 STATUS_DTYPE = pd.CategoricalDtype(DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
 
 #
-# TODO
-# - emit a stacked bar graph of completeness fraction per ROI (stacked by status)
-# - create a simple html overview for report PNGs.
-# - consider a multiprocessing approach
+# TODO: create a simple html overview for report PNGs.
 #
 
 ReportSchema = {
@@ -115,7 +112,14 @@ ReportSetSchema = {
             # to look at all bodies which will eventually become Roughly traced,
             # i.e. all Primary Anchor bodies.
             "default": DEFAULT_BODY_STATUS_CATEGORIES[DEFAULT_BODY_STATUS_CATEGORIES.index('Primary Anchor'):]
-        }
+        },
+        "processes": {
+            "description":
+                "How many processes should be used to generate the reports for this roiset?\n"
+                "If not specified, default to the top-level config setting.\n",
+            "type": ["integer", "null"],
+            "default": None
+        },
     }
 }
 
@@ -182,31 +186,31 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         feather.write_feather(partner_df, "tables/partner_df-DEBUG.feather")
         raise
 
-    all_status_stats = {}
-    all_syncounts = {}
+    report_args = []
     for report in cfg['reports']:
         name = report['name']
         if report['rois']:
-            report_point_df = pd.concat((roi_point_dfs[roi] for roi in report['rois']))
-            report_partner_df = pd.concat(
-                (roi_partner_dfs[roi] for roi in report['rois']),
-                ignore_index=True
-            )
+            report_point_dfs = [roi_point_dfs[roi] for roi in report['rois']]
+            report_partner_dfs = [roi_partner_dfs[roi] for roi in report['rois']]
         else:
-            report_point_df = point_df
-            report_partner_df = partner_df
+            report_point_dfs = [point_df]
+            report_partner_dfs = [partner_df]
 
-        syncounts, status_stats = _export_report(
+        report_args.append((
             cfg,
             snapshot_tag,
-            report_point_df,
-            report_partner_df,
+            report_point_dfs,
+            report_partner_dfs,
             ann,
             report['rois'],
-            name=name
-        )
-        all_syncounts[name] = syncounts
-        all_status_stats[name] = status_stats
+            name
+        ))
+
+    report_stats = compute_parallel(_export_report, report_args, starmap=True, processes=cfg['processes'])
+    names, syncounts, status_stats = zip(*report_stats)
+
+    all_syncounts = dict(zip(names, syncounts))
+    all_status_stats = dict(names, status_stats)
 
     import pickle
     with open(f'tables/{roiset}-all_syncounts.pkl', 'wb') as f:
@@ -218,35 +222,38 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
     _export_capture_summaries(cfg, all_syncounts, all_status_stats)
 
 
-@PrefixFilter.with_context('{name}')
-def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, roi, *, name):
-    syncounts = (
-        report_point_df['kind']
-        .value_counts()
-        .rename('count')
-        .rename_axis('kind')
-        .reset_index()
-        .assign(name=name)
-    )
+def _export_report(cfg, snapshot_tag, report_point_dfs, report_partner_dfs, ann, roi, name):
+    with PrefixFilter.context(name):
+        report_point_df = pd.concat(report_point_dfs)
+        report_partner_df = pd.concat(report_partner_dfs, ignore_index=True)
 
-    status_stats = _completeness_forecast(
-        cfg,
-        snapshot_tag,
-        report_point_df,
-        report_partner_df,
-        ann,
-        roi,
-        name=name,
-    )
+        syncounts = (
+            report_point_df['kind']
+            .value_counts()
+            .rename('count')
+            .rename_axis('kind')
+            .reset_index()
+            .assign(name=name)
+        )
 
-    _export_downstream_capture(
-        cfg,
-        snapshot_tag,
-        report_partner_df,
-        name=name
-    )
+        status_stats = _completeness_forecast(
+            cfg,
+            snapshot_tag,
+            report_point_df,
+            report_partner_df,
+            ann,
+            roi,
+            name=name,
+        )
 
-    return syncounts, status_stats
+        _export_downstream_capture(
+            cfg,
+            snapshot_tag,
+            report_partner_df,
+            name=name
+        )
+
+        return name, syncounts, status_stats
 
 
 def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
