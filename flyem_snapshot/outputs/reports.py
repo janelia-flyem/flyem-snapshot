@@ -272,7 +272,7 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         pd.concat(all_status_stats)
         ['status']
         .astype(STATUS_DTYPE)
-        .sort_values()
+        .sort_values(ascending=False)
         .drop_duplicates()
         .tolist()
     )
