@@ -8,7 +8,7 @@ import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
-from neuclease.util import timed, encode_coords_to_uint64
+from neuclease.util import timed, encode_coords_to_uint64, camelcase_to_snakecase
 
 from ..util import restrict_synapses_to_roi, checksum, cache_dataframe, replace_object_nan_with_none
 from ..caches import cached, SerializerBase
@@ -67,7 +67,8 @@ NeurotransmittersSchema = {
                 "Some NT predictions may be considered unreliable unless there is experimental data to back them up.\n"
                 "This column can be used to override the celltype prediction immediately before the 'consensus' column is produced.\n"
                 "So, the celltype prediction column (property) will NOT be overridden in the end result, but the 'consensus'\n"
-                "column will only use the override value, if at all.\n",
+                "column will only use the override value, if at all.\n"
+                "Example: octomamine: unclear",
             "type": "object",
             "default": {},
             "additionalProperties": {
@@ -101,7 +102,8 @@ NeurotransmittersSchema = {
             "description":
                 "Optional. Table of high-confidence experimental groundtruth, used to override type-level\n"
                 "predictions in the 'consensus' preduction column.\n"
-                "Columns: cell_type, ground_truth, reference, [other_gt], [other_ref]",
+                "The expected columns match the columns in our final output (but we also accept their camelCase equivalents).\n"
+                "type, consensusNt, ntReference, otherNt, otherNtReference\n",
             "type": "string",
             "default": ""
         },
@@ -593,18 +595,21 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
     body_df['consensus_nt'].update(body_df['consensus_nt'].map(cfg['override-celltype-before-consensus']))
 
     # Overwrite cases where experimental groundtruth is available.
-    exp_df = pd.read_csv(path).set_index('cell_type')
-    gt_map = exp_df['ground_truth']
-    body_df['consensus_nt'].update(body_df['cell_type'].map(gt_map))
+    exp_df = pd.read_csv(path)
+    exp_df = exp_df.rename(columns={'type': 'cell_type'})
+    exp_df = exp_df.rename(columns={c: camelcase_to_snakecase(c) for c in exp_df.columns})
+    exp_df = exp_df.set_index('cell_type')
 
-    if 'reference' in exp_df.columns:
-        ref_map = exp_df['reference'].dropna()
+    body_df['consensus_nt'].update(body_df['cell_type'].map(exp_df['consensus_nt']))
+
+    if 'nt_reference' in exp_df.columns:
+        ref_map = exp_df['nt_reference'].dropna()
         body_df['nt_reference'] = body_df['cell_type'].map(ref_map)
 
-    if 'other_gt' in exp_df.columns:
-        other_map = exp_df['other_gt'].dropna()
+    if 'other_nt' in exp_df.columns:
+        other_map = exp_df['other_nt'].dropna()
         body_df['other_nt'] = body_df['cell_type'].map(other_map)
 
-    if 'other_ref' in exp_df.columns:
-        other_ref_map = exp_df['other_ref'].dropna()
+    if 'other_nt_reference' in exp_df.columns:
+        other_ref_map = exp_df['other_nt_reference'].dropna()
         body_df['other_nt_reference'] = body_df['cell_type'].map(other_ref_map)
