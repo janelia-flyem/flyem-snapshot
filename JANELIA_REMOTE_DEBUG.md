@@ -1,0 +1,66 @@
+# How to use remote debugging over SSH
+
+Following instructions from:
+https://code.visualstudio.com/docs/python/debugging#_remote-debugging
+
+
+## Launch the remote debugging server
+
+Reserve a slot and start up the remote debugger server, with the program arguments.
+(And make note of the cluster node you end up on.)
+
+    ssh login1
+
+    # From login1, Launch an interactive LSF job (in this example, I use 4 slots)
+    bsub -n 4 -q interactive -Is /bin/bash
+
+    # Activate your conda environment
+    conda activate my-env
+
+    # Install the Visual Studio remote debugger
+    conda install -c conda-forge debugpy
+
+    echo "Starting remote debugging server on $(uname -n)"
+    ENTRYPOINT_SCRIPT=flyem-snapshot
+    python3 -m debugpy --listen 0.0.0.0:3000 --wait-for-client $(which ${ENTRYPOINT_SCRIPT}) -c my-config.yaml
+
+
+## VSCode debugging configuration
+
+In VSCode, edit launch.json to add the following to the "configurations" list:
+
+
+    {
+        "name": "Python: Remote Attach",
+        "type": "python",
+        "request": "attach",
+        "connect": {
+            "host": "MY_REMOTE_MACHINE.int.janelia.org",
+            "port": 3000
+        },
+        "pathMappings": [
+            {
+                "localRoot": "/Users/bergs/workspace/flyem-snapshot",
+                "remoteRoot": "/groups/flyem/proj/cluster/miniforge/workspace/flyem-snapshot"
+            }
+        ]
+    },
+
+
+...but replace MY_REMOTE_MACHINE with the name of the remote node (e.g. something like h06u01),
+and replace the values for "localRoot" and "remoteRoot" to match the path of the git repo on
+the local and remote machines.
+
+
+After the debugging server is launched, select your new configuration
+from the VSCode debugging panel and hit 'run'.
+
+## ssh tunnel
+
+If the chosen port (3000) can't be directly accessed from your local laptop due to firewall rules,
+then start up an ssh tunnel by executing a command like this one on your local machine (your laptop):
+
+    $ ssh -L 3000:${REMOTE_MACHINE}:3000 bergs@login1
+
+Then, replace MY_REMOTE_MACHINE with "localhost".
+
