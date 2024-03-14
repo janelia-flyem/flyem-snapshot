@@ -497,7 +497,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     df['num_tbar_nt_predictions'].fillna(0, inplace=True)
 
     assert df.index.name == groupcol
-    df = df.sort_index().reset_index()
+    df = df.sort_index()
 
     # Without groundtruth, all we can provide are
     # the aggregated values -- no confidences
@@ -524,6 +524,8 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     group_pred_and_syn_pred = pred_df.loc[valid_rows, ['group_pred', 'pred1']]
     group_pred_and_syn_pred = pd.MultiIndex.from_frame(group_pred_and_syn_pred)
     pred_df.loc[valid_rows, 'confusion_score'] = confusion_df.stack().loc[group_pred_and_syn_pred].values
+
+    assert df.index.name == groupcol
     df['mean_confusion'] = pred_df.groupby(groupcol)['confusion_score'].mean().fillna(0.0)
 
     # If there were no tbar NT predictions provided at all
