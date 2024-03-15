@@ -60,7 +60,7 @@ def replace_object_nan_with_none(df):
     for col, dtype in df.dtypes.items():
         if dtype != object:
             continue
-        df[col].replace([np.nan, None], inplace=True)
+        df[col].replace([np.nan], [None], inplace=True)
 
 
 def dataframe_checksum(df):
