@@ -21,8 +21,7 @@ Reserve a slot and start up the remote debugger server, with the program argumen
     conda install -c conda-forge debugpy
 
     echo "Starting remote debugging server on $(uname -n)"
-    ENTRYPOINT_SCRIPT=flyem-snapshot
-    python3 -m debugpy --listen 0.0.0.0:3000 --wait-for-client $(which ${ENTRYPOINT_SCRIPT}) -c my-config.yaml
+    python3 -m debugpy --listen 0.0.0.0:3000 --wait-for-client $(which flyem-snapshot) -c my-config.yaml
 
 
 ## VSCode debugging configuration
