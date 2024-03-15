@@ -344,8 +344,6 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         # body_df['predicted_nt'] = body_df.idxmax(axis=1).map(col_to_nt)
 
     _set_body_exp_gt_based_columns(cfg, body_df)
-    body_df = body_df.drop(columns=['cell_type'], errors='ignore')
-
     replace_object_nan_with_none(body_df)
     return body_df, confusion_df
 

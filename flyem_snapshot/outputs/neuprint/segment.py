@@ -43,9 +43,14 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
 
     if body_nt is not None:
         assert body_nt.index.name == 'body'
+        body_nt = body_nt.drop(columns=['cell_type'])
+
+        # Not all NT tables include the ground truth.
+        body_nt = body_nt.drop(columns=['ground_truth'], errors='ignore')
         body_nt = body_nt.rename(columns={
             c: snakecase_to_camelcase(c) for c in body_nt.columns
         })
+
         # Sometimes the neurotransmitters are present in DVID/clio,
         # but we want to supercede those with up-to-date NT calculations.
         neuron_df = neuron_df.drop(columns=body_nt.columns, errors='ignore')
