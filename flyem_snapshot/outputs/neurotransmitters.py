@@ -65,8 +65,11 @@ def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
 
     with Timer("Writing neurotransmitter tables", logger):
         os.makedirs('nt', exist_ok=True)
-        feather.write_feather(tbar_df, 'nt/tbar-neurotransmitters.feather')
-        feather.write_feather(body_nt, 'nt/body-neurotransmitters.feather')
+        assert tbar_df.index.name == 'point_id'
+        feather.write_feather(tbar_df.reset_index(), 'nt/tbar-neurotransmitters.feather')
+
+        assert body_nt.index.name == 'body'
+        feather.write_feather(body_nt.reset_index(), 'nt/body-neurotransmitters.feather')
 
         if nt_confusion is not None:
             nt_confusion.to_csv('nt/neurotransmitter-confusion.csv', index=True, header=True)
