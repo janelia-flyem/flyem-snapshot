@@ -136,8 +136,8 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Computing ranked body stats table", logger):
         # A version of this table is also exported for each 'report' in the config,
         # but we also export it as part of the 'flat' connectome export,
-        # and we include type/instance.
-        extra_cols = [c for c in ('class', 'type', 'instance') if c in ann.columns]
+        # and we include status/class/type/instance.
+        extra_cols = [c for c in ('status', 'class', 'type', 'instance') if c in ann.columns]
         syn_counts_df = ranked_synapse_counts(point_df, partner_df, body_annotations_df=ann[extra_cols])
         syn_counts_df = syn_counts_df.rename(columns={
             'OutputPartners': 'downstream',
