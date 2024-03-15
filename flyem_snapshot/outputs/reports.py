@@ -160,7 +160,7 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         _ = capture_statuses  # linting nonsense
         capture_bodies = ann.query('status in @capture_statuses').index
         partner_df['captured_pre'] = partner_df['body_pre'].isin(capture_bodies)
-        partner_df['captured_post'] = partner_df['body_post'].isin(capture_bodies).astype(pd.CategoricalDtype([False, True]))
+        partner_df['captured_post'] = partner_df['body_post'].isin(capture_bodies)
 
         # Converting to categorical ensures that value_counts() always gives
         # results for both False and True, even if there are no True (or False) entries.
@@ -467,6 +467,9 @@ def _get_neuroglancer_base_link(state_path):
 def _export_downstream_capture(cfg, snapshot_tag, partner_df, *, name):
     _name = '-'.join(name.split())
 
+    capture_statuses = pd.Series(cfg['capture-statuses']).astype(STATUS_DTYPE)
+    min_capture_status = capture_statuses.min()
+
     # We're only interested in the downstream capture of
     # upstream bodies which are themselves in the capture set.
     df = (
@@ -487,7 +490,7 @@ def _export_downstream_capture(cfg, snapshot_tag, partner_df, *, name):
     )
 
     p = df['capture_frac'].hvplot.hist(
-        title=f"{name}: Downstream capture ({snapshot_tag})",
+        title=f"{name}: Downstream capture, {min_capture_status} or better ({snapshot_tag})",
         xlabel=''
     )
     export_bokeh(
