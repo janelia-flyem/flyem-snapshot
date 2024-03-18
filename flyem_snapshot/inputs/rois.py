@@ -30,6 +30,7 @@ RoiSetSchema = {
                 "  - path to a .json file with either of the above: /path/to/my-roi-ids.json\n"
                 "  - a format string to compute each ROI name from its ROI segment ID 'x',\n"
                 "    such as: 'ME_R_col_{x // 100}_{x % 100}'\n",
+            "default": {},
             "oneOf": [
                 {
                     # Optionally provide a path to a '.json' from which the ROI set will be read,
@@ -39,7 +40,6 @@ RoiSetSchema = {
                 {
                     "type": "array",
                     "items": {"type": "string"},
-                    # No default
                 },
                 {
                     "type": "object",
@@ -47,7 +47,6 @@ RoiSetSchema = {
                         "type": "integer",
                         "minimum": 1,
                     },
-                    # No default
                 }
             ]
         },
@@ -192,6 +191,15 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
         segments, which encode their hex position).
     """
     roi_ids = roiset_cfg['rois']
+    if not roi_ids:
+        roi_ids = {}
+        if roiset_cfg['source'] != "point-table":
+            msg = (
+                f"Config for roi-set '{roiset_name}' is not valid: You must supply"
+                "the 'rois' (or dict) unless the 'source' is 'point-table'\n"
+            )
+            raise RuntimeError(msg)
+
     if isinstance(roi_ids, str) and roi_ids.endswith('.json'):
         roi_ids = json.load(open(roi_ids, 'r'))
     elif isinstance(roi_ids, list):
@@ -240,6 +248,13 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
             eval(f'f"{roi_ids}"', None, {'x': x}): x  # pylint: disable=eval-used
             for x in unique_ids if x != 0
         }
+
+    if not roi_ids:
+        if roiset_name not in point_df:
+            msg = ("Your point table lacks the a column named '{roiset_name}',\n"
+                   "but you specified no roi names in your config or formula for constructing them.\n")
+            raise RuntimeError(msg)
+        roi_ids = {n: i for i, n in enumerate(sorted(point_df[roiset_name].unique()), start=1)}
 
     assert isinstance(roi_ids, dict)
     expected_cols = {roiset_name, f'{roiset_name}_label'}

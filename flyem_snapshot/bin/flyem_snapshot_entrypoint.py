@@ -11,15 +11,16 @@ def main():
     Command-line arguments are defined and parsed here,
     (before calling the real main) to enable quick response to --help.
     """
-    DEBUG = False
+    DEBUG = True
     if DEBUG and len(sys.argv) == 1:
         # Providing fake CLI arguments this way is simpler than
         # than messing around with VSCode debugging configurations.
         import os
         sys.stderr.write("DEBUGGING WITH ARTIFICAL ARGS\n")
         os.chdir('/Users/bergs/workspace/snapshot-configs/test-configs')
-        p = 'small-ol-test/ol-small-test.yaml'
-        sys.argv.extend(['-c', p])
+        # p = 'small-ol-test/ol-small-test.yaml'
+        # sys.argv.extend(['-c', p])
+        sys.argv.extend(['-Y'])
 
     parser = argparse.ArgumentParser(
         description=__doc__,
