@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @PrefixFilter.with_context("Synapse")
-def export_neuprint_elements(cfg, element_tables):
+def export_neuprint_elements(cfg, element_tables, element_roisets):
     """
     Export generic (non-Synapse) Element nodes and relationships.
     (Synapses are exported elsewhere.)
@@ -27,26 +27,30 @@ def export_neuprint_elements(cfg, element_tables):
 
     for config_name, (point_df, _) in element_tables.items():
         if point_df is not None:
-            _export_neuprint_elements(cfg, point_df, config_name=config_name)
+            _export_neuprint_elements(
+                cfg,
+                point_df,
+                element_roisets[config_name].keys(),
+                config_name=config_name
+            )
 
 
 @PrefixFilter.with_context("{config_name}")
-def _export_neuprint_elements(cfg, point_df, *, config_name):
+def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
     dataset = cfg['meta']['dataset']
+    roisets = list(roisets)
 
     point_df = point_df.reset_index()
     point_df['type'] = point_df['type'].astype('category')
 
     point_df[':Label'] = f'Element;{dataset}_Element'
 
-    specific_label = cfg['element-labels'].get(config_name, '')
-    if specific_label.startswith(':'):
-        specific_label = specific_label[1:]
+    specific_label = cfg['element-labels'].get(config_name, '').lstrip(':')
     if specific_label:
         point_df[':Label'] += f';{specific_label};{dataset}_{specific_label}'
 
     # All non-ROI columns from the input table are exported as :Element properties.
-    roicols = (*cfg['roi-set-names'], *(f'{c}_label' for c in cfg['roi-set-names']))
+    roicols = (*roisets, *(f'{c}_label' for c in roisets))
     prop_cols = set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'}
     roi_syn_props = {k:v for k,v in cfg['roi-synapse-properties'].items() if k in point_df.columns}
 
@@ -56,7 +60,7 @@ def _export_neuprint_elements(cfg, point_df, *, config_name):
 
     logger.info(f"Exporting {specific_label} Elements")
     logger.info(f"Non-ROI properties: {prop_cols}")
-    logger.info(f"ROI properties from the following roi-sets: {cfg['roi-set-names']}")
+    logger.info(f"ROI properties from the following roi-sets: {roisets}")
     point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
 
     export_subdir = f'neuprint/Neuprint_Elements/{config_name}'
@@ -69,7 +73,6 @@ def _export_neuprint_elements(cfg, point_df, *, config_name):
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", ".*groupby with a grouper equal to a list of length 1.*")
-        roisets = sorted(set(cfg['roi-set-names']) & set(point_df.columns))
         groups = point_df.groupby(roisets, dropna=False, observed=True)
         batches = ((i, group_rois, df) for i, (group_rois, df) in enumerate(groups))
         compute_parallel(

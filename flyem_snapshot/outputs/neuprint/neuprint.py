@@ -302,7 +302,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
 
     # FIXME: It would be good to verify that there are no duplicated Element points (including Synapses)
     export_neuprint_elementsets(cfg, element_tables, connectome)
-    export_neuprint_elements(cfg, element_tables)
+    export_neuprint_elements(cfg, element_tables, element_roisets)
     export_neuprint_elements_closeto(element_tables)
 
     export_synapsesets(cfg, partner_df, connectome)

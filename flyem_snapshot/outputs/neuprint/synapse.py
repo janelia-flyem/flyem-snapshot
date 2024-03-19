@@ -43,8 +43,15 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
     point_df[':Label'] = f'Synapse;{dataset}_Synapse;Element;{dataset}_Element'
     point_df['kind'] = point_df['kind'].cat.rename_categories({'PreSyn': 'pre', 'PostSyn': 'post'})
 
+    roisets = cfg['roi-set-names']
+    if (missing_roisets := set(roisets) - set(point_df.columns)):
+        raise RuntimeError(
+            f"roi-set-names includes {missing_roisets} which aren't\n"
+            "present as columns in the synapse point table"
+        )
+
     # All non-ROI columns from the input table are exported as :Element properties.
-    roicols = (*cfg['roi-set-names'], *(f'{c}_label' for c in cfg['roi-set-names']))
+    roicols = (*roisets, *(f'{c}_label' for c in roisets))
     prop_cols = set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'}
     roi_syn_props = {k:v for k,v in cfg['roi-synapse-properties'].items() if k in point_df.columns}
 
@@ -61,7 +68,7 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
     )
 
     logger.info(f"Non-ROI Synapse properties: {prop_cols}")
-    logger.info(f"ROI Synapse properties from the following roi-sets: {cfg['roi-set-names']}")
+    logger.info(f"ROI Synapse properties from the following roi-sets: {roisets}")
     point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
 
     _export_fn = partial(
@@ -72,7 +79,6 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", ".*groupby with a grouper equal to a list of length 1.*")
-        roisets = sorted(set(cfg['roi-set-names']) & set(point_df.columns))
         groups = point_df.groupby(roisets, dropna=False, observed=True)
         batches = ((i, group_rois, df) for i, (group_rois, df) in enumerate(groups))
         compute_parallel(
