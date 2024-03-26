@@ -8,6 +8,7 @@ from neuclease.util import Timer, decode_coords_from_uint64
 from neuclease.misc.completeness import ranked_synapse_counts
 
 from ..caches import cached, SentinelSerializer
+from ..util import restrict_synapses_to_roi
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,20 @@ FlatConnectomeSchema = {
             "default": True,
         },
         "roi-set": {
+            "description": "Which set of ROI names to include in the output data as a column.\n"
+            "This does not specify how the synapses are filtered before export.\n",
             "type": "string",
             "default": "primary"
-        }
+        },
+        "restrict-connectivity-to-roiset": {
+            "description":
+                "Discard synapses that fall outside the given roiset, i.e. they are <unspecified> in this roiset.\n"
+                "The discarded synapses won't be included in the database individually,\n"
+                "nor will they contribute to neuron-to-neuron connectome weights.\n"
+                "This setting does not indicate which ROI set will be listed in the output as a column in the synapse tables.\n",
+            "type": "string",
+            "default": ""
+        },
     }
 }
 
@@ -41,8 +53,6 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     if not cfg['export-connectome']:
         return
 
-    roiset = cfg['roi-set']
-
     os.makedirs('flat-connectome', exist_ok=True)
 
     # If the connectome export files already exist, then skip this function.
@@ -50,8 +60,14 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     if os.path.exists(f'flat-connectome/connectome-weights-{snapshot_tag}-minconf-{min_conf}-primary-only.feather'):
         return
 
+    filtering_roiset = cfg['restrict-connectivity-to-roiset']
+    if filtering_roiset:
+        with Timer(f"Excluding synapses whose ROI is unspecified within roi-set: '{filtering_roiset}'"):
+            point_df, partner_df = restrict_synapses_to_roi(filtering_roiset, None, point_df, partner_df)
+
+    labeling_roiset = cfg['roi-set']
     with Timer("Constructing synapse partner export", logger):
-        partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', roiset]]
+        partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', labeling_roiset]]
 
         # Add conf_pre, conf_post
         partner_export_df = (
@@ -72,10 +88,10 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
 
         # In the original point_df, the roi column was determined according to the post location.
         # Rename with _post suffix to make that clear for consumers of this table.
-        partner_export_df = partner_export_df.rename(columns={roiset: f'{roiset}_post'})
+        partner_export_df = partner_export_df.rename(columns={labeling_roiset: f'{labeling_roiset}_post'})
         partner_cols = [
             'x_pre', 'y_pre', 'z_pre', 'body_pre', 'conf_pre',
-            'x_post', 'y_post', 'z_post', 'body_post', 'conf_post', f'{roiset}_post']
+            'x_post', 'y_post', 'z_post', 'body_post', 'conf_post', f'{labeling_roiset}_post']
         partner_export_df = partner_export_df[partner_cols]
 
     with Timer("Writing synapse partner export", logger):
