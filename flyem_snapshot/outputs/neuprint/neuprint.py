@@ -61,9 +61,13 @@ NeuprintSchema = {
         },
         "meta": {
             "description":
-                "File path to a separate config file describing the Neuprint :Meta info.\n"
+                "The config settings which define the info that will be loaded into the Neuprint :Meta node.\n"
+                "Settings can be supplied directly here, or this can be a path to a separate config file containing the meta settings.\n"
                 "See the command-line argument: flyem-snapshot -M\n",
-            "type": "string",
+            "oneOf": [
+                NeuprintMetaSchema,
+                {"type": "string"},
+            ],
             "default": ""
         },
         "neuroglancer": NeuroglancerSettingsSchema,

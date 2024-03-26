@@ -527,7 +527,7 @@ def standardize_config(cfg, config_dir):
 
     # We load the neuprint :Meta node configuraton from a separate file,
     # but we insert its loaded contents into the main config for all neuprint steps to use.
-    if neuprintcfg['export-neuprint-snapshot']:
+    if neuprintcfg['export-neuprint-snapshot'] and isinstance(neuprintcfg['meta'], str):
         metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)
         neuprintcfg['meta'] = metacfg
 
