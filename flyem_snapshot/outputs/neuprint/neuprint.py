@@ -12,7 +12,7 @@ from neuclease import PrefixFilter
 from neuclease.util import Timer
 
 from .annotations import neuprint_segment_annotations
-from .meta import export_neuprint_meta
+from .meta import NeuprintMetaSchema, export_neuprint_meta
 from .neuroglancer import NeuroglancerSettingsSchema, export_neuroglancer_json_state
 from .indexes import IndexesSettingsSchema, export_neuprint_indexes_script
 from .segment import export_neuprint_segments, export_neuprint_segment_connections

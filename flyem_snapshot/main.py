@@ -7,7 +7,7 @@ import logging
 from collections.abc import Mapping
 
 from confiddler import dump_default_config, load_config, dump_config
-from neuclease import configure_default_logging, PrefixFilter
+from neuclease import PrefixFilter
 from neuclease.util import Timer, switch_cwd, dump_json
 from neuclease.dvid import set_default_dvid_session_timeout
 from neuclease.dvid.labelmap import resolve_snapshot_tag
@@ -127,31 +127,49 @@ ConfigSchema = {
 def main(args):
     """
     Main function.
-    Handles everything except CLI argument parsing,
-    which is located in a separate file to avoid importing
-    lots of packages when the user just wants --help.
 
-    For argument definitions and explanations, see bin/flyem_snapshot_entrypoint.py
+    Handles everything except CLI argument parsing, which
+    is located in a separate entrypoint script to avoid
+    importing lots of packages when the user just wants to
+    see the --help message.
+
+    For argument definitions, see bin/flyem_snapshot_entrypoint.py
+    """
+    cfg, config_dir = process_args_and_parse_config(args)
+    init_logging(cfg['job-settings']['logging-config'])
+
+    with Timer("Processing snapshot", logger, log_start=False):
+        main_impl(cfg, config_dir)
+
+    logger.info("DONE")
+
+
+def process_args_and_parse_config(args):
+    """
+    Process the (already-parsed) command-line args and parse the config (if given).
+    Normally, this just returns the parsed config data and the config's directory.
+    But if the user specified one of the command-line options to dump out info instead of
+    running a complete export, then this dumps out the requested info and exits immediately.
     """
     if args.dump_default_yaml:
         dump_default_config(ConfigSchema, sys.stdout, 'yaml')
-        return
+        sys.exit(0)
 
     if args.dump_verbose_yaml:
         dump_default_config(ConfigSchema, sys.stdout, 'yaml-with-comments')
-        return
+        sys.exit(0)
 
     if args.dump_neuprint_default_meta:
         dump_default_config(NeuprintMetaSchema, sys.stdout, 'yaml')
-        return
+        sys.exit(0)
 
     if args.dump_verbose_neuprint_default_meta:
         dump_default_config(NeuprintMetaSchema, sys.stdout, 'yaml-with-comments')
-        return
+        sys.exit(0)
 
     if not args.config:
         sys.stderr.write("No config provided.\n")
-        return 1
+        sys.exit(1)
 
     cfg = load_config(args.config, ConfigSchema)
     config_dir = os.path.dirname(args.config)
@@ -159,70 +177,69 @@ def main(args):
     if args.print_snapshot_tag:
         _, snapshot_tag, _ = determine_snapshot_tag(cfg, config_dir)
         print(snapshot_tag)
-        return
-    elif args.print_output_directory:
+        sys.exit(0)
+
+    if args.print_output_directory:
         _, _, output_dir = determine_snapshot_tag(cfg, config_dir)
         print(output_dir)
-        return
+        sys.exit(0)
 
-    configure_default_logging()
-    log_cfg = cfg['job-settings']['logging-config']
+    return cfg, config_dir
+
+
+def init_logging(log_cfg):
+    logging.captureWarnings(True)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s %(message)s')
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    handler.addFilter(PrefixFilter())
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
     assert log_cfg.setdefault('version', 1) == 1, \
         "Python logging config version should be 1"
     assert log_cfg.setdefault('incremental', True), \
         "Only incremenetal logging configuration is supported via the config file."
     logging.config.dictConfig(log_cfg)
 
+
+def main_impl(cfg, config_dir):
     logger.info(f"Running with flyem-snapshot {__version__}")
     log_lsf_details(logger)
 
-    with Timer("Exporting snapshot denormalizations", logger, log_start=False):
-        export_all(cfg, config_dir)
-    logger.info("DONE")
-
-
-def export_all(cfg, config_dir):
     timeout = cfg['job-settings']['dvid-timeout']
     set_default_dvid_session_timeout(timeout, timeout)
 
-    _finalize_config_and_output_dir(cfg, config_dir)
+    standardize_config(cfg, config_dir)
+    initialize_output_dir(cfg)
 
     # All subsequent processing occurs from within the output-dir
     output_dir = cfg['job-settings']['output-dir']
     logger.info(f"Working in {output_dir}")
     with switch_cwd(output_dir):
-        (last_mutation, ann, element_tables, point_df, partner_df,
-            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion) = load_inputs(cfg)
+        #
+        # Load inputs
+        #
+        snapshot_tag = cfg['job-settings']['snapshot-tag']
+        pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
+        ann = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
+        point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
+        element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
+        body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], pointlabeler, point_df, snapshot_tag)
+        tbar_nt, body_nt, nt_confusion = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
 
-        produce_outputs(cfg, last_mutation, ann, element_tables, point_df, partner_df,
-                        syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion)
-
-
-def load_inputs(cfg):
-    snapshot_tag = cfg['job-settings']['snapshot-tag']
-    pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
-    ann = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
-    point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
-    element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
-    body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], pointlabeler, point_df, snapshot_tag)
-    tbar_nt, body_nt, nt_confusion = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
-    return (pointlabeler, ann, element_tables, point_df, partner_df,
-            syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion)
-
-
-def produce_outputs(cfg, pointlabeler, ann, element_tables, point_df, partner_df,
-                    syn_roisets, element_roisets, body_sizes, tbar_nt, body_nt, nt_confusion):
-
-    snapshot_tag = cfg['job-settings']['snapshot-tag']
-    min_conf = cfg['inputs']['synapses']['min-confidence']
-
-    export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
-
-    export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
-                    tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
-
-    export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
-    export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+        #
+        # Produce outputs
+        #
+        min_conf = cfg['inputs']['synapses']['min-confidence']
+        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
+        export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
+                        tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
+        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
 
 
 class SynapsesWithRoiSerializer(SerializerBase):
@@ -381,7 +398,7 @@ def determine_snapshot_tag(cfg, config_dir):
     return uuid, snapshot_tag, output_dir
 
 
-def _finalize_config_and_output_dir(cfg, config_dir):
+def standardize_config(cfg, config_dir):
     """
     This function encapsulates all logic related to overwriting the user's
     config after it has been loaded and populated with default values from the schema.
@@ -508,19 +525,31 @@ def _finalize_config_and_output_dir(cfg, config_dir):
             else:
                 report['name'] = 'all'
 
+    # We load the neuprint :Meta node configuraton from a separate file,
+    # but we insert its loaded contents into the main config for all neuprint steps to use.
+    if neuprintcfg['export-neuprint-snapshot']:
+        metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)
+        neuprintcfg['meta'] = metacfg
+
+
+def initialize_output_dir(cfg):
+    """
+    Create the empty output directory and subdirectories, and dump
+    the fully-standardized config into it (just for future reference).
+    """
+    output_dir = cfg['job-settings']['output-dir']
+
     # Ensure output directories exist.
     os.makedirs(f"{output_dir}/tables", exist_ok=True)
     os.makedirs(f"{output_dir}/png", exist_ok=True)
     os.makedirs(f"{output_dir}/html", exist_ok=True)
 
-    # Dump the updated config so it's clear what modifications
-    # we made and how the UUID was resolved.
+    # Dump the updated config so it's clear what the
+    # settings are after "standardization"
+    # (absolute paths, resolved UUID, etc.)
     dump_config(cfg, f"{output_dir}/final-config.yaml")
 
-    # We load the neuprint :Meta node configuraton from a separate file,
-    # but we insert its loaded contents into the main config for all neuprint steps to use.
+    # Also dump out the neuprint meta config.
+    neuprintcfg = cfg['neuprint']
     if neuprintcfg['export-neuprint-snapshot']:
-        metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)
-        p = os.path.basename(neuprintcfg['meta'])
-        dump_config(metacfg, f"{output_dir}/{p}")
-        neuprintcfg['meta'] = metacfg
+        dump_config(neuprintcfg['meta'], f"{output_dir}/neuprint-meta.yaml")
