@@ -550,6 +550,6 @@ def initialize_output_dir(cfg):
     dump_config(cfg, f"{output_dir}/final-config.yaml")
 
     # Also dump out the neuprint meta config.
-    neuprintcfg = cfg['neuprint']
+    neuprintcfg = cfg['outputs']['neuprint']
     if neuprintcfg['export-neuprint-snapshot']:
         dump_config(neuprintcfg['meta'], f"{output_dir}/neuprint-meta.yaml")

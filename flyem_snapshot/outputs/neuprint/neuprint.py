@@ -12,7 +12,7 @@ from neuclease import PrefixFilter
 from neuclease.util import Timer
 
 from .annotations import neuprint_segment_annotations
-from .meta import NeuprintMetaSchema, export_neuprint_meta
+from .meta import export_neuprint_meta
 from .neuroglancer import NeuroglancerSettingsSchema, export_neuroglancer_json_state
 from .indexes import IndexesSettingsSchema, export_neuprint_indexes_script
 from .segment import export_neuprint_segments, export_neuprint_segment_connections
@@ -62,12 +62,9 @@ NeuprintSchema = {
         "meta": {
             "description":
                 "The config settings which define the info that will be loaded into the Neuprint :Meta node.\n"
-                "Settings can be supplied directly here, or this can be a path to a separate config file containing the meta settings.\n"
+                "This should be a path to a separate config file containing the meta settings.\n"
                 "See the command-line argument: flyem-snapshot -M\n",
-            "oneOf": [
-                NeuprintMetaSchema,
-                {"type": "string"},
-            ],
+            "type": "string",
             "default": ""
         },
         "neuroglancer": NeuroglancerSettingsSchema,

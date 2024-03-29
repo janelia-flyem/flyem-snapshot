@@ -17,10 +17,14 @@ def main():
         # than messing around with VSCode debugging configurations.
         import os
         sys.stderr.write("DEBUGGING WITH ARTIFICAL ARGS\n")
-        os.chdir('/Users/bergs/workspace/snapshot-configs/test-configs')
+        #sys.argv.extend(['-Y'])
+
+        # os.chdir('/Users/bergs/workspace/snapshot-configs/test-configs')
         # p = 'small-ol-test/ol-small-test.yaml'
         # sys.argv.extend(['-c', p])
-        sys.argv.extend(['-Y'])
+
+        p = '/Users/bergs/workspace/snapshot-configs/optic-lobe/optic-lobe-release-snapshot.yaml'
+        sys.argv.extend(['-c', p])
 
     parser = argparse.ArgumentParser(
         description=__doc__,
