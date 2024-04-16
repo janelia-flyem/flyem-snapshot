@@ -330,6 +330,30 @@ NeuprintMetaSchema = {
             "default": None
         },
 
+        "overviewRois": {
+            "description":
+                "Which ROIs to show in the neuprint explorer overview heatmap.\n"
+                "By default, neuprint explorer shows the primary ROIs, except for those we list in 'excludeFromOverview'.\n",
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                {
+                    "type": "null"
+                }
+            ],
+            "default": None
+        },
+        "overviewOrder": {
+            "description":
+                "Whether neuprint explorer should auto-choose the order of rows and columns in the overview heatmap (clustered)\n"
+                "or whether it should use the order you specified in overviewRois (explicit)\n",
+            "type": "string",
+            "enum": ["clustered", "explicit"],
+            "default": "clustered",
+        },
+
         # The roiHierarchy is written into this config in a different
         # JSON format than the JSON will be written into neuprint.
         "roiHierarchy": RoiHierarchySchema,
@@ -487,6 +511,7 @@ META_PROPERTIES = [
     'totalPreCount', 'totalPostCount',
     'superLevelRois',
     'primaryRois', 'nonHierarchicalROIs',
+    'overviewRois', 'overviewOrder',
     'roiInfo', 'roiHierarchy',
     'neuronProperties',
     'neuronColumns',
@@ -515,6 +540,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
         # 'totalPreCount', 'totalPostCount',
         # 'superLevelRois',
         'primaryRois', 'nonHierarchicalROIs',
+        'overviewRois', 'overviewOrder',
         # 'roiInfo', 'roiHierarchy',
         # 'neuronProperties',
 
