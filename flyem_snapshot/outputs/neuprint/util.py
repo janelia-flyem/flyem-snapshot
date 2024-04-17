@@ -20,10 +20,6 @@ NEUPRINT_TYPE_OVERRIDES = {
     'downstream': 'int',
     'synweight': 'int',
     # 'halfbrainBody': 'long',
-    'voxelSize': 'float[]',
-    'primaryRois': 'string[]',
-    'superLevelRois': 'string[]',
-    'nonHierarchicalROIs': 'string[]',
     'positionType': 'string',
     'locationType': 'string',
 }

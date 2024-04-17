@@ -19,7 +19,17 @@ import pandas as pd
 from confiddler import load_config
 from neuclease.util import dump_json
 
-from .util import append_neo4j_type_suffixes, NEUPRINT_TYPE_OVERRIDES
+from .util import append_neo4j_type_suffixes
+
+# These :Meta properties will be exported for neo4j with special dtypes
+# in the column names and written as semicolon-delimited lists.
+NEUPRINT_META_LIST_PROPERTIES = {
+    'voxelSize': 'float[]',
+    'primaryRois': 'string[]',
+    'superLevelRois': 'string[]',
+    'nonHierarchicalROIs': 'string[]',
+    'overviewRois': 'string[]',
+}
 
 logger = logging.getLogger(__name__)
 
@@ -658,7 +668,7 @@ def _export_meta_as_csv(meta):
     # For columns with neo4j types like float[] or string[],
     # convert them to a string using ';' as list delimiter.
     for key in list(meta.keys()):
-        if NEUPRINT_TYPE_OVERRIDES.get(key, '').endswith('[]'):
+        if NEUPRINT_META_LIST_PROPERTIES.get(key, '').endswith('[]'):
             meta[key] = meta[key] or []
             meta[key] = ';'.join(map(str, meta[key]))
 
@@ -679,6 +689,10 @@ def _export_meta_as_csv(meta):
 
     # One column per key, with exactly one row.
     meta_df = pd.DataFrame({k: [v] for k,v in meta.items()})
+    meta_df = meta_df.rename(columns={
+        prop: f'{prop}:{dtype}'
+        for prop,dtype in NEUPRINT_META_LIST_PROPERTIES.items()
+    })
     meta_df = append_neo4j_type_suffixes(meta_df)
     meta_df.to_csv('neuprint/Neuprint_Meta.csv', index=False, header=True)
     logger.info("Wrote Neuprint_Meta.csv")
