@@ -55,15 +55,15 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
 
     os.makedirs('flat-connectome', exist_ok=True)
 
-    # If the connectome export files already exist, then skip this function.
-    # FIXME: Don't write this filename in two different places.
-    if os.path.exists(f'flat-connectome/connectome-weights-{snapshot_tag}-minconf-{min_conf}-primary-only.feather'):
-        return
-
     filtering_roiset = cfg['restrict-connectivity-to-roiset']
     if filtering_roiset:
         with Timer(f"Excluding synapses whose ROI is unspecified within roi-set: '{filtering_roiset}'"):
             point_df, partner_df = restrict_synapses_to_roi(filtering_roiset, None, point_df, partner_df)
+
+    if filtering_roiset:
+        file_tag = f"{snapshot_tag}-minconf-{min_conf}"
+    else:
+        file_tag = f"{snapshot_tag}-minconf-{min_conf}-{filtering_roiset}"
 
     labeling_roiset = cfg['roi-set']
     with Timer("Constructing synapse partner export", logger):
@@ -97,7 +97,12 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Writing synapse partner export", logger):
         feather.write_feather(
             partner_export_df,
-            f'flat-connectome/syn-partners-{snapshot_tag}-minconf-{min_conf}.feather'
+            f'flat-connectome/syn-partners-{file_tag}.feather'
+        )
+    with Timer("Writing synapse point export", logger):
+        feather.write_feather(
+            point_df,
+            f'flat-connectome/syn-points-{file_tag}.feather'
         )
 
     with Timer("Constructing weighted connectome", logger):
@@ -111,7 +116,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Writing weighted connectome", logger):
         feather.write_feather(
             connectome,
-            f'flat-connectome/connectome-weights-{snapshot_tag}-minconf-{min_conf}.feather'
+            f'flat-connectome/connectome-weights-{file_tag}.feather'
         )
 
     with Timer("Constructing primary-only synapse partner export", logger):
@@ -122,7 +127,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Writing primary-only synapse partner export", logger):
         feather.write_feather(
             primary_partner_export_df,
-            f'flat-connectome/syn-partners-{snapshot_tag}-minconf-{min_conf}-primary-only.feather'
+            f'flat-connectome/syn-partners-{file_tag}-primary-only.feather'
         )
 
     with Timer("Writing primary-only weighted connectome", logger):
@@ -146,7 +151,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Writing primary-only weighted connectome", logger):
         feather.write_feather(
             primary_connectome,
-            f'flat-connectome/connectome-weights-{snapshot_tag}-minconf-{min_conf}-primary-only.feather'
+            f'flat-connectome/connectome-weights-{file_tag}-primary-only.feather'
         )
 
     with Timer("Computing ranked body stats table", logger):
@@ -165,5 +170,5 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     with Timer("Writing ranked body stats table", logger):
         feather.write_feather(
             syn_counts_df.reset_index(),
-            f'flat-connectome/body-stats-{snapshot_tag}-minconf-{min_conf}.feather'
+            f'flat-connectome/body-stats-{file_tag}.feather'
         )
