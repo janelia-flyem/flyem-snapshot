@@ -41,6 +41,7 @@ Warning:
 """
 import os
 import re
+import sys
 import argparse
 import ujson
 
@@ -232,8 +233,8 @@ def parse_msg(f):
             .replace(rb'\\"', rb'\\\"')
         )
         return data, bytes_read
-    except ujson.JSONDecodeError as ex:
-        raise RuntimeError(f"Couldn't parse:\n{text}") from ex
+    except ujson.JSONDecodeError:
+        sys.stderr.write(f"WARNING: Couldn't parse:\n{text}\n")
 
 
 if __name__ == "__main__":
