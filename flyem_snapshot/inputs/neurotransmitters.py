@@ -1,3 +1,52 @@
+"""
+This file contains the implementation for loading synaptic-level neurotransmitter predictions
+produced from the 'synful' method (Eckstein et al.), and computing body-level aggregations,
+including 'confidence' scores (if cell type annotations are present and type-level groundtruth
+is provided as a separate input table).
+
+Additionally, a 'consensusNt' column is produced for each body, based on type-level aggregations
+and (optionally) yet more type-level groundtruth ("experimental groundtruth") which is meant to
+override any automated predictions.
+
+The implementation below was developed in part to meet the specification shown below.
+(Source: https://github.com/reiserlab/optic-lobe-connectome/issues/334#issuecomment-1906944951)
+
+    Add multiple fields/columns to neuprint:
+
+        1. synapse level predictions: already in neuprint, no changes needed?
+
+        2. add column with confidence score at the bodyID and also cell type level.
+
+        3. 'cell' (bodyID) level NT predictions:
+           report the transmitter with largest share of predictions for the synapses of the body,
+           but with some filtering: only include predictions for bodies with at least 50 pre-synapses
+           and with a confidence score >= 0.5. If a bodyID doesn't meet both thresholds, then use NT = 'unclear'
+
+        4. cell type level NT predictions:
+           use same rule as above, but threshold at 100 synapses pooled across pre-synapses of all neurons of type.
+           confidence score >=0.5. If a cell type doesn't meet both thresholds, then NT = 'unclear'
+           (we expect >100 cell types like this, most are VPNs, this is fine, and central brain data will fix these
+           in later releases). In the cases where there is only 1 neuron per type (per side), then should use the
+           50 synapse per-cell threshold so there is no conflict between cell and cell type level for these cells.
+
+        5. experimental data: transmitter information from high confidence experimental data, for the initial
+           release this will be the ground truth data and new FISH data + Dm3a/b (accidentally left out of grown
+           truth data). We have a table with source that will go in the paper. Jan suggested that data source
+           should also go into neuprint. In which case the sources will be: "Nern et al. 2024" or "Davis et al. 2020"
+           and to future proof this we should expect that more than one source could go into this string,
+           e.g. "Nern et al. 2024; Nern et al. 2025"
+
+        6. consensus transmitter: this is the cell type level prediction (4) but replaced by the experimental
+           result if there is a conflict with the experimental data. Based on GMR comment -- "these should be
+           at least as reliable as an antibody" **therefore the OA/5HT/DA should all go to "unclear" unless we
+           have experimental data.**
+
+        7. "other transmission" this field will only contain experimental data, and will be used to handle the
+           few known cases of co-transmission, including peptidergic transmission. We expect more data like these
+           in the near future. This field could also be a comma or semi-colon separated string, as we could have
+           more than one peptide, etc. Simplest implementation would have an additional source field for "other
+           transmission" or we could put everything into the source field requested in (5) above.
+"""
 import os
 import copy
 import shutil
@@ -516,10 +565,11 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     pred_df = pred_df.merge(group_pred, 'left', on=groupcol)
 
     # Extract each synapse's confusion score from confusion matrix,
-    # using the group prediction as the 'ground_truth' NT.
-    # (There is a 10x faster way to do this using Categoricals and numpy slicing,
-    # but it's more verbose. This is good enough.)
+    # assuming that the group prediction is considered the 'ground_truth' NT
+    # for the purpose of calculating 'confusion'.
 
+    # (BTW, there is a 10x faster way to compute this using Categoricals
+    # and numpy slicing, but it's more verbose. This is good enough.)
     valid_rows = pred_df[['group_pred', 'pred1']].notnull().all(axis=1)
     group_pred_and_syn_pred = pred_df.loc[valid_rows, ['group_pred', 'pred1']]
     group_pred_and_syn_pred = pd.MultiIndex.from_frame(group_pred_and_syn_pred)
