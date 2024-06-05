@@ -3,7 +3,7 @@ import sys
 import copy
 import json
 import pickle
-import logging
+import logging.config
 from collections.abc import Mapping
 
 from confiddler import dump_default_config, load_config, dump_config
