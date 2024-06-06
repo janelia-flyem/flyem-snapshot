@@ -328,7 +328,7 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
             # This will select all columns (status names) under the specified level.
             all_status_stats[level0]
             .reset_index()
-            .merge(all_syncounts, 'left', on='name')
+            .merge(all_syncounts.reset_index(), 'left', on='name')
             .merge(names_df, 'left', on='name')
             .sort_values('report_index')
         )
