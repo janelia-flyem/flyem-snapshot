@@ -174,8 +174,9 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         assert 'roi' in partner_df, f"partner_df columns are: {partner_df.columns}"
 
         with Timer("Grouping by ROI", logger):
-            roi_point_dfs = {roi: df for roi, df in point_df.groupby('roi')}
-            roi_partner_dfs = {roi: df for roi, df in partner_df.groupby('roi')}
+            # Not sure if I need observed=False here, but that's is the old pandas default.
+            roi_point_dfs = {roi: df for roi, df in point_df.groupby('roi', observed=False)}
+            roi_partner_dfs = {roi: df for roi, df in partner_df.groupby('roi', observed=False)}
     except Exception:
         # I'm trying to debug some weird problem...
         feather.write_feather(point_df, "tables/point_df-DEBUG.feather")

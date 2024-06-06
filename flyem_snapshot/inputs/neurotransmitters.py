@@ -542,8 +542,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         ann_types = ann_types.drop_duplicates()
         df = df.merge(ann_types, 'outer', on='cell_type').set_index('cell_type')
 
-    df['num_tbar_nt_predictions'] = pred_df.groupby(groupcol)['pred1'].count()
-    df['num_tbar_nt_predictions'].fillna(0, inplace=True)
+    df['num_tbar_nt_predictions'] = pred_df.groupby(groupcol)['pred1'].count().fillna(0)
 
     assert df.index.name == groupcol
     df = df.sort_index()
@@ -553,7 +552,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     if gt_df is None:
         # If there were no tbar NT predictions provided at all
         # for some bodies, those bodies get 'unclear' NT.
-        df['group_pred'].fillna('unclear', inplace=True)
+        df['group_pred'] = df['group_pred'].fillna('unclear')
 
         # Rearrange/rename columns to match expected output
         df = df.rename(columns={'group_pred': 'top_pred'})
@@ -580,7 +579,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
 
     # If there were no tbar NT predictions provided at all
     # for some bodies, those bodies get 'unclear' NT.
-    df['group_pred'].fillna('unclear', inplace=True)
+    df['group_pred'] = df['group_pred'].fillna('unclear')
 
     # Append 'ground_truth' column where possible
     # (First reset index so it isn't lost in this merge.)
