@@ -12,6 +12,10 @@ from .util import checksum
 logger = logging.getLogger(__name__)
 
 
+# FIXME:
+#   For testing, it would be nice if there were a convenient way to
+#   disable caching globally, either from the command-line or via the config.
+
 def cached(serializer, cache_dir='cache'):
     def decorator(f):
         @functools.wraps(f)

@@ -63,7 +63,7 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roise
     :Neuron/:Segment properties, including ROI properties, except for
     those excluded via the config.
 
-    TODO: Actually index the other landmark rois.
+    TODO: Actually index the other element rois.
 
     Args:
         cfg:

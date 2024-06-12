@@ -275,6 +275,20 @@ class SynapsesWithRoiSerializer(SerializerBase):
 @PrefixFilter.with_context('synapses')
 @cached(SynapsesWithRoiSerializer('labeled-synapses-with-rois'))
 def load_synapses_and_rois(cfg, pointlabeler):
+    """
+    Load the synapse table and append columns for each ROI set.
+
+    Although :Synapse is a special case of :Element,
+    we can't just use load_elements_and_rois() for synapses,
+    for the following reasons:
+
+      - Since we expect the synapse table to be huge,
+        we take special care to use optimal dtypes for each column.
+      - We support special options for filtering by 'zone' and/or confidence.
+      - We also create a special table of pre->post relationships
+        (partner_df).  We merge ROI columns onto that table
+        (based on the 'post' side).
+    """
     snapshot_tag = cfg['job-settings']['snapshot-tag']
     point_df, partner_df = load_synapses(
         cfg['inputs']['synapses'],
@@ -357,7 +371,7 @@ def determine_snapshot_tag(cfg, config_dir):
     Also return the final output-dir.
 
     FIXME: Ideally, we should also consult the annotation instance
-            to see if it has even newer dates.
+           to see if it has even newer dates.
 
     Example default snapshot tags:
 

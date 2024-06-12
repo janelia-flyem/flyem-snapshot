@@ -52,8 +52,8 @@ RoiSetSchema = {
         },
         "source": {
             "description":
-                "Whether to load the ROIs from DVID or to use a column in the synapse (or landmark) point table input,\n"
-                "in which case your input synapses (or landmarks) must already have the appropriate column.\n",
+                "Whether to load the ROIs from DVID or to use a column in the synapse (or element) point table input,\n"
+                "in which case your input synapses (or elements) must already have the appropriate column.\n",
             "type": "string",
             "enum": ["dvid-rois", "dvid-labelmap", "point-table"],
             "default": "dvid-rois"
@@ -175,7 +175,7 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
     There are different possible sources of the ROI column data,
     depending on the 'source' specified in the user's config:
 
-        - If the user chose to pre-populate the synapse table (or landmark table)
+        - If the user chose to pre-populate the synapse table (or element table)
           with the ROI column, then we just load the ROI values and assign
           roi_ids if necessary.
         - If the user chose to provide an ROI volume (from DVID),
@@ -261,7 +261,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
     if not (expected_cols & {*point_df.columns}):
         msg = (
             f"Since your config specifies that the ROI column '{roiset_name}' "
-            "will be supplied by your synapse (or landmark) table, you must supply "
+            "will be supplied by your synapse (or element) table, you must supply "
             "at least one of the following columns in the point table:\n"
             f"- {roiset_name} (a column of strings or categories)"
             f"{roiset_name}_label (a column of integer IDs)"
