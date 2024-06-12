@@ -1,13 +1,14 @@
 import os
 import json
 import logging
+from itertools import chain
 from collections import namedtuple
 
 import numpy as np
 import pandas as pd
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer, extract_labels_from_volume, dump_json, narrowest_dtype
+from neuclease.util import Timer, timed, extract_labels_from_volume, dump_json, narrowest_dtype
 from neuclease.dvid.voxels import fetch_volume_box
 from neuclease.dvid.labelmap import fetch_labelmap_voxels_chunkwise
 from neuclease.dvid.roi import fetch_combined_roi_volume
@@ -29,7 +30,10 @@ RoiSetSchema = {
                 "  - mapping to segment IDs: {'FOO(R)': 1, 'FOO(L)': 2}\n"
                 "  - path to a .json file with either of the above: /path/to/my-roi-ids.json\n"
                 "  - a format string to compute each ROI name from its ROI segment ID 'x',\n"
-                "    such as: 'ME_R_col_{x // 100}_{x % 100}'\n",
+                "    such as: 'ME_R_col_{x // 100}_{x % 100}'\n"
+                "  - In the case of source: unions-of-subrois, a dict of the names\n"
+                "    of the ROIs to construct and the corresponding lists of source ROIs\n"
+                "    (which must reside in the union-source-roiset).\n",
             "default": {},
             "oneOf": [
                 {
@@ -38,24 +42,39 @@ RoiSetSchema = {
                     "type": "string",
                 },
                 {
+                    # Simple list of ROI names (to load from DVID)
                     "type": "array",
                     "items": {"type": "string"},
                 },
                 {
+                    # Mapping of {roi_name: ID}
+                    # (if loading from a labelmap volume or loading names directly from point-table)
                     "type": "object",
                     "additionalProperties": {
                         "type": "integer",
                         "minimum": 1,
                     },
+                },
+                {
+                    # For the unions-of-subrois case, specify
+                    # {roi_name: [subroi, subroi, subroi],
+                    #  roi_name: [subroi, subroi, subroi], ...}
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1
+                    }
                 }
             ]
         },
         "source": {
             "description":
                 "Whether to load the ROIs from DVID or to use a column in the synapse (or element) point table input,\n"
-                "in which case your input synapses (or elements) must already have the appropriate column.\n",
+                "in which case your input synapses (or elements) must already have the appropriate column.\n"
+                "Another option is to combine other ROIs (from a previously listed roiset) to make larger ROIs.\n",
             "type": "string",
-            "enum": ["dvid-rois", "dvid-labelmap", "point-table"],
+            "enum": ["dvid-rois", "dvid-labelmap", "point-table", "unions-of-subrois"],
             "default": "dvid-rois"
         },
         "labelmap": {
@@ -66,7 +85,15 @@ RoiSetSchema = {
                 "Note: The ROI volume MUST have exactly 32x lower resolution than the full neuron resolution.",
             "type": "string",
             "default": ""
-        }
+        },
+        "union-source-roiset": {
+            "description":
+                "If this roiset will be sourced by taking the unions of ROIs from a different\n"
+                "roiset (source: unions-of-subrois), then provide the name of that roiset here.\n"
+                "Note: The source roiset MUST be listed in the config ABOVE this roiset.\n",
+            "type": "string",
+            "default": ""
+        },
     }
 }
 
@@ -111,7 +138,6 @@ RoisSchema = {
 }
 
 
-@PrefixFilter.with_context('rois')
 def load_point_rois(cfg, point_df, roiset_names):
     """
     For each named ROI set in the config,
@@ -163,6 +189,8 @@ def merge_partner_rois(cfg, point_df, partner_df, roiset_names):
     return partner_df
 
 
+@PrefixFilter.with_context("roiset '{roiset_name}'")
+@timed("Loading ROI columns")
 def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, processes):
     """
     Ensure that point_df contains name and label columns for the given roiset,
@@ -218,12 +246,92 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
         roi_ids = _load_roi_col(roiset_name, roi_ids, point_df)
         return roi_ids
 
+    if roiset_cfg['source'] == "unions-of-subrois":
+        assert all(isinstance(v, list) for v in roi_ids.values())
+        roi_ids = _load_roi_unions(roiset_name, roiset_cfg['union-source-roiset'], roi_ids, point_df)
+        return roi_ids
+
     if bool(roiset_cfg['labelmap']) != (roiset_cfg['source'] == 'dvid-labelmap'):
         raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
 
     roi_vol, roi_box, roi_ids = _load_roi_vol(roiset_name, roi_ids, roiset_cfg['labelmap'], dvid_cfg, processes)
     extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=False)
 
+    return roi_ids
+
+
+def _load_roi_unions(roiset_name, src_roiset_name, src_lists, point_df):
+    """
+    Construct a new roiset by grouping sets of 'sub-rois' into new rois,
+    effectively making the new roi the union of the sub-rois.
+
+    Args:
+        roiset_name:
+            The name of the new roiset (containing the union rois)
+        src_roiset_name:
+            The name of the roiset in which the subrois are listed.
+        src_lists:
+            A dictionary:
+                {
+                    union-roi: [subroi, subroi, subroi],
+                    union-roi: [subroi, subroi, ...],
+                    ...
+                }
+        point_df:
+            DataFrame.  The columns (name and label) for the new roiset
+            columns are appended IN-PLACE to the DataFrame.
+
+    Returns:
+        dict {roi_name: roi_label_int} for the new roiset.
+        By convention, "<unspecified>" (label 0) is not included in dict.
+
+    Note:
+        The sub-rois must all come from the same source roiset, and it
+        is expected that the source roiset has already been loaded into
+        point_df.  This will be true if the user listed the source
+        roiset in the config before the union roiset.
+    """
+    if not src_roiset_name:
+        raise RuntimeError(
+            f"Can't load roiset '{roiset_name}': "
+            "You didn't specify the union-source-roiset"
+        )
+
+    if src_roiset_name not in point_df.columns:
+        raise RuntimeError(
+            f"Can't load roiset '{roiset_name}' from union-source-roiset '{src_roiset_name}' "
+            "because the source roiset doesn't exist in the point_df (yet?).  "
+            "(Did make sure the source roiset is listed higher in the config?)"
+        )
+    assert point_df[src_roiset_name].dtype == 'category'
+    assert '<unspecified>' not in src_lists.keys(), \
+        "Don't list '<unspecified>' as an explicit union ROI."
+
+    vc = pd.Series([*chain(*src_lists.values())]).value_counts()
+    assert vc.max() == 1, \
+        f"Invalid roi config for '{roiset_name}' -- not all subroi lists are disjoint."\
+        f"Repeated subrois: {vc[vc > 1].index.tolist()}"
+
+    # Construct mapping from subroi -> union roi
+    new_rois = ['<unspecified>'] + sorted(src_lists.keys())
+    new_dtype = pd.CategoricalDtype(new_rois)
+    union_mapping = {subroi: roi for roi, subrois in src_lists.items() for subroi in subrois}
+
+    # Convert to Series with appropriate categorical dtypes
+    union_mapping = pd.Series(union_mapping, dtype=new_dtype)
+    union_mapping.index = union_mapping.index.astype(point_df[src_roiset_name].dtype)
+
+    # Apply mapping to obtain the new ROIs (union of subrois)
+    point_df[roiset_name] = point_df[src_roiset_name].map(union_mapping).fillna('<unspecified>')
+    assert point_df[roiset_name].dtype == 'category'
+
+    # Produce integers from names to create the _label column
+    roi_ids = {roi: i for i, roi in enumerate(union_mapping.dtype.categories)}
+    label_dtype = np.min_scalar_type(max(roi_ids.values()))
+    point_df[f'{roiset_name}_label'] = point_df[roiset_name].map(roi_ids).astype(label_dtype)
+
+    assert roi_ids['<unspecified>'] == 0
+    del roi_ids['<unspecified>']
     return roi_ids
 
 
