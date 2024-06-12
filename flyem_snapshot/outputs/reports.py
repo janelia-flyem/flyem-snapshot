@@ -108,13 +108,13 @@ ReportSetSchema = {
                 "and captured connectivity summaries.\n",
             "type": "array",
             "items": {"type": "string"},
-            # By default, we count all statuses which are Primary Anchor or better
+            # By default, we count all statuses which are Sensory Anchor or better
             # as being "good enough" to count towards our capture numbers.
             # In a published connectome, only 'Roughly traced' (or similar) should count,
             # but during the main thrust of a reconstruction, it's usually more informative
             # to look at all bodies which will eventually become Roughly traced,
-            # i.e. all Primary Anchor bodies.
-            "default": DEFAULT_BODY_STATUS_CATEGORIES[DEFAULT_BODY_STATUS_CATEGORIES.index('Primary Anchor'):]
+            # i.e. all Sensory Anchor bodies.
+            "default": DEFAULT_BODY_STATUS_CATEGORIES[DEFAULT_BODY_STATUS_CATEGORIES.index('Sensory Anchor'):]
         }
     }
 }
