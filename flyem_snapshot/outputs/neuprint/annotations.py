@@ -80,6 +80,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
     'Orphan':                   'Orphan',       # noqa
     'Orphan hotknife':          'Orphan',       # noqa
 
+    'Putative Leaves':          '',             # noqa
     'Out of scope':             '',             # noqa
     'Not examined':             '',             # noqa
     '':                         '',             # noqa
