@@ -4,7 +4,6 @@ Export a connectivity snapshot in the form of CSV files that can be converted to
 import os
 import copy
 import logging
-from itertools import chain
 
 import pandas as pd
 
@@ -186,6 +185,34 @@ NeuprintSchema = {
                 "type": "string"
             }
         },
+        "element-totals": {
+            "description":
+                "Specify which non-synapse Element sets should be included as totals \n"
+                "in Segment properties and Segment roiInfo values.\n",
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+                "type": "object",
+                "default": {},
+                "properties": {
+                    "compute-segment-totals-with-name": {
+                        "type": "string",
+                        "default": ""
+                    },
+                    "compute-roi-totals-with-name": {
+                        "type": "string",
+                        "default": ""
+                    },
+                    "compute-kind-totals-for-column": {
+                        "description":
+                            "Which column (if any) to on which run value_counts() for inclusion among the overall counts.\n"
+                            "Example: mitoType\n",
+                        "type": "string",
+                        "default": ""
+                    }
+                }
+            }
+        },
         "indexes": IndexesSettingsSchema,
         "max-segment-files": {
             "description":
@@ -288,7 +315,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
         cfg, point_df, partner_df)
 
     neuron_df, dataset_totals, roi_totals = export_neuprint_segments(
-        cfg, point_df, partner_df, neuprint_ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois)
+        cfg, point_df, partner_df, element_tables, neuprint_ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois)
 
     export_neuprint_meta(
         cfg,
