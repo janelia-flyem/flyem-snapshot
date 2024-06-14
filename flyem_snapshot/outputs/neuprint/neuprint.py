@@ -154,7 +154,7 @@ NeuprintSchema = {
                     "description": "Segments with non-empty values for any properties listed here will be labeled as Neurons\n",
                     "type": "array",
                     "items": {"type": "string"},
-                    "default": ["rootLocation", "somaLocation", "class", "type", "instance", "group", "somaSide", "synonym"],
+                    "default": ["rootLocation", "somaLocation", "class", "type", "instance", "group", "somaSide", "synonyms"],
                 },
                 "status": {
                     "description": "Segments with one of these neuprint statuses will be labeled Neurons\n",
@@ -203,7 +203,6 @@ NeuprintSchema = {
             "default": None
         },
 
-        # TODO: roi hierarchy
         # TODO: weightHP, and get rid of weightHR (a failed experiment, I think.)
         #       If I don't get rid if it, then I need to avoid pre-filtering by min-confidence,
         #       and apply that filter before neuron/weight export (but not synapse export).
