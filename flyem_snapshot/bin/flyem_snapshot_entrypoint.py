@@ -41,7 +41,7 @@ def main():
     parser.add_argument('-Y', '--dump-verbose-yaml', action='store_true',
                         help='Print out the default config file, with verbose comments above each setting.')
     parser.add_argument('-m', '--dump-neuprint-default-meta', action='store_true',
-                        help='Print out the default neuprint "meta" parameters, which are specified via an auxiliary'
+                        help='Print out the default neuprint "meta" parameters, which are specified via an auxiliary '
                              'yaml file and linked within the main config file.')
     parser.add_argument('-M', '--dump-verbose-neuprint-default-meta', action='store_true',
                         help='Print out the default neuprint "meta" parameters, with verbose comments above each setting.')
