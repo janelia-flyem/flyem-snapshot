@@ -37,6 +37,17 @@ PointAnnotationSchema = {
                 "for neuprint in the neuprint portion of the config settings.)\n",
             "type": "string",
             "default": ""
+        },
+        "extract-properties": {
+            "description":
+                "DVID point annotations contain a 'Props' dictionary of properties.\n"
+                "To extract those properties and list them as body annotation columns,\n"
+                "list them here, mapped to the column name to give them.\n",
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+                "type": "string"
+            }
         }
     }
 }
@@ -63,7 +74,10 @@ AnnotationsSchema = {
             "default": [
                 {
                     "instance": "nuclei-centroids",
-                    "column-name": "soma_position"
+                    "column-name": "soma_position",
+                    "extract-properties": {
+                        "radius": "nucleus_radius"
+                    }
                 }
             ]
         },
@@ -167,7 +181,24 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
             # Append this column to the annotation DataFrame, overwriting the column if necessary.
             # (Even if the column exists in Clio, we're overriding it with the data from DVID.)
             # Note: If more than one point lands on the same body, we drop duplicates.
+            df = df.drop_duplicates('body').set_index('body')
             ann.drop(columns=[col], errors='ignore', inplace=True)
-            ann[col] = df.drop_duplicates('body').set_index('body')[col]
+            ann[col] = df[col]
+
+            # Repeat for the extracted point properties.
+            for prop, propcol in pa['extract-properties'].items():
+                if prop.lower() not in df:
+                    logger.warning(f"Annotation instance {pa['instance']} contains no properties named '{prop}'")
+                    continue
+
+                # DVID stores annotation properties as strings, even if they're int or float
+                # Attempt to convert to float if possible.
+                try:
+                    df[prop.lower()] = df.loc[prop.lower()].astype(np.float32)
+                except ValueError:
+                    continue
+
+                ann.drop(columns=[propcol], errors='ignore', inplace=True)
+                ann[propcol] = df[prop.lower()]
 
     return ann
