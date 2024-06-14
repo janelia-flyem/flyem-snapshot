@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @PrefixFilter.with_context("Segment")
-def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois):
+def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois):
     """
     """
     assert ann.index.name == 'body'
@@ -29,16 +29,16 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
 
-    body_stats = _body_synstats(point_df, partner_df, inbounds_bodies)
-    roi_syn_df = _body_roi_synstats(cfg, point_df, partner_df, inbounds_bodies)
-    roi_info_df = _neuprint_neuron_roi_infos(roi_syn_df, cfg['processes'])
+    body_stats = _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies)
+    roi_elm_df = _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies)
+    roi_info_df = _neuprint_neuron_roi_infos(roi_elm_df, cfg['processes'])
 
     # We use a left-merge here (not outer) because we deliberately exclude
-    # bodies which have no synapses whatsoever, even if there is annotation
-    # data for the body.
+    # bodies which have no synapses (or other elements) whatsoever, even
+    # if there is annotation data for the body.
     # One reason not to use such bodies is that the annotations can (sadly)
     # contain stale body IDs. Also, 'Unimportant' bodies which are just
-    # fixative or whatever should generally be excluded from results.
+    # fixative or whatever should generally be excluded from analyses.
     neuron_df = body_stats.merge(ann, 'left', on='body')
 
     if body_nt is not None:
@@ -72,7 +72,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
     # While we've got this data handy, compute total pre/post
     # in each ROI and also the whole dataset.
     roi_totals = (
-        roi_syn_df
+        roi_elm_df
         .groupby(level='roi')[['pre', 'post']].sum()
         .query('roi != "<unspecified>"')
     )
@@ -80,13 +80,13 @@ def export_neuprint_segments(cfg, point_df, partner_df, ann, body_sizes, body_nt
     if inbounds_rois is None:
         dataset_totals = body_stats[['pre', 'post']].sum()
     else:
-        dataset_totals = roi_syn_df.query('roi in @inbounds_rois')[['pre', 'post']].sum()
+        dataset_totals = roi_elm_df.query('roi in @inbounds_rois')[['pre', 'post']].sum()
 
     return neuron_df, dataset_totals, roi_totals
 
 
 @timed
-def _body_synstats(point_df, partner_df, inbounds_bodies):
+def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies):
     prepost = point_df[['body', 'kind']].value_counts().unstack(fill_value=0)
     prepost.columns = ['post', 'pre']
 
@@ -95,86 +95,117 @@ def _body_synstats(point_df, partner_df, inbounds_bodies):
     upstream, downstream = upstream.align(downstream, fill_value=0)
     upstream, downstream = upstream.astype(np.int32), downstream.astype(np.int32)
     synweight = (upstream + downstream).rename('synweight')
-    body_syn = pd.concat((prepost, downstream, upstream, synweight), axis=1)
-    body_syn = body_syn.fillna(0).astype(np.int32)
-    body_syn = body_syn.query('body != 0')
+    body_syn_total_dfs = (prepost, downstream, upstream, synweight)
+
+    body_elm_total_dfs = {}
+    body_elm_kind_dfs = {}
+    for elm_name, (element_points, _) in element_tables.items():
+        totalname = cfg['element-totals'].get(elm_name, {}).get('compute-segment-totals-with-name', '')
+        kindcol = cfg['element-totals'].get(elm_name, {}).get('compute-kind-totals-for-column', '')
+        if totalname:
+            body_elm_total_dfs[elm_name] = element_points['body'].value_counts().rename(totalname)
+        if kindcol:
+            body_elm_kind_dfs[elm_name] = element_points[['body', kindcol]].value_counts().unstack(fill_value=0)
+            assert body_elm_kind_dfs[elm_name].index.name == 'body'
+
+    body_element_stats = (
+        pd.concat(
+            (*body_syn_total_dfs, *body_elm_total_dfs.values(), *body_elm_kind_dfs.values()),
+            axis=1
+        )
+        .query('body != 0')
+        .fillna(0)
+        .astype(np.int32)
+    )
 
     # Above, we had to keep all the partners to ensure accurate counts for
     # in-bounds bodies which are partnered to out-of-bounds bodies.
     # But now that the stats are computed, we can drop the out-of-bounds bodies.
     if inbounds_bodies is not None:
-        body_syn = body_syn.loc[body_syn.index.isin(inbounds_bodies)]
+        body_element_stats = body_element_stats.loc[body_element_stats.index.isin(inbounds_bodies)]
 
-    logger.info("Writing body_syn.feather")
-    feather.write_feather(body_syn.reset_index(), 'neuprint/body_syn.feather')
+    logger.info("Writing body_elements.feather")
+    feather.write_feather(body_element_stats.reset_index(), 'neuprint/body_elements.feather')
 
-    assert body_syn.index.name == 'body'
-    assert body_syn.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
-    return body_syn
+    assert body_element_stats.index.name == 'body'
+    assert body_element_stats.columns[:5].tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
+    return body_element_stats
 
 
 @timed
-def _body_roi_synstats(cfg, point_df, partner_df, inbounds_bodies):
+def _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies):
     """
     Per-body-per-ROI stats
     """
     roiset_names = set(cfg['roi-set-names']) & set(point_df.columns)
     roiset_dfs = []
     for i, roiset_name in enumerate(tqdm_proxy(sorted(roiset_names))):
-        if i == 0:
-            # We only include <unspecified> counts for the first ROI set.
-            # The actual <unspecified> count will not appear in neuprint,
-            # but we need to ensure that each body is listed at least once,
-            # so it will be given an roiInfo, even if it's empty, i.e. {}.
-            df = _roisyn_for_roiset(point_df, partner_df, roiset_name)
-        else:
-            # Exclude <unspecified> for all subsequent ROI columns
-            df = _roisyn_for_roiset(
-                point_df.loc[point_df[roiset_name] != "<unspecified>"],
-                partner_df.loc[partner_df[roiset_name] != "<unspecified>"],
-                roiset_name
-            )
+        # We only include <unspecified> counts for the first ROI set.
+        # The actual <unspecified> count will not appear in neuprint,
+        # but we need to ensure that each body is listed at least once,
+        # so it will be given an roiInfo, even if it's empty, i.e. {}.
+        df = _roi_elm_for_roiset(cfg, point_df, partner_df, element_tables, roiset_name, (i != 0))
         roiset_dfs.append(df)
-    roi_syn = pd.concat(roiset_dfs)
+    roi_elm = pd.concat(roiset_dfs)
 
     # It's critical that each body occupies contiguous
     # rows before we assign bodies into batches.
-    roi_syn.sort_index(inplace=True)
+    roi_elm.sort_index(inplace=True)
 
     # Above, we had to keep all the partners to ensure accurate counts for
     # in-bounds bodies which are partnered to out-of-bounds bodies.
     # But now that the stats are computed, we can drop the out-of-bounds bodies.
     if inbounds_bodies is not None:
-        bodies = roi_syn.index.get_level_values('body')
-        roi_syn = roi_syn.loc[bodies.isin(inbounds_bodies)]
+        bodies = roi_elm.index.get_level_values('body')
+        roi_elm = roi_elm.loc[bodies.isin(inbounds_bodies)]
 
     BATCH_SIZE = 10_000
-    bodies = roi_syn.index.get_level_values('body')
+    bodies = roi_elm.index.get_level_values('body')
     body_count = pd.Series(bodies).diff().fillna(0).astype(bool).cumsum()
-    roi_syn['body_batch'] = (body_count // BATCH_SIZE).values
-    roi_syn.set_index('body_batch', append=True, inplace=True)
-    roi_syn = roi_syn.reorder_levels(['body_batch', 'body', 'roi'])
+    roi_elm['body_batch'] = (body_count // BATCH_SIZE).values
+    roi_elm.set_index('body_batch', append=True, inplace=True)
+    roi_elm = roi_elm.reorder_levels(['body_batch', 'body', 'roi'])
 
-    logger.info("Writing roi_syn.feather")
-    feather.write_feather(roi_syn.reset_index(), 'neuprint/roi_syn.feather')
+    logger.info("Writing roi_elements.feather")
+    feather.write_feather(roi_elm.reset_index(), 'neuprint/roi_elements.feather')
 
-    assert roi_syn.index.names == ['body_batch', 'body', 'roi']
-    assert roi_syn.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
-    return roi_syn
+    assert roi_elm.index.names == ['body_batch', 'body', 'roi']
+    assert roi_elm.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
+    return roi_elm
 
 
-def _roisyn_for_roiset(point_df, partner_df, roiset_name):
+def _roi_elm_for_roiset(cfg, point_df, partner_df, element_tables, roiset_name, exclude_unspecified):
+    element_point_dfs = {
+        elm_name: t for elm_name, (t, _)
+        in element_tables.items()
+        if (cfg['element-totals'].get(elm_name, {}).get('compute-roi-totals-with-name', '')
+            or cfg['element-totals'].get(elm_name, {}).get('compute-kind-totals-for-column', ''))
+    }
+
+    if exclude_unspecified:
+        point_df = point_df.loc[point_df[roiset_name] != "<unspecified>"]
+        partner_df = partner_df.loc[partner_df[roiset_name] != "<unspecified>"]
+        for elm_name, element_points in list(element_point_dfs.items()):
+            element_point_dfs[elm_name] = element_points.loc[element_points[roiset_name] != "<unspecified>"]
+
     if roiset_name != 'roi':
         point_df = point_df.drop(columns=['roi'], errors='ignore')
         partner_df = partner_df.drop(columns=['roi'], errors='ignore')
         point_df = point_df.rename(columns={roiset_name: 'roi'})
         partner_df = partner_df.rename(columns={roiset_name: 'roi'})
 
+        for elm_name, element_points in list(element_point_dfs.items()):
+            element_point_dfs[elm_name] = (
+                element_points
+                .drop(columns=['roi'], errors='ignore')
+                .rename(columns={roiset_name: 'roi'})
+            )
+
     roi_prepost = point_df[['body', 'roi', 'kind']].value_counts().unstack(fill_value=0)
     roi_prepost.columns = ['post', 'pre']
 
     # Note:
-    #   Both 'upstream' AND 'downstream' ROI determined by the post-synaptic point location.
+    #   Both 'upstream' AND 'downstream' ROI are determined by the post-synaptic point location.
     #   In neuprint, ConnectsTo.roiInfo is determined by the 'post' side, so by setting
     #   'downstream' roiInfo the same way, we ensure that 'downstream' from a given neuron
     #   in a particular ROI is equal to the sum of all outgoing :ConnectsTo weights for the
@@ -193,7 +224,32 @@ def _roisyn_for_roiset(point_df, partner_df, roiset_name):
 
     assert roi_syn.index.names == ['body', 'roi']
     assert roi_syn.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
-    return roi_syn
+
+    roi_counts = {}
+    roi_kindcounts = {}
+    for elm_name, element_points in element_point_dfs.items():
+        _cfg = cfg['element-totals'].get(elm_name, {})
+        if propname := _cfg.get('compute-roi-totals-with-name', ''):
+            _roi_counts = element_points[['body', 'roi']].value_counts().rename(propname)
+            assert _roi_counts.index.names == ['body', 'roi']
+            roi_counts[elm_name] = _roi_counts
+        if kind_col := _cfg.get('compute-kind-totals-for-column', ''):
+            _roi_kindcounts = element_points[['body', 'roi', kind_col]].value_counts().unstack(fill_value=0)
+            assert _roi_kindcounts.index.names == ['body', 'roi']
+            roi_kindcounts[elm_name] = _roi_kindcounts
+
+    roi_elm = (
+        pd.concat(
+            (roi_syn, *roi_counts.values(), *roi_kindcounts.values()),
+            axis=1
+        )
+        .fillna(0)
+        .astype(np.int32)
+    )
+
+    assert roi_elm.index.names == ['body', 'roi']
+    assert roi_elm.columns[:5].tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
+    return roi_elm
 
 
 @PrefixFilter.with_context("Segment.roiInfo")
