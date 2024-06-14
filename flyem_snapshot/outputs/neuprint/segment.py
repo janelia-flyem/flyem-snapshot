@@ -329,6 +329,8 @@ def _assign_segment_label(cfg, neuron_df):
     crit_props = set(neuron_df.columns) & set(crit_props)
 
     is_neuron = neuron_df['synweight'] >= crit['synweight']
+    is_neuron |= neuron_df['pre'] >= crit['pre']
+    is_neuron |= neuron_df['post'] >= crit['post']
     is_neuron |= neuron_df[[*crit_props]].notnull().any(axis=1)
     is_neuron |= neuron_df['status'].isin(crit['status'])
 

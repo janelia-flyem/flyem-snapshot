@@ -138,6 +138,18 @@ NeuprintSchema = {
                     "minimum": 0,
                     "default": 100,
                 },
+                "pre": {
+                    "description": "Segments with this many presynapses (or more) will also be labeled as Neurons.\n",
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 100,
+                },
+                "post": {
+                    "description": "Segments with this many postsynapses (or more) will also be labeled as Neurons.\n",
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 100,
+                },
                 "properties": {
                     "description": "Segments with non-empty values for any properties listed here will be labeled as Neurons\n",
                     "type": "array",
