@@ -61,9 +61,9 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             point_df, partner_df = restrict_synapses_to_roi(filtering_roiset, None, point_df, partner_df)
 
     if filtering_roiset:
-        file_tag = f"{snapshot_tag}-minconf-{min_conf}"
-    else:
         file_tag = f"{snapshot_tag}-minconf-{min_conf}-{filtering_roiset}"
+    else:
+        file_tag = f"{snapshot_tag}-minconf-{min_conf}"
 
     labeling_roiset = cfg['roi-set']
     with Timer("Constructing synapse partner export", logger):
