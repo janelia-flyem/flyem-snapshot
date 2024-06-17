@@ -119,9 +119,10 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             f'flat-connectome/connectome-weights-{file_tag}.feather'
         )
 
+    # FIXME: Maybe this should actually use sensory as the min status...
     with Timer("Constructing primary-only synapse partner export", logger):
-        primary_bodies = ann.query('status >= "Primary Anchor"').index
-        logger.info(f"There are {len(primary_bodies)} with status 'Primary Anchor' or better.")
+        primary_bodies = ann.query('status >= "Sensory Anchor"').index
+        logger.info(f"There are {len(primary_bodies)} with status 'Sensory Anchor' or better.")
         primary_partner_export_df = partner_export_df.query('body_pre in @primary_bodies and body_post in @primary_bodies')
 
     with Timer("Writing primary-only synapse partner export", logger):
