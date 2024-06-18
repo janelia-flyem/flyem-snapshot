@@ -78,6 +78,10 @@ def parse_args():
         help='Show only the single most recent message from each user in the log.'
     )
     parser.add_argument(
+        '--users-first-messages', '-U', action='store_true',
+        help='Show only the single OLDEST message from each user in the log.'
+    )
+    parser.add_argument(
         '--discard-cypher', '-d', action='store_true',
         help='Before exporting, discard the cypher queries in the log (the "debug" column)'
     )
@@ -96,18 +100,30 @@ def parse_args():
         help='Destination of the exported file. If not given, write to stdout.'
     )
     args = parser.parse_args()
+
+    if args.users_last_messages and args.users_first_messages:
+        sys.exit("Error: You can't use both -u and -U simultaneously.")
+
     return args
 
 
 def main():
     args = parse_args()
+
+    if args.users_last_messages:
+        deduplicate = 'keep-last'
+    elif args.users_first_messages:
+        deduplicate = 'keep-first'
+    else:
+        deduplicate = None
+
     log_df = parse_file(
         args.log_file,
         args.chunk_size,
         args.tail_bytes,
         args.timezone,
         args.discard_cypher,
-        args.users_last_messages
+        deduplicate
     )
 
     if not args.format:
@@ -144,7 +160,7 @@ def main():
             print(log_df)
 
 
-def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, deduplicate_users):
+def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, deduplicate):
     """
     Parse the entire contents of the log file.
     Return the data as pd.DataFrame.
@@ -173,6 +189,13 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, dedup
             df = pd.DataFrame(msgs)
             if discard_cypher:
                 del df['debug']
+
+            # Aggressively deduplicate each chunk to save RAM.
+            if deduplicate == 'keep-last':
+                df = df.drop_duplicates('user', keep='last')
+            if deduplicate == 'keep-first':
+                df = df.drop_duplicates('user', keep='first')
+
             chunk_dfs.append(df)
             progress.update(sum(bytes_read))
 
@@ -182,8 +205,10 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, dedup
     t = pd.to_datetime(log_df['time'], unit='s', utc=True).dt.tz_convert(timezone)
     log_df.insert(0, 'datetime', t)
 
-    if deduplicate_users:
+    if deduplicate == 'keep-last':
         log_df = log_df.drop_duplicates('user', keep='last')
+    if deduplicate == 'keep-first':
+        log_df = log_df.drop_duplicates('user', keep='first')
 
     return log_df
 
