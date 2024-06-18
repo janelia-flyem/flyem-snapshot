@@ -166,7 +166,9 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, dedup
                 raise RuntimeError("File contains no complete messages.")
 
         chunk_dfs = []
-        while chunk := parse_chunk(f, chunk_size):
+        while f:
+            if not (chunk := parse_chunk(f, chunk_size)):
+                continue
             msgs, bytes_read = zip(*chunk)
             df = pd.DataFrame(msgs)
             if discard_cypher:
@@ -195,8 +197,6 @@ def parse_chunk(f, chunk_size):
     while f and len(msgs) < chunk_size:
         if (msg := parse_msg(f)):
             msgs.append(msg)
-        else:
-            break
     return msgs
 
 
