@@ -1,7 +1,11 @@
 import logging
+from pathlib import Path
+
 import hvplot.pandas
+import pandas as pd
 import holoviews as hv
 import pyarrow.feather as feather
+
 
 from neuclease import PrefixFilter
 from neuclease.dvid.keyvalue import fetch_body_annotations
@@ -106,25 +110,29 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         a faster way to determine if the annotations in DVID have changed
         that is much faster than just loading them from scratch anyway.
     """
-    if cfg['body-annotations-table']:
-        logger.info("Reading body annotations table from disk INSTEAD of reading from DVID.")
-        ann = feather.read_feather(cfg['body-annotations-table']).set_index('body')
-    else:
+    table_path = Path(cfg['body-annotations-table'])
+    if not cfg['body-annotations-table']:
         ann = fetch_body_annotations(
             pointlabeler.dvidseg.server,
             pointlabeler.dvidseg.uuid,
             pointlabeler.dvidseg.instance + '_annotations'
         )
-
         # Feather seems to have a hard time if empty strings are in otherwise int columns.
-        # Currently, it's legitimate to replace '' with None for all neuprint properties we have so far,
-        # except for 'status', since that would mess up the category dtype!
+        # Currently, it's legitimate to replace '' with None for all neuprint properties
+        # we have so far, except for 'status', since that would mess up the category dtype!
         nonstatus_cols = [c for c in ann.columns if c != 'status']
         ann[nonstatus_cols] = ann[nonstatus_cols].replace([''], [None])
 
         # The result includes the original json as an extra column,
         # but that's not necessary for anything in this code.
         del ann['json']
+
+    elif table_path.suffix == '.csv':
+        logger.info(f"Reading body annotations CSV file: {table_path.name}")
+        ann = pd.read_csv(table_path).set_index('body')
+    else:
+        logger.info(f"Reading body annotations feather file: {table_path.name}")
+        ann = feather.read_feather(table_path).set_index('body')
 
     # This is ugly, but it's easier than a real fix.
     # The 'group_old' column should't exist, but it does and it has screwy types.
