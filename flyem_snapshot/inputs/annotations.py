@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 import hvplot.pandas
+import numpy as np
 import pandas as pd
 import holoviews as hv
 import pyarrow.feather as feather
@@ -138,6 +139,7 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
     # The 'group_old' column should't exist, but it does and it has screwy types.
     # We don't want to deal with it.
     if 'group_old' in ann.columns:
+        logger.info("Discarding obsolete column 'group_old'")
         del ann['group_old']
 
     feather.write_feather(
