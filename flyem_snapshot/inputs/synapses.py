@@ -185,7 +185,7 @@ def _load_raw_synapses(cfg):
     partners_path = cfg['synapse-partners'].format(syndir=cfg['syndir'])
 
     with Timer("Loading synapses from disk", logger):
-        point_df = feather.read_feather(points_path).set_index('point_id')
+        point_df = feather.read_feather(points_path)
         partner_df = feather.read_feather(partners_path)
 
     if 'point_id' not in point_df.columns and not {*'zyx'} <= {*point_df.columns}:
