@@ -409,6 +409,9 @@ def restrict_synapses_for_setting(cfg, setting, point_df, partner_df):
         Filtered versions of point_df and partner_df.
     """
     roiset = cfg[setting]
+    if not roiset:
+        return point_df, partner_df
+
     with Timer(f"Filtering out synapses according to {setting}: '{roiset}'"):
         return restrict_synapses_to_roi(roiset, None, point_df, partner_df)
 
