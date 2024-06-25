@@ -21,7 +21,6 @@ CREATE CONSTRAINT ON ( `{{dataset}}neuron`:`{{dataset}}_Neuron` ) ASSERT `{{data
 // all Element points are unique is baked in to the neuprint data model.
 // This will implicitly create an index on all Element locations,
 // which is essential for spatial queries.
-RETURN datetime() as time, ":Element.location: Requesting index creation" as message;
 CREATE CONSTRAINT ON ( `{{dataset}}element`:`{{dataset}}_Element` ) ASSERT `{{dataset}}element`.location IS UNIQUE;
 RETURN datetime() as time, ":Element.location: Initiated index creation" as message;
 
@@ -35,13 +34,22 @@ RETURN datetime() as time, ":Element.location: Initiated index creation" as mess
 // I'm not sure why we index `type` separately here
 // for the bare :Segment/:Neuron/:Synapse labels.
 CREATE INDEX ON :Segment(`type`);
+RETURN datetime() as time, "Initiated index creation: :Segment(`type`)" as message;
 CREATE INDEX ON :Neuron(`type`);
+RETURN datetime() as time, "Initiated index creation: :Neuron(`type`)" as message;
 CREATE INDEX ON :Synapse(`type`);
+RETURN datetime() as time, "Initiated index creation: :Synapse(`type`)" as message;
+
+CREATE INDEX ON :`{{dataset}}_Synapse`(`bodyId`);
+RETURN datetime() as time, "Initiated index creation: `{{dataset}}_Synapse`(`bodyId`)" as message;
 
 //
 // Element properties
 //
 {% for label, rois in element_rois_to_index.items() %}
+CREATE INDEX ON :`{{dataset}}_{{label}}`(`bodyId`);
+RETURN datetime() as time, "Initiated index creation: `{{dataset}}_{{label}}`(`bodyId`)" as message;
+
 {% for roi in rois %}
 CREATE INDEX ON :`{{dataset}}_{{label}}`(`{{roi}}`);
 RETURN datetime() as time, ":{{label}} annotation property {{loop.index}}/{{rois|count}}: Initiated index creation for '{{roi}}'" as message;

@@ -7,7 +7,6 @@ import logging
 import pandas as pd
 import pyarrow.feather as feather
 
-from neuclease import PrefixFilter
 from neuclease.util import Timer, encode_coords_to_uint64
 
 
@@ -89,6 +88,7 @@ def load_elements(cfg, pointlabeler):
 
         if point_df is not None:
             # Inserts new columns for 'body' and 'sv', in-place.
+            # FIXME: This assumes DVID is used. We need a config option to just trust the input body column.
             pointlabeler.update_bodies_for_points(point_df, cfg['processes'])
 
     return element_dfs

@@ -59,11 +59,12 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
     # Therefore, we use an ID space named "Element-ID", which is shared by Element nodes.
     point_df = (
         point_df
-        .drop(columns=['body', 'sv'], errors='ignore')
+        .drop(columns=['sv'], errors='ignore')
         .rename(columns={
             'point_id': ':ID(Element-ID)',
             'kind': 'type:string',
             'conf': 'confidence:float',
+            'body': 'bodyId',
         })
     )
 

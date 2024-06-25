@@ -43,6 +43,10 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
     point_df = point_df.reset_index()
     point_df['type'] = point_df['type'].astype('category')
 
+    point_df = point_df.drop(columns=['sv'], errors='ignore')
+    if 'body' in point_df.columns:
+        point_df = point_df.rename(columns={'body': 'bodyId'})
+
     point_df[':Label'] = f'Element;{dataset}_Element'
 
     specific_label = cfg['element-labels'].get(config_name, '').lstrip(':')
