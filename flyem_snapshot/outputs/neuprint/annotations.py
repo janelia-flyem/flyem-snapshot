@@ -145,6 +145,9 @@ def neuprint_segment_annotations(cfg, ann):
     ann = ann.rename(columns=renames)
     logger.info(f"Annotation columns after renaming: {ann.columns.tolist()}")
 
+    # Drop categorical dtype for this column before using replace()
+    ann['statusLabel'] = ann['statusLabel'].astype(str)
+
     # Erase any values which are just "".
     # Better to leave them null.
     ann = ann.replace('', None)
