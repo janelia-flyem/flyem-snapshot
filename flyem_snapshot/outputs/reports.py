@@ -187,6 +187,11 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
     all_syncounts = {}
     for report in cfg['reports']:
         name = report['name']
+
+        if invalid_rois := set(report['rois']) - set(roi_point_dfs.keys()):
+            logger.error(f"Can't create report '{name}': No data for {invalid_rois}")
+            continue
+
         if report['rois']:
             report_point_df = pd.concat((roi_point_dfs[roi] for roi in report['rois']))
             report_partner_df = pd.concat(
