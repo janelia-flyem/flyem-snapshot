@@ -82,11 +82,11 @@ else
 
     # In theory, the apptainer command above ought to have failed already if there was a failure in the log.
     # But I'm not sure if that works as it's supposed to, so here's an extra check
-    if grep -i 'import failed' ${WORKSPACE_DIR}/logs/import.*.log > /dev/null;
+    if grep -i 'import failed' ${WORKSPACE_DIR}/logs/import.*.log > /dev/null
     then
-        echo "ERROR: Apptainer exited cleanly, but the neo4j log indicates that the import failed!" 2>&1
+        2>&1 echo "ERROR: Apptainer exited cleanly, but the neo4j log indicates that the import failed!"
         exit 1
-    if
+    fi
 
     # Now copy the database files from /scratch to the snapshot directory
     echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
