@@ -133,8 +133,15 @@ echo "[$(date)] Ingesting nodes and relationships"
 # (Error: Argument list too long)
 # Luckily, we can supply the arguments via a file!
 # https://github.com/neo4j/neo4j/issues/7333#issuecomment-1746238765
-/var/lib/neo4j/bin/neo4j-admin import @ingestion-args.txt | tee /logs/import.log
+/var/lib/neo4j/bin/neo4j-admin import @ingestion-args.txt > >(tee /logs/import.out.log) 2> >(tee /logs/import.err.log)
 end=$(date +%s)
+
+if grep -i 'import failed' /logs/import.*.log > /dev/null;
+then
+    echo "[$(date)] Node/relationship ingest FAILED. See /logs/import.*.log"
+    exit 1
+fi
+
 echo "[$(date)] Node/relationship ingest completed."
 echo "Duration: $(date -d@$((end-start)) -u +%H:%M:%S)"
 
@@ -163,7 +170,14 @@ grep -q 'Started\.' <(tail -n1 -f /logs/neo4j.log)
     -d data \
     --format verbose \
     -f /snapshot/create-indexes.cypher \
-    | tee /logs/create-indexes.log
+    > >(tee /logs/create-indexes.out.log) \
+    2> >(tee /logs/create-indexes.err.log) \
 ##
+
+if grep -i 'database is unavailable' /logs/create-indexes.*.log > /dev/null || [ ! -s /logs/create-indexes.out.log ];
+then
+    echo "[$(date)] Index generation FAILED. See /logs/create-indexes.*.log"
+    exit 1
+fi
 
 end=$(date +%s)
