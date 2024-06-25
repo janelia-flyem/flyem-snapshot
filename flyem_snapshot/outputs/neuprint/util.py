@@ -13,6 +13,7 @@ NEUPRINT_TYPE_OVERRIDES = {
     #'sv': 'long',
     'group': 'long',
     'hemibrainBodyid': 'long',
+    'mitoSegment': 'long',
     'size': 'long',
     'pre': 'int',
     'post': 'int',
