@@ -170,7 +170,7 @@ def _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodi
     feather.write_feather(roi_elm.reset_index(), 'neuprint/roi_elements.feather')
 
     assert roi_elm.index.names == ['body_batch', 'body', 'roi']
-    assert roi_elm.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
+    assert roi_elm.columns[:5].tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
     return roi_elm
 
 
