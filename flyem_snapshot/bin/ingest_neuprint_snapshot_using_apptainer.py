@@ -29,7 +29,7 @@ def main():
     args = parser.parse_args()
 
     package_dir = os.path.dirname(flyem_snapshot.__file__)
-    os.path.abspath(package_dir)
+    package_dir = os.path.abspath(package_dir)
     script = f"{package_dir}/outputs/neuprint/scripts/ingest-neuprint-snapshot-using-apptainer.sh"
 
     script_args = [script, args.snapshot_dir]
