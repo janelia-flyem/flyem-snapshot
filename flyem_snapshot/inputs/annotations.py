@@ -86,6 +86,16 @@ AnnotationsSchema = {
                 }
             ]
         },
+        "rename-annotation-columns": {
+            "description":
+                "Optionally rename columns of the annotation table immediately after it is loaded.\n"
+                "There is a similar option in the neuprint config (annotation-property-names), but that is applied only for neuprint.\n"
+                "This setting applies to the annotations globally, and the new column names are used for all outputs.\n",
+            "additionalProperties": {
+                "type": "string"
+            },
+            "default": {},
+        },
         "processes": {
             "description":
                 "How many processes should be used to fetch body labels for point annotations?\n"
@@ -134,6 +144,9 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
     else:
         logger.info(f"Reading body annotations feather file: {table_path.name}")
         ann = feather.read_feather(table_path).set_index('body')
+
+    if renames := cfg['rename-annotation-columns']:
+        ann = ann.rename(columns=renames)
 
     # This is ugly, but it's easier than a real fix.
     # The 'group_old' column should't exist, but it does and it has screwy types.
