@@ -144,8 +144,8 @@ def _load_element_distances(name, table_cfg):
         if 'distance' not in distance_df.columns:
             logger.warning(f"Element distance table '{name}' does not contain a 'distance' column")
 
-        source_points = distance_df[['source_x', 'source_y', 'source_z']].values
-        target_points = distance_df[['target_x', 'target_y', 'target_z']].values
+        source_points = distance_df[['source_z', 'source_y', 'source_x']].values
+        target_points = distance_df[['target_z', 'target_y', 'target_x']].values
 
         distance_df['source_id'] = encode_coords_to_uint64(source_points)
         distance_df['target_id'] = encode_coords_to_uint64(target_points)
