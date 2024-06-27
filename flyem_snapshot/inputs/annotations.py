@@ -146,6 +146,12 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         ann = feather.read_feather(table_path).set_index('body')
 
     if renames := cfg['rename-annotation-columns']:
+        # Drop anything that was renamed to ""
+        drop_keys = [k for k,v in renames.items() if not v]
+        ann = ann.drop(columns=drop_keys, errors='ignore')
+
+        # Rename the others
+        renames = {k:v for k,v in renames.items() if v}
         ann = ann.rename(columns=renames)
 
     # This is ugly, but it's easier than a real fix.
