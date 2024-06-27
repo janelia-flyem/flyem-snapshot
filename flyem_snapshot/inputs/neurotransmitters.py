@@ -620,6 +620,14 @@ def _append_celltype_predictions_to_body_df(body_df, type_df):
             'num_tbar_nt_predictions': 'total_nt_predictions',
             'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
         })
+        .fillna({
+            'total_nt_predictions': 0,
+            'celltype_total_nt_predictions': 0,
+        })
+        .astype({
+            'total_nt_predictions': np.int32,
+            'celltype_total_nt_predictions': np.int32,
+        })
     )
     return body_df
 
