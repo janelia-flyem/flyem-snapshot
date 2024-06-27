@@ -175,14 +175,14 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, dedup
 
         # Skip any incomplete message portion
         # (in case we are working with just the tail of the file).
-        while f and f.peek(2)[:2] != b'{"':
+        while f.peek(1) and f.peek(2)[:2] != b'{"':
             line = f.readline()
             progress.update(len(line))
             if not line:
                 raise RuntimeError("File contains no complete messages.")
 
         chunk_dfs = []
-        while f:
+        while f.peek(1):
             if not (chunk := parse_chunk(f, chunk_size)):
                 continue
             msgs, bytes_read = zip(*chunk)
@@ -219,7 +219,7 @@ def parse_chunk(f, chunk_size):
     [(msg_data, num_bytes), (msg_data, num_bytes), ...]
     """
     msgs = []
-    while f and len(msgs) < chunk_size:
+    while f.peek(1) and len(msgs) < chunk_size:
         if (msg := parse_msg(f)):
             msgs.append(msg)
     return msgs
