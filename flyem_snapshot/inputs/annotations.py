@@ -1,3 +1,4 @@
+import os
 import logging
 from pathlib import Path
 
@@ -121,6 +122,9 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         a faster way to determine if the annotations in DVID have changed
         that is much faster than just loading them from scratch anyway.
     """
+    os.makedirs('tables', exist_ok=True)
+    os.makedirs('reports', exist_ok=True)
+
     table_path = Path(cfg['body-annotations-table'])
     if not cfg['body-annotations-table']:
         ann = fetch_body_annotations(
@@ -169,7 +173,7 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
     vc = ann['status'].value_counts().sort_index(ascending=False)
     vc = vc[vc > 0]
     vc = vc[vc.index != ""]
-    vc.to_csv(f'tables/status-counts-{snapshot_tag}.csv', index=True, header=True)
+    vc.to_csv(f'tables/body-status-counts-{snapshot_tag}.csv', index=True, header=True)
 
     try:
         title = f'body status counts ({snapshot_tag})'
@@ -177,7 +181,8 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         export_bokeh(
             hv.render(p),
             f"body-status-counts-{snapshot_tag}.html",
-            title
+            title,
+            "reports"
         )
     except RuntimeError as ex:
         if 'geckodriver' in str(ex):

@@ -1,3 +1,4 @@
+import os
 import pyarrow.feather as feather
 
 from neuclease.util import dump_json
@@ -41,6 +42,8 @@ def load_dvidseg(cfg, snapshot_tag):
 
     mapping = None
     if cfg['export-mapping']:
+        os.makedirs('tables', exist_ok=True)
+
         # We export the complete mapping (rather than the minimal mapping),
         # since that can be more convenient for certain analyses.
         mapping = fetch_complete_mappings(*dvidseg)

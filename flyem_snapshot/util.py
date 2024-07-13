@@ -3,6 +3,7 @@ import time
 import platform
 
 from zlib import adler32
+from pathlib import Path
 from datetime import datetime
 from subprocess import check_output
 from collections.abc import Mapping, Sequence
@@ -109,14 +110,21 @@ def checksum(data):
     return adler32(data)
 
 
-def export_bokeh(p, filename, title):
-    path = os.path.splitext(filename)[0]
-    png_path = f"png/{path}.png"
+def export_bokeh(p, filename, title, directory=""):
+    """
+    Export the given bokeh plot in both html and png format.
+    The two files will be placed in two different
+    subdirectories named 'html' and 'png'.
+    """
+    path = Path(directory) / Path(filename)
+    png_path = path.parent / "png" / path.with_suffix('.png').name
     rm_f(png_path)
+    os.makedirs(png_path.parent, exist_ok=True)
     export_png(p, filename=png_path)
 
-    html_path = f"html/{path}.html"
+    html_path = path.parent / "html" / path.with_suffix('.html').name
     rm_f(html_path)
+    os.makedirs(html_path.parent, exist_ok=True)
     output_file(filename=html_path, title=title)
     bokeh_save(p)
 

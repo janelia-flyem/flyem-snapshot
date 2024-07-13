@@ -1,3 +1,4 @@
+import os
 import logging
 
 import numpy as np
@@ -83,6 +84,7 @@ def load_body_sizes(cfg, pointlabeler, df, snapshot_tag):
                 processes=cfg['processes']
             )
 
+        os.makedirs('tables', exist_ok=True)
         feather.write_feather(
             sizes.reset_index(),
             f'tables/body-size-cache-{snapshot_tag}.feather')
@@ -117,6 +119,7 @@ def load_body_sizes(cfg, pointlabeler, df, snapshot_tag):
         .astype(np.int64)
     )
 
+    os.makedirs('tables', exist_ok=True)
     feather.write_feather(
         combined_sizes.reset_index(),
         f'tables/body-size-cache-{snapshot_tag}.feather')

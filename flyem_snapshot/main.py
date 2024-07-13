@@ -548,15 +548,10 @@ def standardize_config(cfg, config_dir):
 
 def initialize_output_dir(cfg):
     """
-    Create the empty output directory and subdirectories, and dump
-    the fully-standardized config into it (just for future reference).
+    Create the empty output directory and dump the
+    fully-standardized config into it (just for future reference).
     """
     output_dir = cfg['job-settings']['output-dir']
-
-    # Ensure output directories exist.
-    os.makedirs(f"{output_dir}/tables", exist_ok=True)
-    os.makedirs(f"{output_dir}/png", exist_ok=True)
-    os.makedirs(f"{output_dir}/html", exist_ok=True)
 
     # Dump the updated config so it's clear what the
     # settings are after "standardization"

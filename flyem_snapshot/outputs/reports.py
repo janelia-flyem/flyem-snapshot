@@ -135,9 +135,6 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
         logger.info("No reports requested.")
         return
 
-    os.makedirs("png", exist_ok=True)
-    os.makedirs("html", exist_ok=True)
-
     logger.info(f"point_df.columns: {point_df.columns.tolist()}")
     logger.info(f"partner_df.columns: {partner_df.columns.tolist()}")
 
@@ -148,8 +145,12 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
 
 @PrefixFilter.with_context('{roiset}')
 def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
+    os.makedirs(f"reports/{roiset}/reports", exist_ok=True)
+
     # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
-    assert roiset in point_df.columns, f"roiset not found in point_df: {roiset}.  Columns are: {point_df.columns.tolist()}"
+    assert roiset in point_df.columns, \
+        f"roiset not found in point_df: {roiset}.  Columns are: {point_df.columns.tolist()}"
+
     point_df = point_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
     partner_df = partner_df.drop(columns=['roi'], errors='ignore').rename(columns={roiset: 'roi'})
 
@@ -179,9 +180,8 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
             roi_point_dfs = {roi: df for roi, df in point_df.groupby('roi', observed=False)}
             roi_partner_dfs = {roi: df for roi, df in partner_df.groupby('roi', observed=False)}
     except Exception:
-        # I'm trying to debug some weird problem...
-        feather.write_feather(point_df, "tables/point_df-DEBUG.feather")
-        feather.write_feather(partner_df, "tables/partner_df-DEBUG.feather")
+        feather.write_feather(point_df, f"reports/{roiset}/point_df-DEBUG.feather")
+        feather.write_feather(partner_df, f"reports/{roiset}/partner_df-DEBUG.feather")
         raise
 
     all_status_stats = {}
@@ -206,26 +206,21 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         syncounts, status_stats = _export_report(
             cfg,
             snapshot_tag,
+            roiset,
+            name,
             report_point_df,
             report_partner_df,
             ann,
             report['rois'],
-            name=name
         )
         all_syncounts[name] = syncounts
         all_status_stats[name] = status_stats
 
-    with open(f'tables/{roiset}-all_syncounts.pkl', 'wb') as f:
-        pickle.dump(all_syncounts, f)
-
-    with open(f'tables/{roiset}-all_status_stats.pkl', 'wb') as f:
-        pickle.dump(all_status_stats, f)
-
-    _export_capture_summaries(cfg, all_syncounts, all_status_stats)
+    _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats)
 
 
 @PrefixFilter.with_context('{name}')
-def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, roi, *, name):
+def _export_report(cfg, snapshot_tag, roiset, name, report_point_df, report_partner_df, ann, roi):
     syncounts = (
         report_point_df['kind']
         .value_counts()
@@ -238,24 +233,33 @@ def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, r
     status_stats = _completeness_forecast(
         cfg,
         snapshot_tag,
+        roiset,
+        name,
         report_point_df,
         report_partner_df,
         ann,
-        roi,
-        name=name,
+        roi
     )
 
     _export_downstream_capture_histogram(
         cfg,
         snapshot_tag,
-        report_partner_df,
-        name=name
+        roiset,
+        name,
+        report_partner_df
     )
 
     return syncounts, status_stats
 
 
-def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
+def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats):
+
+    with open(f'reports/{roiset}/{roiset}-all_syncounts.pkl', 'wb') as f:
+        pickle.dump(all_syncounts, f)
+
+    with open(f'reports/{roiset}/{roiset}-all_status_stats.pkl', 'wb') as f:
+        pickle.dump(all_status_stats, f)
+
     if next(iter(all_status_stats.values())) is None:
         # We can't export any capture summaries if no body statuses were given.
         return
@@ -297,7 +301,7 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
     }
     all_status_stats = pd.concat(all_status_stats.values(), ignore_index=True)
     all_status_stats['status'] = all_status_stats['status'].astype(STATUS_DTYPE)
-    all_status_stats.to_csv(f'tables/{roiset}-all-status-stats.csv', index=False, header=True)
+    all_status_stats.to_csv(f'reports/{roiset}/{roiset}-all-status-stats.csv', index=False, header=True)
 
     # This unstack() will result in multi-level columns:
     # level 0: traced_presyn_frac                            traced_postsyn_frac                        ...
@@ -338,12 +342,12 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
             .merge(names_df, 'left', on='name')
             .sort_values('report_index')
         )
-        df.to_csv(f'tables/{roiset}-cumulative-{level0}-by-status.csv', index=False, header=True)
+        df.to_csv(f'reports/{roiset}/{roiset}-cumulative-{level0}-by-status.csv', index=False, header=True)
 
         # The dataframe has cumulative connectivity,
         # but for the stacked bar chart we don't want cumulative.
         df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
-        df.to_csv(f'tables/{roiset}-{level0}-by-status.csv', index=False, header=True)
+        df.to_csv(f'reports/{roiset}/{roiset}-{level0}-by-status.csv', index=False, header=True)
 
         p = variable_width_hbar(
             df,
@@ -362,7 +366,8 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         export_bokeh(
             p,
             f"{fname}.html",
-            titles[level0]
+            titles[level0],
+            f"reports/{roiset}"
         )
 
         # Export again, but sorting the bars by total
@@ -381,15 +386,17 @@ def _export_capture_summaries(cfg, all_syncounts, all_status_stats):
         export_bokeh(
             p,
             f"{fname}-sorted.html",
-            titles[level0]
+            titles[level0],
+            f"reports/{roiset}"
         )
 
 
 @PrefixFilter.with_context("capture forecast")
-def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *, name):
+def _completeness_forecast(cfg, snapshot_tag, roiset, name, point_df, partner_df, ann, roi):
     stop_at_rank = int(cfg['stop-at-rank'])
     selection_link = _get_neuroglancer_base_link(cfg['neuroglancer-base-state'])
     _name = '-'.join(name.split())
+    os.makedirs(f'reports/{roiset}/reports/{_name}', exist_ok=True)
 
     sort_by = ['SynWeight', 'PreSyn', 'PostSyn']
     if 'status' not in ann.columns:
@@ -413,12 +420,12 @@ def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *,
 
         feather.write_feather(
             conn_df,
-            f'tables/{_name}-conn_df-{snapshot_tag}.feather'
+            f'reports/{roiset}/reports/{_name}/{_name}-conn_df-{snapshot_tag}.feather'
         )
 
         feather.write_feather(
             syn_counts_df.reset_index(),
-            f'tables/{_name}-syn_counts_df-{snapshot_tag}.feather'
+            f'reports/{roiset}/reports/{_name}/{_name}-syn_counts_df-{snapshot_tag}.feather'
         )
 
     with Timer("Generating completeness curve plot"):
@@ -432,7 +439,8 @@ def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *,
             export_bokeh(
                 p,
                 f'{_name}-cumulative-connectivity-with-links-{snapshot_tag}.html',
-                title
+                title,
+                f"reports/{roiset}/reports/{_name}"
             )
             status_stats = conn_df.drop_duplicates('status', keep='last')[['status', *CAPTURE_STATS]]
             status_stats['name'] = name
@@ -445,7 +453,8 @@ def _completeness_forecast(cfg, snapshot_tag, point_df, partner_df, ann, roi, *,
             export_bokeh(
                 p,
                 f'{_name}-cumulative-connectivity-{snapshot_tag}.html',
-                title
+                title,
+                f"reports/{roiset}/reports/{_name}"
             )
             return None
 
@@ -470,8 +479,9 @@ def _get_neuroglancer_base_link(state_path):
 
 
 @PrefixFilter.with_context("downstream capture")
-def _export_downstream_capture_histogram(cfg, snapshot_tag, partner_df, *, name):
+def _export_downstream_capture_histogram(cfg, snapshot_tag, roiset, name, partner_df):
     _name = '-'.join(name.split())
+    os.makedirs(f"reports/{roiset}/reports/{_name}", exist_ok=True)
 
     capture_statuses = pd.Series(cfg['capture-statuses']).astype(STATUS_DTYPE)
     min_capture_status = capture_statuses.min()
@@ -492,7 +502,7 @@ def _export_downstream_capture_histogram(cfg, snapshot_tag, partner_df, *, name)
     logger.info(f"Exporting {_name}-downstream-capture-{snapshot_tag} table and plot")
     feather.write_feather(
         df.reset_index(),
-        f"tables/{_name}-downstream-capture-{snapshot_tag}.feather"
+        f"reports/{roiset}/reports/{_name}/{_name}-downstream-capture-{snapshot_tag}.feather"
     )
 
     p = df['capture_frac'].hvplot.hist(
@@ -502,5 +512,6 @@ def _export_downstream_capture_histogram(cfg, snapshot_tag, partner_df, *, name)
     export_bokeh(
         hv.render(p),
         f"{_name}-downstream-capture-{snapshot_tag}.html",
-        f"{name} downstream-capture-{snapshot_tag}"
+        f"{name} downstream-capture-{snapshot_tag}",
+        f"reports/{roiset}/reports/{_name}"
     )
