@@ -4,6 +4,7 @@ along with other denormalizations.
 """
 import os
 import json
+import pickle
 import logging
 from functools import cache
 
@@ -214,7 +215,6 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         all_syncounts[name] = syncounts
         all_status_stats[name] = status_stats
 
-    import pickle
     with open(f'tables/{roiset}-all_syncounts.pkl', 'wb') as f:
         pickle.dump(all_syncounts, f)
 
@@ -245,7 +245,7 @@ def _export_report(cfg, snapshot_tag, report_point_df, report_partner_df, ann, r
         name=name,
     )
 
-    _export_downstream_capture(
+    _export_downstream_capture_histogram(
         cfg,
         snapshot_tag,
         report_partner_df,
@@ -470,7 +470,7 @@ def _get_neuroglancer_base_link(state_path):
 
 
 @PrefixFilter.with_context("downstream capture")
-def _export_downstream_capture(cfg, snapshot_tag, partner_df, *, name):
+def _export_downstream_capture_histogram(cfg, snapshot_tag, partner_df, *, name):
     _name = '-'.join(name.split())
 
     capture_statuses = pd.Series(cfg['capture-statuses']).astype(STATUS_DTYPE)
@@ -489,10 +489,10 @@ def _export_downstream_capture(cfg, snapshot_tag, partner_df, *, name):
     df = df.rename(columns={True: 'captured', False: 'not_captured'})
     df['capture_frac'] = (df['captured'] / (df['captured'] + df['not_captured'])).astype(np.float32)
 
-    logger.info(f"Exporting {name}-downstream-capture-{snapshot_tag} table and plot")
+    logger.info(f"Exporting {_name}-downstream-capture-{snapshot_tag} table and plot")
     feather.write_feather(
         df.reset_index(),
-        f"tables/{name}-downstream-capture-{snapshot_tag}.feather"
+        f"tables/{_name}-downstream-capture-{snapshot_tag}.feather"
     )
 
     p = df['capture_frac'].hvplot.hist(

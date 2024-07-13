@@ -119,19 +119,19 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             f'flat-connectome/connectome-weights-{file_tag}.feather'
         )
 
-    # FIXME: Maybe this should actually use sensory as the min status...
     with Timer("Constructing primary-only synapse partner export", logger):
-        primary_bodies = ann.query('status >= "Sensory Anchor"').index
-        logger.info(f"There are {len(primary_bodies)} with status 'Sensory Anchor' or better.")
+        MIN_PRIMARY_STATUS = "Sensory Anchor"
+        primary_bodies = ann.query(f'status >= "{MIN_PRIMARY_STATUS}"').index
+        logger.info(f"There are {len(primary_bodies)} with status '{MIN_PRIMARY_STATUS}' or better.")
         primary_partner_export_df = partner_export_df.query('body_pre in @primary_bodies and body_post in @primary_bodies')
 
-    with Timer("Writing primary-only synapse partner export", logger):
+    with Timer(f"Writing primary-only synapse partner export (with only {MIN_PRIMARY_STATUS} or better)", logger):
         feather.write_feather(
             primary_partner_export_df,
             f'flat-connectome/syn-partners-{file_tag}-primary-only.feather'
         )
 
-    with Timer("Writing primary-only weighted connectome", logger):
+    with Timer(f"Constructing primary-only weighted connectome (with only {MIN_PRIMARY_STATUS} or better)", logger):
         primary_connectome = (
             primary_partner_export_df[['body_pre', 'body_post']]
             .value_counts()
@@ -157,8 +157,8 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
 
     with Timer("Computing ranked body stats table", logger):
         # A version of this table is also exported for each 'report' in the config,
-        # but we also export it as part of the 'flat' connectome export,
-        # and we include status/class/type/instance.
+        # but we also export it here as part of the 'flat' connectome export.
+        # Here we also include status/class/type/instance.
         extra_cols = [c for c in ('status', 'class', 'type', 'instance') if c in ann.columns]
         syn_counts_df = ranked_synapse_counts(point_df, partner_df, body_annotations_df=ann[extra_cols])
         syn_counts_df = syn_counts_df.rename(columns={
