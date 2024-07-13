@@ -82,6 +82,18 @@ ReportSetSchema = {
             "type": "string",
             "default": ""
         },
+        "capture-summary-subsets": {
+            "description":
+                "A capture summary bar-chart is always generated that includes a bar for each listed report.\n"
+                "But if that's too crowded, you can specify subsets of the reports to render into smaller summary bar-charts.\n"
+                "This setting is a mapping of group-name: [report-name, report-name, report-name, ...]\n",
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+                "type": "array",
+                "items": {"type": "string"}
+            },
+        },
         "reports": {
             "description":
                 "A list of forecasts to produce.\n"
@@ -265,8 +277,6 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
         return
 
     roiset = cfg['roiset']
-    names = [report['name'] for report in cfg['reports']]
-    names_df = pd.DataFrame({'report_index': np.arange(len(names)), 'name': names})
 
     all_syncounts = (
         pd.concat(all_syncounts.values(), ignore_index=True)
@@ -326,69 +336,79 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
         # but that doesn't change the relative proportions among ROIs.
         'traced_synweight_frac': 'PostSyn',
     }
-    titles = {
-        'traced_presyn_frac': f'{roiset} Captured PreSyn by Status and ROI',
-        'traced_postsyn_frac': f'{roiset} Captured PostSyn by Status and ROI',
-        'traced_conn_frac': f'{roiset} Captured Connectivity by Status and ROI',
-        'traced_synweight_frac': f'{roiset} Captured SynWeight by Status and ROI',
-    }
+    names = [report['name'] for report in cfg['reports']]
+    summary_report_subsets = {roiset: names}
+    summary_report_subsets.update(cfg['capture-summary-subsets'])
 
-    for level0 in CAPTURE_STATS:
-        df = (
-            # This will select all columns (status names) under the specified level.
-            all_status_stats[level0]
-            .reset_index()
-            .merge(all_syncounts.reset_index(), 'left', on='name')
-            .merge(names_df, 'left', on='name')
-            .sort_values('report_index')
-        )
-        df.to_csv(f'reports/{roiset}/{roiset}-cumulative-{level0}-by-status.csv', index=False, header=True)
+    for subset_name, report_names in summary_report_subsets.items():
+        names_df = pd.DataFrame({
+            'report_index': np.arange(len(report_names)),
+            'name': report_names
+        })
 
-        # The dataframe has cumulative connectivity,
-        # but for the stacked bar chart we don't want cumulative.
-        df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
-        df.to_csv(f'reports/{roiset}/{roiset}-{level0}-by-status.csv', index=False, header=True)
+        titles = {
+            'traced_presyn_frac': f'{subset_name} Captured PreSyn by Status and ROI',
+            'traced_postsyn_frac': f'{subset_name} Captured PostSyn by Status and ROI',
+            'traced_conn_frac': f'{subset_name} Captured Connectivity by Status and ROI',
+            'traced_synweight_frac': f'{subset_name} Captured SynWeight by Status and ROI',
+        }
 
-        p = variable_width_hbar(
-            df,
-            'name',
-            size_cols[level0],
-            relevant_statuses,
-            legend='bottom_right',
-            width=800,
-            height=1200,
-            flip_yaxis=True,
-            vlim=(0, 1),
-            title=titles[level0]
-        )
+        for level0 in CAPTURE_STATS:
+            df = (
+                # This will select all columns (status names) under the specified level.
+                all_status_stats[level0].query('name in @report_names')
+                .reset_index()
+                .merge(all_syncounts.reset_index(), 'left', on='name')
+                .merge(names_df, 'left', on='name')
+                .sort_values('report_index')
+            )
+            df.to_csv(f'reports/{roiset}/{subset_name}-cumulative-{level0}-by-status.csv', index=False, header=True)
 
-        fname = '-'.join(titles[level0].lower().split())
-        export_bokeh(
-            p,
-            f"{fname}.html",
-            titles[level0],
-            f"reports/{roiset}"
-        )
+            # The dataframe has cumulative connectivity,
+            # but for the stacked bar chart we don't want cumulative.
+            df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
+            df.to_csv(f'reports/{roiset}/{subset_name}-{level0}-by-status.csv', index=False, header=True)
 
-        # Export again, but sorting the bars by total
-        p = variable_width_hbar(
-            df.assign(total=df[relevant_statuses].sum(axis=1)).sort_values('total'),
-            'name',
-            size_cols[level0],
-            relevant_statuses,
-            legend='bottom_right',
-            width=800,
-            height=1200,
-            flip_yaxis=True,
-            vlim=(0, 1),
-            title=titles[level0]
-        )
-        export_bokeh(
-            p,
-            f"{fname}-sorted.html",
-            titles[level0],
-            f"reports/{roiset}"
-        )
+            p = variable_width_hbar(
+                df,
+                'name',
+                size_cols[level0],
+                relevant_statuses,
+                legend='bottom_right',
+                width=800,
+                height=1200,
+                flip_yaxis=True,
+                vlim=(0, 1),
+                title=titles[level0]
+            )
+
+            fname = '-'.join(titles[level0].lower().split())
+            export_bokeh(
+                p,
+                f"{fname}.html",
+                titles[level0],
+                f"reports/{roiset}"
+            )
+
+            # Export again, but sorting the bars by total
+            p = variable_width_hbar(
+                df.assign(total=df[relevant_statuses].sum(axis=1)).sort_values('total'),
+                'name',
+                size_cols[level0],
+                relevant_statuses,
+                legend='bottom_right',
+                width=800,
+                height=1200,
+                flip_yaxis=True,
+                vlim=(0, 1),
+                title=titles[level0]
+            )
+            export_bokeh(
+                p,
+                f"{fname}-sorted.html",
+                titles[level0],
+                f"reports/{roiset}"
+            )
 
 
 @PrefixFilter.with_context("capture forecast")
