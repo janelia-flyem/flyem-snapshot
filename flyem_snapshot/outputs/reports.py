@@ -377,7 +377,7 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
                 relevant_statuses,
                 legend='bottom_right',
                 width=800,
-                height=1200,
+                height=min(1200, 80 * len(df)),
                 flip_yaxis=True,
                 vlim=(0, 1),
                 title=titles[level0]
@@ -399,7 +399,7 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
                 relevant_statuses,
                 legend='bottom_right',
                 width=800,
-                height=1200,
+                height=min(1200, 80 * len(df)),
                 flip_yaxis=True,
                 vlim=(0, 1),
                 title=titles[level0]
