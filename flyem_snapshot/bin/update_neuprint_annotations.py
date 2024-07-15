@@ -12,8 +12,6 @@ Set NEUPRINT_APPLICATION_CREDENTIALS in your environment before running this scr
 Example:
 
     update-neuprint-annotations emdata6.int.janelia.org:9000 ':master' segmentation_annotations neuprint-cns.janelia.org cns
-
-TODO: This doesn't yet modify Meta.lastDatabaseEdit when making updates.
 """
 import re
 import os
@@ -83,8 +81,6 @@ def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, clien
 
     Only bodies which already exist in neuprint and still exist in Clio will be updated.
     Others are ignored.
-
-    TODO: Update Meta.lastDatabaseEdit when making updates.
 
     Args:
         dvid_details:
