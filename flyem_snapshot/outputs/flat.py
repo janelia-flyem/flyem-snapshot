@@ -23,8 +23,9 @@ FlatConnectomeSchema = {
             "default": True,
         },
         "roi-set": {
-            "description": "Which set of ROI names to include in the output data as a column.\n"
-            "This does not specify how the synapses are filtered before export.\n",
+            "description":
+                "Which set of ROI names to include in the output data as a column.\n"
+                "This does not specify how the synapses are filtered before export.\n",
             "type": "string",
             "default": "primary"
         },

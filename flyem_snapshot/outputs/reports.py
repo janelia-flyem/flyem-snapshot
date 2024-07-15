@@ -341,6 +341,7 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
     summary_report_subsets.update(cfg['capture-summary-subsets'])
 
     for subset_name, report_names in summary_report_subsets.items():
+        os.makedirs(f'reports/{roiset}/{subset_name}/csv', exist_ok=True)
         names_df = pd.DataFrame({
             'report_index': np.arange(len(report_names)),
             'name': report_names
@@ -362,12 +363,12 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
                 .merge(names_df, 'left', on='name')
                 .sort_values('report_index')
             )
-            df.to_csv(f'reports/{roiset}/{subset_name}-cumulative-{level0}-by-status.csv', index=False, header=True)
+            df.to_csv(f'reports/{roiset}/{subset_name}/csv/{subset_name}-cumulative-{level0}-by-status.csv', index=False, header=True)
 
             # The dataframe has cumulative connectivity,
             # but for the stacked bar chart we don't want cumulative.
             df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
-            df.to_csv(f'reports/{roiset}/{subset_name}-{level0}-by-status.csv', index=False, header=True)
+            df.to_csv(f'reports/{roiset}/{subset_name}/csv/{subset_name}-{level0}-by-status.csv', index=False, header=True)
 
             p = variable_width_hbar(
                 df,
@@ -387,7 +388,7 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
                 p,
                 f"{fname}.html",
                 titles[level0],
-                f"reports/{roiset}"
+                f"reports/{roiset}/{subset_name}"
             )
 
             # Export again, but sorting the bars by total
@@ -407,7 +408,7 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
                 p,
                 f"{fname}-sorted.html",
                 titles[level0],
-                f"reports/{roiset}"
+                f"reports/{roiset}/{subset_name}"
             )
 
 
