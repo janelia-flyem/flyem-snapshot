@@ -53,5 +53,5 @@ def load_dvidseg(cfg, snapshot_tag):
         )
 
     pointlabeler = PointLabeler(*dvidseg, mapping=mapping)
-    dump_json(pointlabeler.last_mutation, 'tables/last-mutation.json')
+    dump_json(pointlabeler.last_mutation, 'last-mutation.json')
     return pointlabeler
