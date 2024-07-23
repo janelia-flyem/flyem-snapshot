@@ -489,7 +489,7 @@ class RoiVolCache:
         self.roi_ids = roi_ids
         self.files = RoiVolCache.CacheFiles(
             f'volumes/{roiset_name}-vol.npy',
-            f'volumes/{roiset_name}-box.json',
+            f'volumes/{roiset_name}-box-zyx.json',
             f'volumes/{roiset_name}-ids.json'
         )
 
