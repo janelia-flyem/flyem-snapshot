@@ -552,6 +552,7 @@ def initialize_output_dir(cfg):
     fully-standardized config into it (just for future reference).
     """
     output_dir = cfg['job-settings']['output-dir']
+    os.makedirs(output_dir, exist_ok=True)
 
     # Dump the updated config so it's clear what the
     # settings are after "standardization"
