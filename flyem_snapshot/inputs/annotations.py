@@ -87,6 +87,35 @@ AnnotationsSchema = {
                 }
             ]
         },
+        "replace-values": {
+            "description":
+                "Sometimes the annotations in one column may be derived from the annotations\n"
+                "in a different column, in simple lookup-table fashion.\n"
+                "This setting allows you to populate a column via mapping of translations.\n",
+            "type": "array",
+            "default": [],
+            "items": {
+                "type": "object",
+                "default": {},
+                "source-column": {
+                    "type": "string",
+                    "default": "",
+                },
+                "target-column": {
+                    "type": "string",
+                    "default": "",
+                },
+                "replacements": {
+                    "description":
+                        "A mapping of {old_term: new_term}.\n"
+                        "Any values in the source which are not listed here will remain unmodified.\n",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "rename-annotation-columns": {
             "description":
                 "Optionally rename columns of the annotation table immediately after it is loaded.\n"
@@ -125,8 +154,43 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
     os.makedirs('tables', exist_ok=True)
     os.makedirs('reports', exist_ok=True)
 
+    ann = _load_raw_annotations(cfg, pointlabeler)
+    for pa_cfg in cfg['point-annotations']:
+        _append_dvid_point_annotations(pa_cfg, pa_cfg['instance'], ann, pointlabeler, cfg['processes'])
+
+    _apply_value_replacements(cfg, ann)
+
+    if renames := cfg['rename-annotation-columns']:
+        # Drop anything that was renamed to ""
+        drop_keys = [k for k,v in renames.items() if not v]
+        ann = ann.drop(columns=drop_keys, errors='ignore')
+
+        # Rename the others
+        renames = {k:v for k,v in renames.items() if v}
+        ann = ann.rename(columns=renames)
+
+    # This is ugly, but it's simpler than a more general fix.
+    # The 'group_old' column should't exist, but it does, and it has screwy types.
+    # We don't want to deal with it.
+    if 'group_old' in ann.columns:
+        logger.info("Discarding obsolete column 'group_old'")
+        del ann['group_old']
+
+    feather.write_feather(
+        ann.reset_index(),
+        f'tables/body-annotations-{snapshot_tag}.feather'
+    )
+
+    _export_body_status_counts(ann, snapshot_tag)
+
+    return ann
+
+
+def _load_raw_annotations(cfg, pointlabeler):
     table_path = Path(cfg['body-annotations-table'])
     if not cfg['body-annotations-table']:
+        ann_name = ' / '.join(pointlabeler.dvidseg)
+        logger.info(f"Reading body annotations from DVID: {ann_name}")
         ann = fetch_body_annotations(
             pointlabeler.dvidseg.server,
             pointlabeler.dvidseg.uuid,
@@ -149,55 +213,7 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         logger.info(f"Reading body annotations feather file: {table_path.name}")
         ann = feather.read_feather(table_path).set_index('body')
 
-    if renames := cfg['rename-annotation-columns']:
-        # Drop anything that was renamed to ""
-        drop_keys = [k for k,v in renames.items() if not v]
-        ann = ann.drop(columns=drop_keys, errors='ignore')
-
-        # Rename the others
-        renames = {k:v for k,v in renames.items() if v}
-        ann = ann.rename(columns=renames)
-
-    # This is ugly, but it's easier than a real fix.
-    # The 'group_old' column should't exist, but it does and it has screwy types.
-    # We don't want to deal with it.
-    if 'group_old' in ann.columns:
-        logger.info("Discarding obsolete column 'group_old'")
-        del ann['group_old']
-
-    feather.write_feather(
-        ann.reset_index(),
-        f'tables/body-annotations-{snapshot_tag}.feather'
-    )
-
-    _export_body_status_counts(ann, snapshot_tag)
-
-    for pa_cfg in cfg['point-annotations']:
-        ann = _append_dvid_point_annotations(pa_cfg, pa_cfg['instance'], ann, pointlabeler, cfg['processes'])
-
     return ann
-
-
-def _export_body_status_counts(ann, snapshot_tag):
-    vc = ann['status'].value_counts().sort_index(ascending=False)
-    vc = vc[vc > 0]
-    vc = vc[vc.index != ""]
-    vc.to_csv(f'tables/body-status-counts-{snapshot_tag}.csv', index=True, header=True)
-
-    try:
-        title = f'body status counts ({snapshot_tag})'
-        p = vc.hvplot.barh(flip_yaxis=True, title=title)
-        export_bokeh(
-            hv.render(p),
-            f"body-status-counts-{snapshot_tag}.html",
-            title,
-            "reports"
-        )
-    except RuntimeError as ex:
-        if 'geckodriver' in str(ex):
-            logger.warning(f"Not exporting body-status-counts graph: {str(ex)}")
-        else:
-            raise
 
 
 @PrefixFilter.with_context('{instance}')
@@ -245,4 +261,33 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
         ann.drop(columns=[propcol], errors='ignore', inplace=True)
         ann[propcol] = df[prop.lower()]
 
-    return ann
+
+def _apply_value_replacements(cfg, ann):
+    for rpl in cfg['replace-values']:
+        if not (src_col := rpl['source-column']):
+            raise RuntimeError("replace-values config lists no source-column")
+        tgt_col = rpl['target-column'] or src_col
+        logger.info(f"Applying replacement values ({src_col} -> {tgt_col}])")
+        ann[tgt_col] = ann[src_col].astype(object).replace(rpl['replacements'])
+
+
+def _export_body_status_counts(ann, snapshot_tag):
+    vc = ann['status'].value_counts().sort_index(ascending=False)
+    vc = vc[vc > 0]
+    vc = vc[vc.index != ""]
+    vc.to_csv(f'tables/body-status-counts-{snapshot_tag}.csv', index=True, header=True)
+
+    try:
+        title = f'body status counts ({snapshot_tag})'
+        p = vc.hvplot.barh(flip_yaxis=True, title=title)
+        export_bokeh(
+            hv.render(p),
+            f"body-status-counts-{snapshot_tag}.html",
+            title,
+            "reports"
+        )
+    except RuntimeError as ex:
+        if 'geckodriver' in str(ex):
+            logger.warning(f"Not exporting body-status-counts graph: {str(ex)}")
+        else:
+            raise
