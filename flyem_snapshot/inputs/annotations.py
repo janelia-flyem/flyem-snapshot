@@ -170,6 +170,15 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         f'tables/body-annotations-{snapshot_tag}.feather'
     )
 
+    _export_body_status_counts(ann, snapshot_tag)
+
+    for pa_cfg in cfg['point-annotations']:
+        ann = _append_dvid_point_annotations(pa_cfg, pa_cfg['instance'], ann, pointlabeler, cfg['processes'])
+
+    return ann
+
+
+def _export_body_status_counts(ann, snapshot_tag):
     vc = ann['status'].value_counts().sort_index(ascending=False)
     vc = vc[vc > 0]
     vc = vc[vc.index != ""]
@@ -190,49 +199,50 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         else:
             raise
 
-    if cfg['point-annotations'] and not pointlabeler:
+
+@PrefixFilter.with_context('{instance}')
+def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processes):
+    if not pointlabeler:
         raise RuntimeError("Can't read point-annotations without a dvid segmentation.")
 
     # Anything mentioned in the point-annotations config
     # will override what's in Clio if the name conflicts.
-    for pa in cfg['point-annotations']:
-        col = pa['column-name'] or pa['instance']
-        with PrefixFilter.context(pa['instance']):
-            df = fetch_all_elements(
-                pointlabeler.dvidseg.server,
-                pointlabeler.dvidseg.uuid,
-                pa['instance'],
-                format='pandas'
-            )
-            df = df.sort_values([*'zyx'])
-            df['body'] = fetch_labels_batched(
-                *pointlabeler.dvidseg,
-                df[[*'zyx']].values,
-                processes=cfg['processes']
-            )
-            df[col] = df[[*'xyz']].values.tolist()
+    col = pa_cfg['column-name'] or instance
+    df = fetch_all_elements(
+        pointlabeler.dvidseg.server,
+        pointlabeler.dvidseg.uuid,
+        instance,
+        format='pandas'
+    )
+    df = df.sort_values([*'zyx'])
+    df['body'] = fetch_labels_batched(
+        *pointlabeler.dvidseg,
+        df[[*'zyx']].values,
+        processes=processes
+    )
+    df[col] = df[[*'xyz']].values.tolist()
 
-            # Append this column to the annotation DataFrame, overwriting the column if necessary.
-            # (Even if the column exists in Clio, we're overriding it with the data from DVID.)
-            # Note: If more than one point lands on the same body, we drop duplicates.
-            df = df.drop_duplicates('body').set_index('body')
-            ann.drop(columns=[col], errors='ignore', inplace=True)
-            ann[col] = df[col]
+    # Append this column to the annotation DataFrame, overwriting the column if necessary.
+    # (Even if the column exists in Clio, we're overriding it with the data from DVID.)
+    # Note: If more than one point lands on the same body, we drop duplicates.
+    df = df.drop_duplicates('body').set_index('body')
+    ann.drop(columns=[col], errors='ignore', inplace=True)
+    ann[col] = df[col]
 
-            # Repeat for the extracted point properties.
-            for prop, propcol in pa['extract-properties'].items():
-                if prop.lower() not in df:
-                    logger.warning(f"Annotation instance {pa['instance']} contains no properties named '{prop}'")
-                    continue
+    # Repeat for the extracted point properties.
+    for prop, propcol in pa_cfg['extract-properties'].items():
+        if prop.lower() not in df:
+            logger.warning(f"Annotation instance {instance} contains no properties named '{prop}'")
+            continue
 
-                # DVID stores annotation properties as strings, even if they're int or float
-                # Attempt to convert to float if possible.
-                try:
-                    df[prop.lower()] = df[prop.lower()].astype(np.float32)
-                except ValueError:
-                    continue
+        # DVID stores annotation properties as strings, even if they're int or float
+        # Attempt to convert to float if possible.
+        try:
+            df[prop.lower()] = df[prop.lower()].astype(np.float32)
+        except ValueError:
+            continue
 
-                ann.drop(columns=[propcol], errors='ignore', inplace=True)
-                ann[propcol] = df[prop.lower()]
+        ann.drop(columns=[propcol], errors='ignore', inplace=True)
+        ann[propcol] = df[prop.lower()]
 
     return ann
