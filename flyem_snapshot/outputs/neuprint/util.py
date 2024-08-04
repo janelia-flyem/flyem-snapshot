@@ -100,6 +100,9 @@ def neo4j_type_suffix(series):
     if valid.map(lambda s: isinstance(s, str)).all():
         return 'string'
 
+    if (valid.map(type) == bool).all():
+        return 'boolean'
+
     if not valid.map(lambda x: isinstance(x, (list, tuple))).all():
         raise RuntimeError(
             f"Column {series.name} has object "
