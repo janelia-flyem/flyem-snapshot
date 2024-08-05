@@ -49,10 +49,9 @@ BodySizesSchema = {
 
 
 @PrefixFilter.with_context('body-sizes')
-def load_body_sizes(cfg, pointlabeler, df, snapshot_tag):
+def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
     """
-    Load/export the sizes of all bodies listed in df
-    (in either the index or the 'body' column).
+    Load/export the sizes of the given bodies (after deduplication).
     It's up to the caller to decide which set of bodies to process.
     But for connectivity snapshots, we typically fetch sizes
     ONLY for bodies which have at least one synapse.
@@ -68,15 +67,11 @@ def load_body_sizes(cfg, pointlabeler, df, snapshot_tag):
         logger.info("No body size info provided. Body sizes will not be emitted.")
         return None
 
-    if df.index.name == 'body':
-        bodies = df.index.drop_duplicates().values
-    elif 'body' in df.columns:
-        bodies = df['body'].unique()
-
     if not cache_file:
         # No cache: Gotta fetch them all from DVID
         # (Takes ~1 hour for the full CNS -- would be worse if we had to also fetch sizes of NON-synaptic bodies.)
         logger.info("No body sizes cache provided.")
+        bodies = pd.unique(np.concatenate(body_lists))
         with Timer("Loading all neuron sizes from DVID", logger):
             sizes = fetch_sizes(
                 *dvidseg,

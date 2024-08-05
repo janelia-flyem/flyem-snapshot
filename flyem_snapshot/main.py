@@ -6,6 +6,8 @@ import pickle
 import logging.config
 from collections.abc import Mapping
 
+import numpy as np
+
 from confiddler import dump_default_config, load_config, dump_config
 from neuclease import PrefixFilter
 from neuclease.util import Timer, switch_cwd, dump_json
@@ -228,7 +230,12 @@ def main_impl(cfg, config_dir):
         ann = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
         point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
         element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
-        body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], pointlabeler, point_df, snapshot_tag)
+        all_bodies = [
+            ann.index.values,
+            point_df['body'].values,
+            *(p['body'].values for p, _ in element_tables.values())
+        ]
+        body_sizes = load_body_sizes(cfg['inputs']['body-sizes'], pointlabeler, all_bodies, snapshot_tag)
         tbar_nt, body_nt, nt_confusion = load_neurotransmitters(cfg['inputs']['neurotransmitters'], point_df, partner_df, ann)
 
         #
