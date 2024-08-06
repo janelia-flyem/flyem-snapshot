@@ -23,22 +23,30 @@ def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, bod
     """
     assert ann.index.name == 'body'
     assert 0 not in ann.index
+    assert np.issubdtype(ann.index.dtype, np.integer)
 
     # Filter out low-confidence PSDs before computing weights.
     balanced_confidence = cfg['meta']['postHighAccuracyThreshold']
     partner_df = partner_df.query('conf_post >= @balanced_confidence')
     _ = balanced_confidence  # linting fix
 
-    body_stats = _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies)
-    roi_elm_df = _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies)
-    roi_info_df = _neuprint_neuron_roi_infos(roi_elm_df, cfg['processes'])
+    # If we don't use 'keep-non-synaptic-segments', then we'll exclude
+    # bodies which were annotated but contain no synapses.
+    # One reason to deliberately exclude such bodies is that the
+    # annotations can (sadly) contain stale body IDs.
+    # Also, 'Unimportant' bodies which are just fixative or whatever
+    # should generally be excluded from users' analyses.
+    # But in some datasets, we DO trust the annotations and we don't
+    # mind the Unimportant bodies, hence this option exists.
+    if cfg['keep-non-synaptic-segments']:
+        minmal_ann = ann
+    else:
+        # No annotation rows.
+        minmal_ann = ann.iloc[:0]
 
-    # We use a left-merge here (not outer) because we deliberately exclude
-    # bodies which have no synapses (or other elements) whatsoever, even
-    # if there is annotation data for the body.
-    # One reason not to use such bodies is that the annotations can (sadly)
-    # contain stale body IDs. Also, 'Unimportant' bodies which are just
-    # fixative or whatever should generally be excluded from analyses.
+    body_stats = _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, minmal_ann)
+    roi_elm_df = _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, minmal_ann)
+    roi_info_df = _neuprint_neuron_roi_infos(roi_elm_df, cfg['processes'])
     neuron_df = body_stats.merge(ann, 'left', on='body')
 
     if body_nt is not None:
@@ -96,7 +104,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, bod
 
 
 @timed
-def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies):
+def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, ann):
     prepost = point_df[['body', 'kind']].value_counts().unstack(fill_value=0)
     prepost.columns = ['post', 'pre']
 
@@ -118,11 +126,14 @@ def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies):
             body_elm_kind_dfs[elm_name] = element_points[['body', kindcol]].value_counts().unstack(fill_value=0)
             assert body_elm_kind_dfs[elm_name].index.name == 'body'
 
+    tables = (
+        *body_syn_total_dfs,
+        *body_elm_total_dfs.values(),
+        *body_elm_kind_dfs.values(),
+        ann[[]]  # Just need the body IDs, no columns
+    )
     body_element_stats = (
-        pd.concat(
-            (*body_syn_total_dfs, *body_elm_total_dfs.values(), *body_elm_kind_dfs.values()),
-            axis=1
-        )
+        pd.concat(tables, axis=1)
         .query('body != 0')
         .fillna(0)
         .astype(np.int32)
@@ -138,12 +149,13 @@ def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies):
     feather.write_feather(body_element_stats.reset_index(), 'neuprint/body_elements.feather')
 
     assert body_element_stats.index.name == 'body'
+    assert np.issubdtype(body_element_stats.index.dtype, np.integer)
     assert body_element_stats.columns[:5].tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
     return body_element_stats
 
 
 @timed
-def _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies):
+def _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, ann):
     """
     Per-body-per-ROI stats
     """
@@ -157,6 +169,24 @@ def _body_roi_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodi
         df = _roi_elm_for_roiset(cfg, point_df, partner_df, element_tables, roiset_name, (i != 0))
         roiset_dfs.append(df)
     roi_elm = pd.concat(roiset_dfs)
+
+    if len(ann) > 0:
+        # Figure out which bodies in ann.index aren't already represented in roi_elm
+        bodies = roi_elm.index.get_level_values('body')
+        ann_elm = ann.loc[~ann.index.isin(bodies), []]
+        ann_elm['roi'] = '<unspecified>'
+        ann_elm = ann_elm.reset_index().set_index(['body', 'roi'])
+
+        # First concat with 0 rows, just to acquire the proper column names.
+        ann_elm = (
+            pd.concat((ann_elm, roi_elm.iloc[:0]))
+            .fillna(0)
+            .astype(np.int32)
+        )
+        # Now that everything has matching dtypes, do the full concat.
+        # (That avoided NaNs followed by astype on the whole table.)
+        roi_elm = pd.concat((ann_elm, roi_elm))
+        assert (roi_elm.dtypes == np.int32).all()
 
     # It's critical that each body occupies contiguous
     # rows before we assign bodies into batches.

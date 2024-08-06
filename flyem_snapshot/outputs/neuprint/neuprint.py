@@ -175,6 +175,14 @@ NeuprintSchema = {
             },
             "default": {},
         },
+        "keep-non-synaptic-segments": {
+            "description":
+                "If bodies without synapses (or other elements) are present in the body annotations table,\n"
+                "should we create :Segment nodes (and possibly :Neuron) for them, or exclude them from\n"
+                "the neuprint export?",
+            "type": "boolean",
+            "default": False
+        },
         "element-labels": {
             "description":
                 "For element sets listed in the inputs.elements config, specify the neuprint "
