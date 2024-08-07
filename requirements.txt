@@ -1,9 +1,10 @@
-feather-format
-ujson
 bokeh
+confiddler>=0.1.5
 holoviews
 hvplot
 jinja2
-confiddler
-neuclease>=0.6.post0.dev91
+neuclease>=0.7
 neuprint-python
+pyarrow
+requests
+ujson

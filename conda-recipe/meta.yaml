@@ -23,7 +23,7 @@ requirements:
     {% for dep in data['install_requires'] %}
     - {{ dep.lower() }}
     {% endfor %}
-    {# raw is for ignoring templating with cookiecutter, leaving it for use with conda-build #}
+
 
 test:
   imports:
