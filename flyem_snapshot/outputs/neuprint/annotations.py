@@ -85,7 +85,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
     'Not examined':             '',             # noqa
     '':                         '',             # noqa
 
-    '0.5assign':                '0.5assign',    # noqa
+    '0.5assign':                'Assign',       # noqa
 
     'Anchor':                   'Anchor',       # noqa
     'Cleaved Anchor':           'Anchor',       # noqa
