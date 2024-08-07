@@ -301,7 +301,7 @@ def _load_roi_unions(roiset_name, src_roiset_name, src_lists, point_df):
         raise RuntimeError(
             f"Can't load roiset '{roiset_name}' from union-source-roiset '{src_roiset_name}' "
             "because the source roiset doesn't exist in the point_df (yet?).  "
-            "(Did make sure the source roiset is listed higher in the config?)"
+            "(Did you make sure the source roiset is listed higher in the config?)"
         )
     assert point_df[src_roiset_name].dtype == 'category'
     assert '<unspecified>' not in src_lists.keys(), \
