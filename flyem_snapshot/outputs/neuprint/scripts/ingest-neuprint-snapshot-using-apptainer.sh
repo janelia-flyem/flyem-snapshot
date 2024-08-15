@@ -17,13 +17,20 @@ fi
 SNAPSHOT_DIR=$1
 DEBUG_SHELL=$2
 
+if [[ ! -z "${DEBUG_SHELL}" && "${DEBUG_SHELL}" != "--debug-shell" ]]; then
+    echo "Error: The only permitted value for the second argument is '--debug-shell', not '${DEBUG_SHELL}'" 1>&2
+    exit 1
+fi
+
+if [[ ! -d "${SNAPSHOT_DIR}/neuprint" ]]; then
+    echo "Error: The snapshot diretory you provided does not contain a 'neuprint' subdirectory:" 1>&2
+    echo "${SNAPSHOT_DIR}" 1>&2
+    exit 1
+fi
+
 # The directory in which this bash script resides.
 # https://stackoverflow.com/questions/59895
 SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-# debug values
-#SNAPSHOT_DIR=/groups/flyem/data/scratchspace/flyemflows/cns-full/tmp/small-test
-#SCRIPTS_DIR=/groups/flyem/data/scratchspace/flyemflows/cns-full/tmp/scripts
 
 # We export the database to /scratch.
 # Assuming I'm on a cluster node, this directory is available.
