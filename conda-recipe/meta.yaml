@@ -19,11 +19,17 @@ requirements:
     - versioneer
   run:
     - python >=3.10
-    # dependencies are defined in setup.py
-    {% for dep in data['install_requires'] %}
-    - {{ dep.lower() }}
-    {% endfor %}
-
+    - bokeh
+    - confiddler >=0.1.5
+    - holoviews
+    - hvplot
+    - jinja2
+    - neuclease >=0.7
+    - neuprint-python
+    - pyarrow
+    - requests
+    - ujson
+    - python-cityhash
 
 test:
   imports:

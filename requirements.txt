@@ -8,3 +8,4 @@ neuprint-python
 pyarrow
 requests
 ujson
+cityhash
