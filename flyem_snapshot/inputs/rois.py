@@ -35,7 +35,7 @@ RoiSetSchema = {
                 "    of the ROIs to construct and the corresponding lists of source ROIs\n"
                 "    (which must reside in the union-source-roiset).\n",
             "default": {},
-            "oneOf": [
+            "anyOf": [
                 {
                     # Optionally provide a path to a '.json' from which the ROI set will be read,
                     # OR a python expression which produces an ROI name from an ROI segment ID.
