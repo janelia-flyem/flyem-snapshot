@@ -9,8 +9,14 @@ if [[ -z "$1" ]]; then
     echo "" 1>&2
     echo "where <snapshot-dir> contains a 'neuprint' subdirectory containing CSV files" 1>&2
     echo " and scripts to use for neuprint ingestion." 1>&2
+    echo "" 1>&2
     echo "If --debug-shell is given, then you'll be dropped into a bash shell within " 1>&2
     echo "the container instead of launching the ingestion script." 1>&2
+    echo "" 1>&2
+    echo "By default, this script uses /scratch for temporary storage."  1>&2
+    echo "To override that, use WORKSPACE_DIR:" 1>&2
+    echo "  WORKSPACE_DIR=/tmp/neo4j ingest-neuprint-snapshot-using-apptainer.sh <snapshot-dir>" 1>&2
+    echo "" 1>&2
     exit 1
 fi
 
@@ -32,7 +38,7 @@ fi
 # https://stackoverflow.com/questions/59895
 SCRIPTS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-# We export the database to /scratch.
+# By default, we export the database to /scratch.
 # Assuming I'm on a cluster node, this directory is available.
 WORKSPACE_DIR=${WORKSPACE_DIR-/scratch/${USER}/$(basename ${SNAPSHOT_DIR})/neo4j}
 
