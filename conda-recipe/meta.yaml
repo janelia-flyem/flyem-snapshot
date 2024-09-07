@@ -30,6 +30,7 @@ requirements:
     - requests
     - ujson
     - python-cityhash
+    - apptainer
 
 test:
   imports:
