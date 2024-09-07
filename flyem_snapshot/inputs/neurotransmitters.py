@@ -512,18 +512,18 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     # (the most common NT prediction among its synapses)
     #
     # Notes:
-    #   - value_counts().groupby().head(1) is much faster
-    #     than groupby().apply(pd.Series.mode).
-    #   - sort_values() isn't necessary, but it's used here
-    #     to ensure predictable ordering in case of a tie.
+    #   - To obtain the most common prediction in each group,
+    #     value_counts().reset_index(groupcol).drop_duplicates(groupcol)
+    #     is much faster than groupby(groupcol).apply(pd.Series.mode).
+    #   - sort_values() isn't strictly necessary here, but we use
+    #     it to ensure predictable ordering in case of a tie.
     group_pred = (
         pred_df[[groupcol, 'pred1']]
         .value_counts(dropna=False)
         .rename('count')
-        .reset_index(1)
+        .reset_index(groupcol)
         .sort_values(['count', 'pred1'], ascending=[False, True])
-        .groupby(groupcol)
-        .head(1)
+        .drop_duplicates(groupcol)
         ['pred1']
         .rename('group_pred')
     )
