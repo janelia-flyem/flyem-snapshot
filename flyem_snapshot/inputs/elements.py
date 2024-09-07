@@ -64,7 +64,7 @@ ElementTablesSchema = {
     "properties": {
         "processes": {
             "description":
-                "How many processes should be used to update synapse labels?\n"
+                "How many processes should be used to update element labels?\n"
                 "If not specified, default to the top-level config setting.\n",
             "type": ["integer", "null"],
             "default": None

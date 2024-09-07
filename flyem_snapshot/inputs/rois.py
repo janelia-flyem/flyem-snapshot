@@ -98,7 +98,7 @@ RoiSetSchema = {
 }
 
 RoisSchema = {
-    "description": "Settings to describe a set of disjoint ROIs",
+    "description": "Settings to describe sets of ROIs",
     "type": "object",
     "default": {},
     "additionalProperties": False,

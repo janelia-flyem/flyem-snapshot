@@ -6,8 +6,6 @@ import pickle
 import logging.config
 from collections.abc import Mapping
 
-import numpy as np
-
 from confiddler import dump_default_config, load_config, dump_config
 from neuclease import PrefixFilter
 from neuclease.util import Timer, switch_cwd, dump_json

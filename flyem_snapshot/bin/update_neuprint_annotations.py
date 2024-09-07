@@ -186,8 +186,8 @@ def _fetch_comparison_dataframes(dvid_details, client):
 
     # Fetch all Segment annotations that are also in Clio.
     # For a compact query, we first fetch all Neurons,
-    # and then follow up with a query to fetch whatever Clio bodies that didn't
-    # catch, which must be mere Segments in neuprint.
+    # and then follow up with a query to fetch whatever Clio bodies
+    # that query didn't catch, which must be mere Segments in neuprint.
     with Timer("Fetching Neuprint Neuron properties", logger):
         neuprint_df, _syndist = fetch_neurons(NC(client=client), client=client)
         clio_segments = set(clio_df.index) - set(neuprint_df['bodyId'])
@@ -198,7 +198,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
     neuprint_df = neuprint_df.set_index(bodies).sort_index()
 
     # In some cases (such as spatial points), what neuprint
-    # returns isn't what we need to WRITE.
+    # RETURNS isn't in the format that we need to WRITE.
     # So process the values just like we did with clio_df.
     neuprint_df = neuprint_segment_annotations(cfg, neuprint_df)
 
