@@ -20,6 +20,15 @@
 ## send the appropriate cypher commands to create indexes for segment properties.
 ##
 
+##
+## To summarize, the steps are:
+##
+##  1. BEFORE launching neo4j, use neo4j-admin to ingest all the CSV files (nodes/relationships).
+##  2. Launch neo4j with the new database files.
+##  3. Use cypher-shell to create indexes on the ingested data.
+##  4. Stop neo4j when this script exits (using a trap).
+##
+
 # This is optionally set via the calling script, when you use
 # ingest-neuprint-snapshot-using-apptainer <snapshot-dir> --debug-shell
 DEBUG_SHELL=$1
@@ -49,8 +58,10 @@ META_ARG=--nodes=Neuprint_Meta.csv
 SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv
 NEURON_ARGS=$(for f in $(find Neuprint_Neurons/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 SYNAPSE_ARGS=$(for f in $(find Neuprint_Synapses/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-ELEMENT_ARGS=$(for f in $(find Neuprint_Elements/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-ELMSET_ARGS=$(for f in $(find Neuprint_ElementSets/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+if [[ -d Neuprint_Elements ]]; then
+    ELEMENT_ARGS=$(for f in $(find Neuprint_Elements/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+    ELMSET_ARGS=$(for f in $(find Neuprint_ElementSets/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+fi
 
 if [[ -z "${NEURON_ARGS}" ]]
 then
