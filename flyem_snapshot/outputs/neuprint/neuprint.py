@@ -274,7 +274,7 @@ class NeuprintSentinelSerializer(SentinelSerializer):
 
 
 @PrefixFilter.with_context('neuprint')
-@cached(NeuprintSentinelSerializer('neuprint-export'))
+@cached(NeuprintSentinelSerializer('neuprint-export', True))
 def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
                     syn_roisets, element_roisets, pointlabeler):
     """
