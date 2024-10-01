@@ -1,5 +1,4 @@
 """
-
 Import synapses from disk, filter them, and associate each point with a body ID.
 """
 import os
@@ -10,7 +9,7 @@ import logging
 import numpy as np
 import pyarrow.feather as feather
 
-from neuclease.util import Timer, encode_coords_to_uint64, decode_coords_from_uint64
+from neuclease.util import Timer, timed, encode_coords_to_uint64, decode_coords_from_uint64
 
 from ..util import checksum, cache_dataframe
 from ..caches import cached, SerializerBase
@@ -161,20 +160,11 @@ class RawSynapseSerializer(SynapseSerializerBase):
 def load_synapses(cfg, snapshot_tag, pointlabeler):
     point_df, partner_df = _load_raw_synapses(cfg)
 
-    if pointlabeler:
-        with Timer(f"Updating supervoxels/bodies for UUID {pointlabeler.dvidseg.uuid[:6]}", logger):
-            pointlabeler.update_bodies_for_points(point_df, processes=cfg['processes'])
+    point_df, partner_df = _filter_for_zone(point_df, partner_df, cfg['zone'])
+    point_df, partner_df = _filter_for_confidence(point_df, partner_df, cfg['min-confidence'])
+    logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners after filtering")
 
-    if 'body' not in point_df.columns:
-        raise RuntimeError(
-            "point_df must contain a 'body' column or you "
-            "must provide a dvid segmentation for 'update-to'")
-
-    with Timer("Adding columns to partner table for body_pre, body_post", logger):
-        partner_df = partner_df.drop(columns=['body_pre', 'body_post'], errors='ignore')
-        partner_df = partner_df.merge(point_df['body'], 'left', left_on='pre_id', right_index=True)
-        partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
-
+    point_df, partner_df = _update_body_columns(point_df, partner_df, pointlabeler, cfg['processes'])
     return point_df, partner_df
 
 
@@ -194,6 +184,7 @@ def _load_raw_synapses(cfg):
     if not ({*'zyx'} <= {*point_df.columns}):
         logger.warning("synapse (x,y,z) columns not provided. I'm assuming they can be decoded from 'point_id'")
         point_df[[*'zyx']] = decode_coords_from_uint64(point_df['point_id'].values)
+
     if 'point_id' not in point_df.columns:
         point_df['point_id'] = encode_coords_to_uint64(point_df[[*'zyx']].values)
 
@@ -206,56 +197,72 @@ def _load_raw_synapses(cfg):
     point_df = point_df.set_index('point_id')
     logger.info(f"Loaded {len(point_df)} points and {len(partner_df)} partners")
 
-    with Timer("Dropping unecessary columns and narrowing dtypes", logger):
-        id_cols = {'sv', 'body'} & set(point_df.columns)
-        if id_cols and (point_df[[*id_cols]] <= 2**32).all().all():
-            label_dtype = np.uint32
-        else:
-            label_dtype = np.uint64
+    point_df, partner_df = _streamline_synapse_tables(point_df, partner_df)
+    return point_df, partner_df
 
-        point_df = point_df.drop(
-            errors='ignore',
-            columns=[
-                'roi_label',
-                'user',
-                'tbar_region',
-            ]
-        )
 
-        t = {
-            'conf': np.float32,
-            'sv': label_dtype,
-            'body': label_dtype,
-            'kind': 'category',
-            'roi': 'category',
-        }
-        point_df = point_df.astype({
-            k:v for k,v in t.items()
-            if k in point_df.columns
-        })
+@timed("Dropping unecessary columns and narrowing dtypes", logger)
+def _streamline_synapse_tables(point_df, partner_df):
+    id_cols = {'sv', 'body'} & set(point_df.columns)
+    if id_cols and (point_df[[*id_cols]] <= 2**32).all().all():
+        label_dtype = np.uint32
+    else:
+        label_dtype = np.uint64
 
-        t = {
-            'conf_pre': np.float32,
-            'conf_post': np.float32,
-        }
-        partner_df = partner_df.astype({
-            k:v for k,v in t.items()
-            if k in partner_df.columns
-        })
+    point_df = point_df.drop(
+        errors='ignore',
+        columns=[
+            'roi_label',
+            'user',
+            'tbar_region',
+        ]
+    )
 
-    zone = cfg['zone']
-    with Timer(f"Filtering for zone {zone}", logger):
-        if zone == 'brain':
-            point_df = point_df.loc[point_df['z'] < MALECNS_VNC_CUTOFF_Z].copy()
-            partner_df = partner_df.loc[
-                (partner_df['pre_id'] < MALECNS_VNC_CUTOFF_POINT_ID) &  # noqa
-                (partner_df['post_id'] < MALECNS_VNC_CUTOFF_POINT_ID)].copy()
-        elif zone == 'vnc':
-            point_df = point_df.loc[point_df['z'] >= MALECNS_VNC_CUTOFF_Z].copy()
-            partner_df = partner_df.loc[
-                (partner_df['pre_id'] >= MALECNS_VNC_CUTOFF_POINT_ID) &  # noqa
-                (partner_df['post_id'] >= MALECNS_VNC_CUTOFF_POINT_ID)].copy()
+    t = {
+        'conf': np.float32,
+        'sv': label_dtype,
+        'body': label_dtype,
+        'kind': 'category',
+        'roi': 'category',
+    }
+    point_df = point_df.astype({
+        k:v for k,v in t.items()
+        if k in point_df.columns
+    })
 
+    t = {
+        'conf_pre': np.float32,
+        'conf_post': np.float32,
+    }
+    partner_df = partner_df.astype({
+        k:v for k,v in t.items()
+        if k in partner_df.columns
+    })
+    return point_df, partner_df
+
+
+@timed("Filtering for zone {zone}", logger)
+def _filter_for_zone(point_df, partner_df, zone):
+    assert zone in ('', 'brain', 'vnc')
+    if zone == 'brain':
+        point_df = point_df.loc[point_df['z'] < MALECNS_VNC_CUTOFF_Z].copy()
+        partner_df = partner_df.loc[
+            (partner_df['pre_id'] < MALECNS_VNC_CUTOFF_POINT_ID) &  # noqa
+            (partner_df['post_id'] < MALECNS_VNC_CUTOFF_POINT_ID)].copy()
+    elif zone == 'vnc':
+        point_df = point_df.loc[point_df['z'] >= MALECNS_VNC_CUTOFF_Z].copy()
+        partner_df = partner_df.loc[
+            (partner_df['pre_id'] >= MALECNS_VNC_CUTOFF_POINT_ID) &  # noqa
+            (partner_df['post_id'] >= MALECNS_VNC_CUTOFF_POINT_ID)].copy()
+
+    return point_df, partner_df
+
+
+def _filter_for_confidence(point_df, partner_df, min_conf):
+    """
+    1. Ensure the partner_df contains both 'conf_pre' and 'conf_post'
+    2. Filter both tables to exclude low-confidence synapses, according to min_conf
+    """
     if 'conf_pre' not in partner_df.columns:
         logger.info("Merging conf_pre column onto partner_df")
         partner_df = partner_df.merge(
@@ -263,6 +270,7 @@ def _load_raw_synapses(cfg):
             'left',
             on='pre_id'
         )
+
     if 'conf_post' not in partner_df.columns:
         logger.info("Merging conf_post column onto partner_df")
         partner_df = partner_df.merge(
@@ -271,13 +279,31 @@ def _load_raw_synapses(cfg):
             on='post_id'
         )
 
-    min_conf = cfg['min-confidence']
-    if min_conf > 0.0:
-        with Timer(f"Filtering for min-confidence: {min_conf}", logger):
-            point_df = point_df.loc[point_df['conf'] >= min_conf].copy()
-            partner_df = partner_df.loc[
-                (partner_df['conf_pre'] >= min_conf) &  # noqa
-                (partner_df['conf_post'] >= min_conf)].copy()
+    if min_conf == 0.0:
+        return point_df, partner_df
 
-    logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners")
+    with Timer(f"Filtering for min-confidence: {min_conf}", logger):
+        point_df = point_df.loc[point_df['conf'] >= min_conf].copy()
+        partner_df = partner_df.loc[
+            (partner_df['conf_pre'] >= min_conf) &  # noqa
+            (partner_df['conf_post'] >= min_conf)].copy()
+
+    return point_df, partner_df
+
+
+def _update_body_columns(point_df, partner_df, pointlabeler, processes):
+    if pointlabeler:
+        with Timer(f"Updating supervoxels/bodies for UUID {pointlabeler.dvidseg.uuid[:6]}", logger):
+            pointlabeler.update_bodies_for_points(point_df, processes=processes)
+
+    if 'body' not in point_df.columns:
+        raise RuntimeError(
+            "point_df must contain a 'body' column or you "
+            "must provide a dvid segmentation for 'update-to'")
+
+    with Timer("Adding columns to partner table for body_pre, body_post", logger):
+        partner_df = partner_df.drop(columns=['body_pre', 'body_post'], errors='ignore')
+        partner_df = partner_df.merge(point_df['body'], 'left', left_on='pre_id', right_index=True)
+        partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
+
     return point_df, partner_df

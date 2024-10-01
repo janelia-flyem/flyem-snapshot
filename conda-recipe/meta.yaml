@@ -24,7 +24,7 @@ requirements:
     - holoviews
     - hvplot
     - jinja2
-    - neuclease >=0.7
+    - neuclease >=0.7.2.post4
     - neuprint-python
     - pyarrow
     - requests
