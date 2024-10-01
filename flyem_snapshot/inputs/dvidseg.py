@@ -18,7 +18,7 @@ DvidSegSchema = {
             "default": "",
         },
         "uuid": {
-            "description": "Use ':master' for the current HEAD node, or ':master~1' for it's parent node.",
+            "description": "Use ':master' for the current HEAD node, or ':master~1' for its parent node.",
             "type": "string",
             "default": ":master~1"
         },
@@ -28,6 +28,7 @@ DvidSegSchema = {
             "default": "segmentation"
         },
         "export-mapping": {
+            "description": "Set to true if you'd like to export DVID's in-memory mapping (supervoxel: body) for your own needs.",
             "type": "boolean",
             "default": False
         }
@@ -36,6 +37,12 @@ DvidSegSchema = {
 
 
 def load_dvidseg(cfg, snapshot_tag):
+    """
+    Use the DVID config values to construct a PointLabeler object,
+    which can then be used to extract body IDs from arbitrary
+    coordinates in a DVID segmentation. (For example, to determine
+    the body IDs under synapse locations.)
+    """
     if not cfg['server']:
         return None, None, None
     dvidseg = DvidSeg(cfg['server'], cfg['uuid'], cfg['instance'])

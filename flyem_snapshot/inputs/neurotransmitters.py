@@ -325,8 +325,9 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
 def _compute_body_neurotransmitters(cfg, tbar_df, ann):
     """
     Compute aggregate per-body NT prediction columns, including celltype prediction columns.
-    The body and celltype predictions are merely the most frequent NT
-    prediction from the set of tbars it contains.
+    The body prediction is defined as the most frequent NT prediction from the set of tbars
+    in the body.  Similarly, the celltype prediction is the most frequent NT prediction
+    among all tbars in all bodies belonging to celltype.
 
     If a table of 'ground-truth' (cell type -> NT) is provided in the config,
     then a confusion matrix is computed for the tbar predictions, and that matrix is used
