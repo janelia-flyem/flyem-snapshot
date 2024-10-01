@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 BodySizesSchema = {
     "type": "object",
     "description":
-        "An on-disk cache for body sizes, obtained from a prior uuid.\n"
+        "An on-disk cache for body sizes (voxel counts), obtained from a prior uuid.\n"
         "We'll have to fetch sizes only for those bodies which have been\n"
         "modified since this cache was created.\n",
     "default": {},
@@ -51,7 +51,7 @@ BodySizesSchema = {
 @PrefixFilter.with_context('body-sizes')
 def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
     """
-    Load/export the sizes of the given bodies (after deduplication).
+    Load/export the sizes (voxel count) of the given bodies (after deduplication).
     It's up to the caller to decide which set of bodies to process.
     But for connectivity snapshots, we typically fetch sizes
     ONLY for bodies which have at least one synapse.
@@ -63,27 +63,13 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
     dvidseg = pointlabeler and pointlabeler.dvidseg
     cache_file = cfg['cache-file']
     cache_uuid = cfg['cache-uuid']
+
     if not cache_file and not dvidseg:
         logger.info("No body size info provided. Body sizes will not be emitted.")
         return None
 
     if not cache_file:
-        # No cache: Gotta fetch them all from DVID
-        # (Takes ~1 hour for the full CNS -- would be worse if we had to also fetch sizes of NON-synaptic bodies.)
-        logger.info("No body sizes cache provided.")
-        bodies = pd.unique(np.concatenate(body_lists))
-        with Timer("Loading all neuron sizes from DVID", logger):
-            sizes = fetch_sizes(
-                *dvidseg,
-                bodies,
-                processes=cfg['processes']
-            )
-
-        os.makedirs('tables', exist_ok=True)
-        feather.write_feather(
-            sizes.reset_index(),
-            f'tables/body-size-cache-{snapshot_tag}.feather')
-        return sizes
+        return _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, cfg['processes'])
 
     cached_sizes = feather.read_feather(cache_file).set_index('body')['size']
     if bool(dvidseg) != bool(cache_uuid):
@@ -94,14 +80,7 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
         logger.info("Using cached body sizes without updating from DVID")
         return cached_sizes
 
-    # Note: Using 1 parenthesis and 1 bracket to indicate
-    #       exclusive/inclusive mutation range: (a,b]
-    server, snapshot_uuid, instance = dvidseg
-    delta_range = f"({cache_uuid}, {snapshot_uuid}]"
-    muts = fetch_mutations(server, delta_range, instance)
-    effects = compute_affected_bodies(muts)
-    outofdate_bodies = np.concatenate((effects.changed_bodies, effects.new_bodies))
-    outofdate_bodies = pd.unique(outofdate_bodies)
+    outofdate_bodies = _determine_out_of_date_bodies(dvidseg, cache_uuid)
     if len(outofdate_bodies) == 0:
         return cached_sizes
 
@@ -120,3 +99,34 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
         f'tables/body-size-cache-{snapshot_tag}.feather')
 
     return combined_sizes
+
+
+def _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, processes):
+    # No cache: Gotta fetch them all from DVID
+    # (Takes ~1 hour for the full CNS -- would be worse if we had to also fetch sizes of NON-synaptic bodies.)
+    logger.info("No body sizes cache provided.")
+    bodies = pd.unique(np.concatenate(body_lists))
+    with Timer("Loading all neuron sizes from DVID", logger):
+        sizes = fetch_sizes(
+            *dvidseg,
+            bodies,
+            processes=processes
+        )
+
+    os.makedirs('tables', exist_ok=True)
+    feather.write_feather(
+        sizes.reset_index(),
+        f'tables/body-size-cache-{snapshot_tag}.feather')
+    return sizes
+
+
+def _determine_out_of_date_bodies(dvidseg, cache_uuid):
+    # Note: Using 1 parenthesis and 1 bracket to indicate
+    #       exclusive/inclusive mutation range: (a,b]
+    server, snapshot_uuid, instance = dvidseg
+    delta_range = f"({cache_uuid}, {snapshot_uuid}]"
+    muts = fetch_mutations(server, delta_range, instance)
+    effects = compute_affected_bodies(muts)
+    outofdate_bodies = np.concatenate((effects.changed_bodies, effects.new_bodies))
+    outofdate_bodies = pd.unique(outofdate_bodies)
+    return outofdate_bodies
