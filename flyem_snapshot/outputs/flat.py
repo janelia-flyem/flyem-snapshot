@@ -12,6 +12,8 @@ from ..util import restrict_synapses_to_roi
 
 logger = logging.getLogger(__name__)
 
+MIN_PRIMARY_STATUS = "Sensory Anchor"
+
 FlatConnectomeSchema = {
     "type": "object",
     "default": {},
@@ -56,6 +58,18 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
 
     os.makedirs('flat-connectome', exist_ok=True)
 
+    point_df, partner_df, file_tag = _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf)
+
+    partner_export_df = _export_synapse_partners(cfg, point_df, partner_df, file_tag)
+    _export_weighted_connectome(partner_export_df, file_tag)
+
+    primary_partner_export_df = _export_primary_synapse_partners(ann, partner_export_df, file_tag)
+    _export_primary_weighted_connectome(ann, primary_partner_export_df, file_tag)
+
+    _export_ranked_body_stats(ann, point_df, partner_df, file_tag)
+
+
+def _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf):
     filtering_roiset = cfg['restrict-connectivity-to-roiset']
     if filtering_roiset:
         with Timer(f"Excluding synapses whose ROI is unspecified within roi-set: '{filtering_roiset}'"):
@@ -66,6 +80,10 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     else:
         file_tag = f"{snapshot_tag}-minconf-{min_conf}"
 
+    return point_df, partner_df, file_tag
+
+
+def _export_synapse_partners(cfg, point_df, partner_df, file_tag):
     labeling_roiset = cfg['roi-set']
     with Timer("Constructing synapse partner export", logger):
         partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', labeling_roiset]]
@@ -106,6 +124,10 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             f'flat-connectome/syn-points-{file_tag}.feather'
         )
 
+    return partner_export_df
+
+
+def _export_weighted_connectome(partner_export_df, file_tag):
     with Timer("Constructing weighted connectome", logger):
         connectome = (
             partner_export_df[['body_pre', 'body_post']]
@@ -120,8 +142,9 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             f'flat-connectome/connectome-weights-{file_tag}.feather'
         )
 
+
+def _export_primary_synapse_partners(ann, partner_export_df, file_tag):
     with Timer("Constructing primary-only synapse partner export", logger):
-        MIN_PRIMARY_STATUS = "Sensory Anchor"
         primary_bodies = ann.query(f'status >= "{MIN_PRIMARY_STATUS}"').index
         logger.info(f"There are {len(primary_bodies)} with status '{MIN_PRIMARY_STATUS}' or better.")
         primary_partner_export_df = partner_export_df.query('body_pre in @primary_bodies and body_post in @primary_bodies')
@@ -131,7 +154,10 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             primary_partner_export_df,
             f'flat-connectome/syn-partners-{file_tag}-primary-only.feather'
         )
+    return primary_partner_export_df
 
+
+def _export_primary_weighted_connectome(ann, primary_partner_export_df, file_tag):
     with Timer(f"Constructing primary-only weighted connectome (with only {MIN_PRIMARY_STATUS} or better)", logger):
         primary_connectome = (
             primary_partner_export_df[['body_pre', 'body_post']]
@@ -156,6 +182,8 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
             f'flat-connectome/connectome-weights-{file_tag}-primary-only.feather'
         )
 
+
+def _export_ranked_body_stats(ann, point_df, partner_df, file_tag):
     with Timer("Computing ranked body stats table", logger):
         # A version of this table is also exported for each 'report' in the config,
         # but we also export it here as part of the 'flat' connectome export.
