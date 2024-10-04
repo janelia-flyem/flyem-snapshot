@@ -116,12 +116,10 @@ def _load_element_points(name, table_cfg):
         raise RuntimeError(f"Element table '{name}' doesn't have xyz and/or type columns.")
 
     if 'point_id' in element_df:
-        logger.warning(f"Discarding 'point_id' column from element table '{name}' "
-                       "and regenerating the point_ids from scratch.")
-        del element_df['point_id']
-
-    point_ids = encode_coords_to_uint64(element_df[[*'zyx']].values)
-    element_df.index = pd.Index(point_ids, name='point_id')
+        element_df = element_df.set_index('point_id')
+    else:
+        point_ids = encode_coords_to_uint64(element_df[[*'zyx']].values)
+        element_df.index = pd.Index(point_ids, name='point_id')
 
     return element_df
 

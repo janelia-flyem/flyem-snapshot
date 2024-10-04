@@ -289,6 +289,8 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     (as listed in synpoint_df).
     """
     tbar_df = feather.read_feather(path)
+    if tbar_df.index.name:
+        tbar_df = tbar_df.reset_index()
 
     # Rename columns pre_x, pre_y, pre_z -> x,y,z
     tbar_df = tbar_df.rename(columns={f'pre_{k}':k for k in 'xyz'})
@@ -296,10 +298,9 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     nt_cols = [col for col in tbar_df.columns if col.startswith('nts')]
 
     # Discard extraneous columns
-    cols = [*'xyz', *nt_cols]
-    if 'split' in tbar_df.columns:
-        cols.append('split')
-    tbar_df = tbar_df[cols]
+    keep_cols = [*'xyz', *nt_cols, 'split', 'point_id']
+    keep_cols = [*filter(lambda c: c in tbar_df.columns, keep_cols)]
+    tbar_df = tbar_df[keep_cols]
 
     # Apply user's coordinate scaling factor.
     tbar_df[[*'xyz']] = (tbar_df[[*'xyz']] * rescale).astype(np.int32)
@@ -316,7 +317,9 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     tbar_df = tbar_df.rename(columns=renames)
     nt_cols = list(renames.values())
 
-    tbar_df['point_id'] = encode_coords_to_uint64(tbar_df[[*'zyx']].values)
+    if 'point_id' not in tbar_df.columns:
+        tbar_df['point_id'] = encode_coords_to_uint64(tbar_df[[*'zyx']].values)
+
     tbar_df = tbar_df.set_index('point_id')
 
     # Drop predictions which correspond to synapses we don't have
