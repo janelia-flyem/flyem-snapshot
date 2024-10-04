@@ -259,15 +259,6 @@ NeuprintMetaSchema = {
             "type": "number",
             "default": 0.0
         },
-        "meshHost": {
-            "description":
-                "URL of a DVID server from which ROI meshes (and maybe neuron skeletons??) can be downloaded.\n"
-                "Example values:\n"
-                "  https://hemibrain-dvid.janelia.org\n"
-                "  https://manc-dvid.janelia.org\n",
-            "type": "string",
-            # no default
-        },
         "uuid": {
             "description":
                 "The DVID UUID from which the neuprint snapshot was generated.\n"
@@ -545,7 +536,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
     verbatim_keys = (
         'dataset', 'tag', 'hideDataSet',
         'voxelSize', 'voxelUnits',
-        'info', 'logo', 'meshHost',
+        'info', 'logo',
         'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
         # 'totalPreCount', 'totalPostCount',
         # 'superLevelRois',
@@ -593,6 +584,10 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
     meta['roiHierarchy'] = construct_neuprint_roi_hierarchy(rh)
     meta['roiInfo'] = _load_roi_info(metacfg, roi_totals, rh)
     meta['neuronColumns'] = _load_neuron_columns(metacfg, neuron_df)
+
+    # This is a deprecated field that is no longer used by neuprintExplorer,
+    # but old deployments may balk if it isn't present.
+    meta['meshHost'] = ""
 
     # Just for debug
     dump_json(meta, 'neuprint/Neuprint_Meta_debug.json')
