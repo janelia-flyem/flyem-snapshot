@@ -48,6 +48,7 @@ The implementation below was developed in part to meet the specification shown b
            transmission" or we could put everything into the source field requested in (5) above.
 """
 import os
+import re
 import copy
 import shutil
 import logging
@@ -106,6 +107,12 @@ NeurotransmittersSchema = {
             "type": "object",
             "default": {
                 "neither": "unknown",
+                "glut": "gluatmate",
+                "oct": "octopamine",
+                "da": "dopmaine",
+                "ser": "serotonin",
+                "5ht": "serotonin",
+                "ach": "acetylcholine",
             },
             "additionalProperties": {
                 "type": "string"
@@ -297,10 +304,11 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     # Apply user's coordinate scaling factor.
     tbar_df[[*'xyz']] = (tbar_df[[*'xyz']] * rescale).astype(np.int32)
 
-    # The original table has names like 'nts_8.glutamate',
-    # but we'll convert that to 'nt_glutamate_prob'.
-    nt_names = [c.split('.')[1] for c in nt_cols]
-    nt_names = [translations.get(n, n) for n in nt_names]
+    # The original table may have names like 'nts_8.glutamate' or 'nt_glut_prob',
+    # but we'll convert that to standard form: 'nt_glutamate_prob'.
+    nt_names = [re.sub(r"_prob.*$", "", c) for c in nt_cols]        # remove suffix (if any)
+    nt_names = [re.sub(r".*[._]", "", c) for c in nt_names]         # remove prefix (if any)
+    nt_names = [translations.get(n.lower(), n) for n in nt_names]   # standardize name
     renames = {
         c: 'nt_' + name + '_prob'
         for c, name in zip(nt_cols, nt_names)
