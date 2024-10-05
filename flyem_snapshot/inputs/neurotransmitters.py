@@ -306,7 +306,7 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     tbar_df = tbar_df[keep_cols]
 
     # Apply user's coordinate scaling factor.
-    tbar_df[[*'xyz']] = (tbar_df[[*'xyz']] * rescale).astype(np.int32)
+    tbar_df.loc[:, [*'xyz']] = (tbar_df[[*'xyz']] * rescale).astype(np.int32)
 
     # The original table may have names like 'nts_8.glutamate' or 'nt_glut_prob',
     # but we'll convert that to standard form: 'nt_glutamate_prob'.
@@ -326,7 +326,7 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     tbar_df = tbar_df.set_index('point_id')
 
     # Drop predictions which correspond to synapses we don't have
-    # (due to ROI selection, for example).
+    # (for example, due to ROI selection or min-confidence).
     # Note:
     #   If there are synapses in synpoint_df which are not present in the tbar
     #   predictions, they will have NaN predictions after this merge.
