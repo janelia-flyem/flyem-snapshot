@@ -54,7 +54,10 @@ def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
 
     with Timer("Constructing tbar neurotransmitter table", logger):
         tbar_nt = tbar_nt[[c for c in tbar_nt.columns if c.startswith('nt')]]
-        tbar_df = point_df.query('kind == "PreSyn"')[[*'xyz', 'conf', 'sv', 'body', *cfg['roi-sets']]]
+        tbar_df = point_df.query('kind == "PreSyn"')
+        tbar_cols = [*'xyz', 'conf', 'sv', 'body', *cfg['roi-sets']]
+        tbar_cols = [c for c in tbar_cols if c in tbar_df.columns]
+        tbar_df = tbar_df[tbar_cols]
         tbar_df = tbar_df.merge(tbar_nt, 'left', on='point_id')
 
     if (roiset := cfg['restrict-export']):
