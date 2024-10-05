@@ -230,6 +230,13 @@ def _streamline_synapse_tables(point_df, partner_df):
         if k in point_df.columns
     })
 
+    if point_df['kind'].isnull().any():
+        raise RuntimeError("Synapse 'kind' column must not contain null values")
+
+    syn_kinds = set(point_df['kind'].dtype.categories)
+    if invalid_kinds := syn_kinds - {'PreSyn', 'PostSyn'}:
+        raise RuntimeError(f"Synapse 'kind' column includes unexpected values: {invalid_kinds}")
+
     t = {
         'conf_pre': np.float32,
         'conf_post': np.float32,
