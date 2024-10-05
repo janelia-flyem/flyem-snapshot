@@ -528,7 +528,7 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     #
     # Notes:
     #   - To obtain the most common prediction in each group,
-    #     value_counts().reset_index(groupcol).drop_duplicates(groupcol)
+    #     value_counts().reset_index().drop_duplicates(groupcol)
     #     is much faster than groupby(groupcol).apply(pd.Series.mode).
     #   - sort_values() isn't strictly necessary here, but we use
     #     it to ensure predictable ordering in case of a tie.
@@ -536,9 +536,10 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         pred_df[[groupcol, 'pred1']]
         .value_counts(dropna=False)
         .rename('count')
-        .reset_index(groupcol)
+        .reset_index()
         .sort_values(['count', 'pred1'], ascending=[False, True])
         .drop_duplicates(groupcol)
+        .set_index(groupcol)
         ['pred1']
         .rename('group_pred')
     )
