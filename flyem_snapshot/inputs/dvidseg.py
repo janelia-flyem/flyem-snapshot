@@ -44,7 +44,7 @@ def load_dvidseg(cfg, snapshot_tag):
     the body IDs under synapse locations.)
     """
     if not cfg['server']:
-        return None, None, None
+        return None
     dvidseg = DvidSeg(cfg['server'], cfg['uuid'], cfg['instance'])
 
     mapping = None
