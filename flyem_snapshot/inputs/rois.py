@@ -226,15 +226,12 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
         But that guarantee doesn't hold for all ROI sets (e.g. optic lobe column ROI
         segments, which encode their hex position).
     """
-    roi_ids = roiset_cfg['rois']
-    if not roi_ids:
-        roi_ids = {}
-        if roiset_cfg['source'] != "point-table":
-            msg = (
-                f"Config for roi-set '{roiset_name}' is not valid: You must supply"
-                "the 'rois' (or dict) unless the 'source' is 'point-table'\n"
-            )
-            raise RuntimeError(msg)
+    roi_ids = roiset_cfg['rois'] or {}
+    if not roi_ids and roiset_cfg['source'] != "point-table":
+        raise RuntimeError(
+            f"Config for roi-set '{roiset_name}' is not valid: You must supply"
+            "the 'rois' (or dict) unless the 'source' is 'point-table'\n"
+        )
 
     if isinstance(roi_ids, str) and roi_ids.endswith('.json'):
         roi_ids = json.load(open(roi_ids, 'r'))
@@ -354,35 +351,50 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
 
     If it contains only one or the other, then we calculate the missing one using roi_ids.
     """
+    if not roi_ids and roiset_name not in point_df:
+        raise RuntimeError(
+            f"Your point table lacks the a column named '{roiset_name}',\n"
+            "but you specified no roi names in your config or formula for constructing them.\n"
+        )
+
     if isinstance(roi_ids, str):
         if f'{roiset_name}_label' not in point_df.columns:
             raise RuntimeError(
                 f"If you are specifying {roiset_name} roi_ids via a format string, "
-                f"then you must supply the {roiset_name}_label column.")
+                f"then you must supply the {roiset_name}_label column."
+            )
         unique_ids = point_df[f'{roiset_name}_label'].unique()
         roi_ids = {
             eval(f'f"{roi_ids}"', None, {'x': x}): x  # pylint: disable=eval-used
             for x in unique_ids if x != 0
         }
 
-    if not roi_ids:
-        if roiset_name not in point_df:
-            msg = (f"Your point table lacks the a column named '{roiset_name}',\n"
-                   "but you specified no roi names in your config or formula for constructing them.\n")
-            raise RuntimeError(msg)
-        roi_ids = {n: i for i, n in enumerate(sorted(point_df[roiset_name].unique()), start=1)}
+    if roiset_name in point_df.columns:
+        point_df[roiset_name] = point_df[roiset_name].fillna("<unspecified>")
+        empirical_names = set(point_df[roiset_name].unique())
+        if not roi_ids:
+            roi_ids = {n: i for i, n in enumerate(sorted(empirical_names), start=1)}
+        if '<unspecified>' in empirical_names and '<unspecified>' not in roi_ids:
+            roi_ids['<unspecified>'] = 1 + max(roi_ids.values())
+        if unlisted_rois := empirical_names - set(roi_ids.keys()):
+            raise RuntimeError(
+                f"Your config for ROI column '{roiset_name}' explicitly lists ROI names, but that list is incomplete.\n"
+                f"The following ROIs were found in the data but not in the config:\n"
+                f"{sorted(unlisted_rois)}\n"
+                f"Either list those ROIs explicitly in your config or don't list any at all.\n"
+            )
 
     assert isinstance(roi_ids, dict)
+
     expected_cols = {roiset_name, f'{roiset_name}_label'}
     if not (expected_cols & {*point_df.columns}):
-        msg = (
+        raise RuntimeError(
             f"Since your config specifies that the ROI column '{roiset_name}' "
             "will be supplied by your synapse (or element) table, you must supply "
             "at least one of the following columns in the point table:\n"
-            f"- {roiset_name} (a column of strings or categories)"
-            f"{roiset_name}_label (a column of integer IDs)"
+            f"  - {roiset_name} (a column of strings or categories)\n"
+            f"  - {roiset_name}_label (a column of integer IDs)\n"
         )
-        raise RuntimeError(msg)
 
     # Ensure categorical
     if roiset_name in point_df.columns and not isinstance(point_df[roiset_name].dtype, pd.CategoricalDtype):
