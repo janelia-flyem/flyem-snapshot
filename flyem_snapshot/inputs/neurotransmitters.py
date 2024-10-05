@@ -75,6 +75,7 @@ NeurotransmittersSchema = {
             "description":
                 "Path to an Apache Feather file with neurotransmitter\n"
                 "predictions as produced via the 'synister' tool/method.\n"
+                "Must contain columns like nt_gaba_prob or nts_8.gaba\n"
                 "If body-level (and type-level) confidences are desired, then the table\n"
                 "must also include a 'split' column indicating which synapses were in the 'train' and 'validation' sets\n"
                 "(so we can discard them before computing the confusion matrix).\n",
@@ -295,7 +296,9 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     # Rename columns pre_x, pre_y, pre_z -> x,y,z
     tbar_df = tbar_df.rename(columns={f'pre_{k}':k for k in 'xyz'})
     tbar_df = tbar_df.rename(columns={f'{k}_pre':k for k in 'xyz'})
-    nt_cols = [col for col in tbar_df.columns if col.startswith('nts')]
+    nt_cols = [col for col in tbar_df.columns if re.match('nts|nt_', col)]
+    if len(nt_cols) == 0:
+        raise RuntimeError(f"Could not find any neurotransmiter probability columns in {path}")
 
     # Discard extraneous columns
     keep_cols = [*'xyz', *nt_cols, 'split', 'point_id']
