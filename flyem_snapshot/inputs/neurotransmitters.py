@@ -289,7 +289,7 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     Drop predictions which fall outside of the known synapse set
     (as listed in synpoint_df).
     """
-    tbar_df = feather.read_feather(path)
+    tbar_df = feather.read_feather(path).astype({'body': np.int64})
     if tbar_df.index.name:
         tbar_df = tbar_df.reset_index()
 

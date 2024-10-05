@@ -213,6 +213,7 @@ def _load_raw_annotations(cfg, pointlabeler):
         logger.info(f"Reading body annotations feather file: {table_path.name}")
         ann = feather.read_feather(table_path).set_index('body')
 
+    ann.index = ann.index.astype(np.int64)
     return ann
 
 

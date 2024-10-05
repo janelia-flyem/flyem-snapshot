@@ -71,7 +71,7 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
     if not cache_file:
         return _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, cfg['processes'])
 
-    cached_sizes = feather.read_feather(cache_file).set_index('body')['size']
+    cached_sizes = feather.read_feather(cache_file).astype({'body': np.int64}).set_index('body')['size']
     if bool(dvidseg) != bool(cache_uuid):
         logger.error("body sizes cache is not specified properly; disregarding it.")
         cache_file = cache_uuid = ""
@@ -86,6 +86,7 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
 
     with Timer("Fetching non-cached neuron sizes", logger):
         new_sizes = fetch_sizes(*dvidseg, outofdate_bodies, processes=cfg['processes'])
+        new_sizes.index = new_sizes.index.astype(np.int64)
 
     combined_sizes = (
         new_sizes.to_frame()

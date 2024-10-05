@@ -207,7 +207,7 @@ def _streamline_synapse_tables(point_df, partner_df):
     if id_cols and (point_df[[*id_cols]] <= 2**32).all().all():
         label_dtype = np.uint32
     else:
-        label_dtype = np.uint64
+        label_dtype = np.int64
 
     point_df = point_df.drop(
         errors='ignore',
@@ -302,6 +302,7 @@ def _update_body_columns(point_df, partner_df, pointlabeler, processes):
     if pointlabeler:
         with Timer(f"Updating supervoxels/bodies for UUID {pointlabeler.dvidseg.uuid[:6]}", logger):
             pointlabeler.update_bodies_for_points(point_df, processes=processes)
+            point_df = point_df.astype({'body': np.int64, 'sv': np.int64})
 
     if 'body' not in point_df.columns:
         raise RuntimeError(

@@ -4,6 +4,7 @@ Import "elements" (point objects) from disk, filter them, and associate each poi
 import os
 import logging
 
+import numpy as np
 import pandas as pd
 import pyarrow.feather as feather
 
@@ -90,6 +91,7 @@ def load_elements(cfg, pointlabeler):
             # Inserts new columns for 'body' and 'sv', in-place.
             # FIXME: This assumes DVID is used. We need a config option to just trust the input body column.
             pointlabeler.update_bodies_for_points(point_df, cfg['processes'])
+            point_df = point_df.astype({'body': np.int64, 'sv': np.int64})
 
     return element_dfs
 
@@ -105,6 +107,8 @@ def _load_element_points(name, table_cfg):
             element_df = pd.read_csv(path)
         else:
             element_df = feather.read_feather(path)
+
+    element_df = element_df.astype({'body': np.int64})
 
     if (cfg_type := table_cfg['type']):
         if 'type' in element_df.columns and (element_df['type'] != cfg_type).any():
