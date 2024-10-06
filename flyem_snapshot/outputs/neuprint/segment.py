@@ -91,7 +91,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, bod
     # in each ROI and also the whole dataset.
     roi_totals = (
         roi_elm_df
-        .groupby(level='roi')[['pre', 'post']].sum()
+        .groupby(level='roi', observed=False)[['pre', 'post']].sum()
         .query('roi != "<unspecified>"')
     )
 
