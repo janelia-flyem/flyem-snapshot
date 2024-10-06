@@ -68,10 +68,10 @@ RETURN datetime() as time, ":Segment/:Neuron annotation property {{loop.index}}/
 //
 // Segment/Neuron ROI properties
 //
-{% for roi in rois %}
+{% for roi in segment_rois %}
 CREATE INDEX ON :`{{dataset}}_Segment`(`{{roi}}`);
 CREATE INDEX ON :`{{dataset}}_Neuron`(`{{roi}}`);
-RETURN datetime() as time, ":Segment/:Neuron ROI property {{loop.index}}/{{rois|count}}: Initiated index creation for '{{roi}}'" as message;
+RETURN datetime() as time, ":Segment/:Neuron ROI property {{loop.index}}/{{segment_rois|count}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 
 // Indexing is performed in the background,

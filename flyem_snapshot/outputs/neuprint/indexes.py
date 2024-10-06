@@ -56,21 +56,19 @@ IndexesSettingsSchema = {
 }
 
 
-def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roisets, element_roisets):
+def export_neuprint_indexes_script(cfg, neuron_columns, all_rois, synapse_roisets, element_roisets):
     """
     Using the jinja template stored in create-indexes.cypher,
     export a script of cypher commands that will create indexes for all
     :Neuron/:Segment properties, including ROI properties, except for
     those excluded via the config.
 
-    TODO: Actually index the other element rois.
-
     Args:
         cfg:
             The 'neuprint' subsection of the main config.
         neuron_prop_names:
             The names of all :Segment properties except for ROI properties
-        roi_names:
+        all_rois:
             The names of all ROIs actually found in the data.
             (If the config lists ROIs that didn't end up being used, we won't try to index them.)
         synapse_roisets:
@@ -89,22 +87,30 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roise
                     }
                 }
     """
+    segment_rois = _segment_rois_to_index(cfg, all_rois, synapse_roisets)
+    element_rois_to_index = _element_rois_to_index(cfg, element_roisets)
+    neuron_prop_names = _neuron_properties_to_index(cfg, neuron_columns)
+    _render_indexing_script(
+        cfg['meta']['dataset'],
+        neuron_prop_names,
+        segment_rois,
+        element_rois_to_index
+    )
+
+
+def _segment_rois_to_index(cfg, all_rois, synapse_roisets):
     exclude_props = set(cfg['indexes']['exclude-properties'])
     exclude_roisets = cfg['indexes']['exclude-roisets']
     exclude_rois = set(chain(*[synapse_roisets[roiset].keys() for roiset in exclude_roisets]))
+    segment_rois = sorted(set(all_rois) - exclude_props - exclude_rois)
+    return segment_rois
 
-    # Note:
-    #   We don't need to explicitly create an index for bodyId because
-    #   our script adds a uniqueness constraint, which automatically
-    #   creates an index, too. (We'll get an error from neo4j if we
-    #   attempt to create an additional index.)
-    neuron_prop_splits = [name.split(':', 1) for name in neuron_columns if ':' in name]
-    neuron_prop_names = [name for (name, dtype) in neuron_prop_splits if name and dtype != "IGNORE"]
-    neuron_prop_names = sorted(set(neuron_prop_names) - exclude_props - {'bodyId'})
-    roi_names = sorted(set(roi_names) - exclude_props - exclude_rois)
 
-    indexed_label_roisets = {item['neuprint-label']: item['roisets']
-                             for item in cfg['indexes']['element-roisets-to-index']}
+def _element_rois_to_index(cfg, element_roisets):
+    indexed_label_roisets = {
+        item['neuprint-label']: item['roisets']
+        for item in cfg['indexes']['element-roisets-to-index']
+    }
 
     invalid_labels = {*indexed_label_roisets.keys()} - {*cfg['element-labels'].values()}
     if invalid_labels:
@@ -120,13 +126,29 @@ def export_neuprint_indexes_script(cfg, neuron_columns, roi_names, synapse_roise
         element_rois_to_index[label] = rois
 
     element_rois_to_index = {k: sorted(v) for k,v in element_rois_to_index.items()}
+    return element_rois_to_index
 
+
+def _neuron_properties_to_index(cfg, neuron_columns):
+    # Note:
+    #   We don't need to explicitly create an index for bodyId because
+    #   our script already adds a uniqueness constraint, which automatically
+    #   creates an index, too. (We'll get an error from neo4j if we
+    #   attempt to create an additional index.)
+    exclude_props = set(cfg['indexes']['exclude-properties'])
+    neuron_prop_splits = [name.split(':', 1) for name in neuron_columns if ':' in name]
+    neuron_prop_names = [name for (name, dtype) in neuron_prop_splits if name and dtype != "IGNORE"]
+    neuron_prop_names = sorted(set(neuron_prop_names) - exclude_props - {'bodyId'})
+    return neuron_prop_names
+
+
+def _render_indexing_script(dataset_name, neuron_prop_names, segment_rois, element_rois_to_index):
     env = Environment(loader=PackageLoader('flyem_snapshot.outputs.neuprint'))
     template = env.get_template('create-indexes.cypher')
     rendered = template.render({
         'segment_properties': neuron_prop_names,
-        'rois': roi_names,
-        'dataset': cfg['meta']['dataset'],
+        'segment_rois': segment_rois,
+        'dataset': dataset_name,
         'element_rois_to_index': element_rois_to_index,
     })
 
