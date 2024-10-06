@@ -17,11 +17,14 @@ RETURN datetime() as time, "Creating uniqueness constraint on bodyId" as message
 CREATE CONSTRAINT ON ( `{{dataset}}segment`:`{{dataset}}_Segment` ) ASSERT `{{dataset}}segment`.bodyId IS UNIQUE;
 CREATE CONSTRAINT ON ( `{{dataset}}neuron`:`{{dataset}}_Neuron` ) ASSERT `{{dataset}}neuron`.bodyId IS UNIQUE;
 
-// This is a good constraint to check, since the assumption that
-// all Element points are unique is baked in to the neuprint data model.
-// This will implicitly create an index on all Element locations,
-// which is essential for spatial queries.
-CREATE CONSTRAINT ON ( `{{dataset}}element`:`{{dataset}}_Element` ) ASSERT `{{dataset}}element`.location IS UNIQUE;
+// We used to enforce a uniqueness constraint on Element.location, but there is technically no need for
+// that if the Synapse/Element point_id was provided directly by the user (via their feather files).
+// And even if we calculated the point_ids ourselves, duplicate locations would result in duplicate Element-IDs
+// and the neo4j node ingestion would fail long before this script is called.
+// CREATE CONSTRAINT ON ( `{{dataset}}element`:`{{dataset}}_Element` ) ASSERT `{{dataset}}element`.location IS UNIQUE;
+
+// Create spatial index for Element (including Synapse) location.
+CREATE POINT INDEX `{{dataset}}ElementLocation` FOR (n:`{{dataset}}_Element`) ON (n.location);
 RETURN datetime() as time, ":Element.location: Initiated index creation" as message;
 
 // I have no idea what this DataModel node is, so it's possible this line
