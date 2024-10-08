@@ -267,7 +267,6 @@ NeuprintMetaSchema = {
                 "synapse tables (without DVID). Otherwise, let it be configured automatically.\n",
             "type": "string",
             "default": ""
-
         },
         "latestMutationId": {
             "description":
@@ -569,6 +568,14 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
             meta['latestMutationId'] = last_mutation['mutid']
         if not metacfg['lastDatabaseEdit']:
             meta['lastDatabaseEdit'] = str(last_mutation['timestamp'])
+    else:
+        # These must not be empty strings or neuprintHTTP will crash.
+        if not metacfg['uuid']:
+            meta['uuid'] = 'unknown'
+        if not metacfg['latestMutationId']:
+            meta['latestMutationId'] = 0
+        if not metacfg['lastDatabaseEdit']:
+            meta['lastDatabaseEdit'] = 'unknown'
 
     # These were determined during the snapshot export.
     meta['totalPreCount'] = dataset_totals['pre']
@@ -686,7 +693,7 @@ def _export_meta_as_csv(meta):
     meta_df = pd.DataFrame({k: [v] for k,v in meta.items()})
     meta_df = meta_df.rename(columns={
         prop: f'{prop}:{dtype}'
-        for prop,dtype in NEUPRINT_META_LIST_PROPERTIES.items()
+        for prop, dtype in NEUPRINT_META_LIST_PROPERTIES.items()
     })
     meta_df = append_neo4j_type_suffixes(meta_df)
     meta_df.to_csv('neuprint/Neuprint_Meta.csv', index=False, header=True)
