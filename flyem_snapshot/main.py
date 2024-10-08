@@ -136,10 +136,10 @@ def main(args):
     For argument definitions, see bin/flyem_snapshot_entrypoint.py
     """
     cfg, config_dir = process_args_and_parse_config(args)
-    init_logging(cfg['job-settings']['logging-config'])
 
     with Timer("Processing snapshot", logger, log_start=False):
-        main_impl(cfg, config_dir)
+        main_setup(cfg, config_dir)
+        main_impl(cfg)
 
     logger.info("DONE")
 
@@ -187,26 +187,9 @@ def process_args_and_parse_config(args):
     return cfg, config_dir
 
 
-def init_logging(log_cfg):
-    logging.captureWarnings(True)
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s %(message)s')
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-    handler.addFilter(PrefixFilter())
+def main_setup(cfg, config_dir):
+    init_logging(cfg['job-settings']['logging-config'])
 
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
-
-    assert log_cfg.setdefault('version', 1) == 1, \
-        "Python logging config version should be 1"
-    assert log_cfg.setdefault('incremental', True), \
-        "Only incremenetal logging configuration is supported via the config file."
-    logging.config.dictConfig(log_cfg)
-
-
-def main_impl(cfg, config_dir):
     logger.info(f"Running with flyem-snapshot {__version__}")
     log_lsf_details(logger)
 
@@ -216,7 +199,8 @@ def main_impl(cfg, config_dir):
     standardize_config(cfg, config_dir)
     initialize_output_dir(cfg)
 
-    # All subsequent processing occurs from within the output-dir
+
+def main_impl(cfg):
     output_dir = cfg['job-settings']['output-dir']
     logger.info(f"Working in {output_dir}")
     with switch_cwd(output_dir):
@@ -415,6 +399,25 @@ def determine_snapshot_tag(cfg, config_dir):
         output_dir = os.path.abspath(snapshot_tag)
 
     return uuid, snapshot_tag, output_dir
+
+
+def init_logging(log_cfg):
+    logging.captureWarnings(True)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s %(message)s')
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    handler.addFilter(PrefixFilter())
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
+    assert log_cfg.setdefault('version', 1) == 1, \
+        "Python logging config version should be 1"
+    assert log_cfg.setdefault('incremental', True), \
+        "Only incremenetal logging configuration is supported via the config file."
+    logging.config.dictConfig(log_cfg)
 
 
 def standardize_config(cfg, config_dir):
