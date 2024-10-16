@@ -68,6 +68,14 @@ RoiSetSchema = {
                 }
             ]
         },
+        "rename-rois": {
+            "description": "Optionally rename a subset of the ROIs after loading them from disk/dvid.",
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+                "type": "string"
+            },
+        },
         "source": {
             "description":
                 "Whether to load the ROIs from DVID or to use a column in the synapse (or element) point table input,\n"
@@ -170,7 +178,12 @@ def load_point_rois(cfg, point_df, roiset_names):
     for roiset_name in roiset_names:
         roiset_cfg = cfg['roi-sets'][roiset_name]
         roi_ids = _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, cfg['dvid'], cfg['processes'])
+
+        assert np.issubdtype(point_df[f"{roiset_name}_label"].dtype, np.integer)
+        assert point_df[roiset_name].dtype == "category"
         assert isinstance(roi_ids, dict)
+
+        roi_ids = _apply_roi_renames(point_df, roiset_name, roi_ids, roiset_cfg['rename-rois'])
         roisets[roiset_name] = roi_ids
 
     return point_df, roisets
@@ -197,8 +210,8 @@ def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, proces
     and that the name column is of Categorical dtype.
     Modifies point_df IN-PLACE.
 
-    Returns the dict of roi_ids which was either loaded directly from the
-    user's config or extracted from the ROI data itself.
+    Returns the dict of roi_ids {name: int} which was either loaded directly
+    from the user's config or extracted from the ROI data itself.
 
     There are different possible sources of the ROI column data,
     depending on the 'source' specified in the user's config:
@@ -493,6 +506,19 @@ def _load_roi_vol_from_dvid(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, p
         )
     roi_vol, roi_box, _ = fetch_combined_roi_volume(*dvid_node, roi_ids, processes=processes)
     return roi_vol, roi_box
+
+
+def _apply_roi_renames(point_df, roiset_name, roi_ids, renames):
+    if not renames:
+        return roi_ids
+
+    full_renames = {k: k for k in roi_ids}
+    full_renames |= renames
+
+    point_df[roiset_name] = point_df[roiset_name].cat.rename_categories(full_renames)
+
+    roi_ids = {full_renames[k]: v for k,v in roi_ids.items()}
+    return roi_ids
 
 
 class RoiVolCache:
