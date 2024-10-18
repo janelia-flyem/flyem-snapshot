@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from graphlib import TopologicalSorter
 from itertools import chain
 from collections import namedtuple
 
@@ -102,6 +103,27 @@ RoiSetSchema = {
             "type": "string",
             "default": ""
         },
+        "parent-roiset": {
+            "description":
+                "Optional. If you list the name of another roiset here, then unlabeled points\n"
+                "in the current roiset will not be given label 0 ('<unspecified>').\n"
+                "Instead, they will be given a name according to the corresponding ROI from\n"
+                "the 'parent' roiset, such as 'Brain-unspecified'.\n",
+                "Note: The parent roiset MUST be listed in the config BEFORE the roiset(s) that reference it.\n"
+            "type": "string",
+            "default": ""
+        },
+        "parent-rois": {
+            "description":
+                "If you list a parent-roiset, you should list the particular ROIs from that\n"
+                "roiset which actually have child ROIs and thus have 'leftover' portions which\n"
+                "should be identified.\n",
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": []
+        }
     }
 }
 
@@ -178,14 +200,12 @@ def load_point_rois(cfg, point_df, roiset_names):
     for roiset_name in roiset_names:
         roiset_cfg = cfg['roi-sets'][roiset_name]
         roi_ids = _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, cfg['dvid'], cfg['processes'])
-
-        assert np.issubdtype(point_df[f"{roiset_name}_label"].dtype, np.integer)
-        assert point_df[roiset_name].dtype == "category"
-        assert isinstance(roi_ids, dict)
-
         roi_ids = _apply_roi_renames(point_df, roiset_name, roi_ids, roiset_cfg['rename-rois'])
         roisets[roiset_name] = roi_ids
 
+    _check_duplicate_rois(roisets)
+
+    roisets = _replace_unspecified_with_parent_rois(cfg, point_df, roisets)
     return point_df, roisets
 
 
@@ -205,6 +225,24 @@ def merge_partner_rois(cfg, point_df, partner_df, roiset_names):
 @PrefixFilter.with_context("roiset '{roiset_name}'")
 @timed("Loading ROI columns")
 def _load_columns_for_roiset(roiset_name, roiset_cfg, point_df, dvid_cfg, processes):
+    roi_ids = _load_columns_for_roiset_impl(roiset_name, roiset_cfg, point_df, dvid_cfg, processes)
+
+    # Check postconditions
+    assert np.issubdtype(point_df[f"{roiset_name}_label"].dtype, np.integer)
+    assert point_df[roiset_name].dtype == "category"
+    assert isinstance(roi_ids, dict)
+
+    if '<unspecified>' in point_df[roiset_name].dtype.categories:
+        assert (u := roi_ids.get('<unspecified>')) == 0, \
+            f"Non-zero '<unspecified>' label: {u}"
+    else:
+        assert '<unspecified>' not in roi_ids, \
+            "Did not expect to see '<unspecified>' in roi_ids, since it is not in the categories."
+
+    return roi_ids
+
+
+def _load_columns_for_roiset_impl(roiset_name, roiset_cfg, point_df, dvid_cfg, processes):
     """
     Ensure that point_df contains name and label columns for the given roiset,
     and that the name column is of Categorical dtype.
@@ -519,6 +557,108 @@ def _apply_roi_renames(point_df, roiset_name, roi_ids, renames):
 
     roi_ids = {full_renames[k]: v for k,v in roi_ids.items()}
     return roi_ids
+
+
+def _check_duplicate_rois(roisets):
+    all_rois = pd.Series([
+        k
+        for d in roisets.values()
+        for k in d.keys()
+        if k != '<unspecified>'
+    ])
+
+    vc = all_rois.value_counts()
+    duplicate_rois = vc[vc > 1].index.tolist()
+    if duplicate_rois:
+        raise RuntimeError(f"ROIs duplicated in multiple roisets: {duplicate_rois}")
+
+
+def _replace_unspecified_with_parent_rois(cfg, point_df, roisets):
+    """
+    For roisets (columns) which ended up with any <unspecified> points (i.e. label 0),
+    those point ROIs can be overwritten with a value from the 'parent' roiset column.
+
+    For example if we initially loaded this:
+
+        x  y  z  shell        primary     subprimary
+        1  2  3  Brain          ME(R)   ME_layer_1_R
+        4  5  6  Brain  <unspecified>  <unspecified>
+        7  8  9    VNC            ANm  <unspecified>
+        0  1  2    VNC  <unspecified>  <unspecified>
+
+    and 'shell' is the 'parent-roiset' of the 'primary' roiset, which is in turn
+    the parent of the 'subprimary' roiset, then the final table will be:
+
+        x  y  z  shell            primary       subprimary
+        1  2  3  Brain              ME(R)     ME_layer_1_R
+        4  5  6  Brain  Brain-unspecified    <unspecified>
+        7  8  9    VNC                ANm  ANm-unspecified
+        0  1  2    VNC    VNC-unspecified    <unspecified>
+
+    Note that the <unspecified> values are only replaced if the parent column has an actual ROI to offer.
+    """
+    # To ensure correct propagation from upstream roisets to downstream roisets,
+    # we must process roisets in topological order.
+    # In the config, we don't require the roisets to be listed in topological order,
+    # so we must compute that order ourselves.
+    ts = TopologicalSorter()
+    for roiset_name in roisets.keys():
+        parent = cfg['roi-sets'][roiset_name]['parent-roiset']
+        if parent:
+            ts.add(roiset_name, parent)
+
+    for roiset_name in ts.static_order():
+        parent = cfg['roi-sets'][roiset_name]['parent-roiset']
+        roi_ids = roisets[roiset_name]
+        if not parent or '<unspecified>' not in roi_ids:
+            continue
+
+        parent_rois = cfg['roi-sets'][roiset_name]['parent-rois']
+        if any('unspecified' in roi for roi in parent_rois):
+            raise RuntimeError("Parent rois cannot include any ROI with 'unspecified' in the name.")
+
+        # Copy the parent ROI of points for which the parent has an ROI to inherit (not '<unspecified>')
+        replaceable_points = (point_df[roiset_name] == '<unspecified>') & point_df[parent].isin(parent_rois)
+        parent_rois = point_df.loc[replaceable_points, parent].unique()
+        point_df[roiset_name] = point_df[roiset_name].cat.add_categories(parent_rois)
+
+        child_dtype = point_df[roiset_name].dtype
+        point_df.loc[replaceable_points, roiset_name] = point_df.loc[replaceable_points, parent].astype(child_dtype)
+
+        # Rename the ROIs copied from the parent, keeping
+        # the optional suffix (L) or (R) at the end.
+        # For example:
+        #  - Brain -> Brain-unspecified
+        #  - MB(R) -> MB-unspecified(R)
+        base_rgx = r".+?"  # non-greedy, to avoid consuming the suffix (if present).
+        suffix_rgx = r"\([LR]\)"
+        parent_parts = (
+            pd.Series(parent_rois)
+            .str.extract(f"^({base_rgx})({suffix_rgx})?$").fillna('')
+            .values.tolist()
+        )
+
+        renames = {}
+        max_label = max(roi_ids.values())
+        for parent, (base, suffix) in zip(parent_rois, parent_parts):
+            new_roi = f"{base}-unspecified{suffix}"
+            renames[parent] = new_roi
+
+            # Introduce a new integer label for the new ROI
+            roi_ids[new_roi] = max_label = 1 + max_label
+
+        point_df[roiset_name] = (
+            point_df[roiset_name]
+            .cat.rename_categories(renames)
+            .cat.remove_unused_categories()
+        )
+        if '<unspecified>' not in point_df[roiset_name].dtype.categories:
+            del roi_ids['<unspecified>']
+
+        # Replace zeros in {name}_label with the new labels
+        point_df.loc[replaceable_points, f"{roiset_name}_label"] = point_df.loc[replaceable_points, roiset_name].map(roi_ids)
+
+    return roisets
 
 
 class RoiVolCache:
