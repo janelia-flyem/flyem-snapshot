@@ -311,6 +311,15 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     point_df = point_df.loc[point_df['body'] != 0]
     partner_df = partner_df.loc[(partner_df['body_pre'] != 0) & (partner_df['body_post'] != 0)]
 
+    # We don't store neuprint properties for the "<unspecified>" ROI.
+    syn_roisets = copy.deepcopy(syn_roisets)
+    for roi_ids in syn_roisets.values():
+        roi_ids.pop('<unspecified>', None)
+
+    element_roisets = copy.deepcopy(element_roisets)
+    for roi_ids in element_roisets.values():
+        roi_ids.pop('<unspecified>', None)
+
     neuprint_ann = neuprint_segment_annotations(cfg, ann)
 
     point_df, partner_df = restrict_synapses_for_setting(
@@ -347,7 +356,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
 
     connectome = export_neuprint_segment_connections(cfg, partner_df)
 
-    # FIXME: It would be good to verify that there are no duplicated Element points (including Synapses)
+    # TODO: It would be good to verify that there are no duplicated Element IDs (including Synapses)
     export_neuprint_elementsets(cfg, element_tables, connectome)
     export_neuprint_elements(cfg, element_tables, element_roisets)
     export_neuprint_elements_closeto(element_tables)
