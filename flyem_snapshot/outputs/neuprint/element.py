@@ -118,7 +118,13 @@ def export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
         roi_segment_id = df[f'{roiset}_label'].iloc[0]
         if roi_segment_id == 0:
             continue
+
         for prop_name, formula in prop_cfg.items():
+            if prop_name in df.columns:
+                raise RuntimeError(
+                    f"roi-synapse-properties: {roiset}: {prop_name} has already been set;\n"
+                    "property names should not be duplicated within the same ROI."
+                )
             df[prop_name] = eval(formula, None, {'x': roi_segment_id})  # pylint: disable=eval-used
             extra_props.append(prop_name)
 
