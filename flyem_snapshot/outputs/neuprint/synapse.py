@@ -9,7 +9,7 @@ from neuclease.util import timed, compute_parallel, snakecase_to_camelcase
 
 from .util import append_neo4j_type_suffixes
 
-from .element import _export_element_group_csv
+from .element import export_element_group_csv
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def export_neuprint_synapses(cfg, point_df, tbar_nt):
     point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
 
     _export_fn = partial(
-        _export_element_group_csv,
+        export_element_group_csv,
         'neuprint/Neuprint_Synapses',
         roi_syn_props
     )

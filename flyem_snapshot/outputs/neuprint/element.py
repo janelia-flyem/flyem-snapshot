@@ -70,7 +70,7 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
     export_subdir = f'neuprint/Neuprint_Elements/{config_name}'
     os.makedirs(export_subdir, exist_ok=True)
     _export_fn = partial(
-        _export_element_group_csv,
+        export_element_group_csv,
         export_subdir,
         roi_syn_props,
     )
@@ -89,11 +89,14 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
         )
 
 
-def _export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
+def export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
     """
     Element a single CSV file of Element nodes, in which the ROI for all
     points in the group are homogenous (i.e. all ROI columns are the same
     in every row).
+
+    Note:
+        This function is called from both element.py and synapse.py
     """
     # A pandas bug causes groupby to unwrap single-item lists into a string.
     # It will be fixed in a new version of pandas, but for now we need this workaround.
@@ -111,7 +114,7 @@ def _export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
     extra_props = []
     for roiset, prop_cfg in roi_syn_props.items():
         assert (df[roiset] == df[roiset].iloc[0]).all(), \
-            "_export_element_group_csv is supposed to be called exclusively with homogenous ROI columns."
+            "export_element_group_csv is supposed to be called exclusively with homogenous ROI columns."
         roi_segment_id = df[f'{roiset}_label'].iloc[0]
         if roi_segment_id == 0:
             continue
