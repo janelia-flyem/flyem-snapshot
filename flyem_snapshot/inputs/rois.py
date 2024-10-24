@@ -498,9 +498,8 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
     if roiset_name in point_df.columns and not isinstance(point_df[roiset_name].dtype, pd.CategoricalDtype):
         point_df[roiset_name] = point_df[roiset_name].astype('category')
 
-    assert roi_ids.get('<unspecified>') == 0 or ('<unspecified>' not in point_df[roiset_name].dtype.categories)
-
     if expected_cols <= {*point_df.columns}:
+        assert roi_ids.get('<unspecified>') == 0 or ('<unspecified>' not in point_df[roiset_name].dtype.categories)
         # Necessary columns are already present
         return roi_ids
 
@@ -516,6 +515,7 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
             logger.warning("ROI IDs are not unique; precise mapping of ROI labels to ROI names is undefined.")
         point_df[roiset_name] = point_df[f'{roiset_name}_label'].map(reverse_ids).astype('category')
 
+    assert roi_ids.get('<unspecified>') == 0 or ('<unspecified>' not in point_df[roiset_name].dtype.categories)
     return roi_ids
 
 
