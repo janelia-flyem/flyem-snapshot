@@ -101,7 +101,17 @@ def export_neuprint_indexes_script(cfg, neuron_columns, all_rois, synapse_roiset
 def _segment_rois_to_index(cfg, all_rois, synapse_roisets):
     exclude_props = set(cfg['indexes']['exclude-properties'])
     exclude_roisets = cfg['indexes']['exclude-roisets']
-    exclude_rois = set(chain(*[synapse_roisets[roiset].keys() for roiset in exclude_roisets]))
+    if non_synapse_roisets := set(exclude_roisets) - set(synapse_roisets.keys()):
+        logger.warning(
+            "neuprint.indexes.exclude-roisets includes unknown "
+            f"(non-synapse) roisets: {non_synapse_roisets}"
+        )
+
+    exclude_roi_lists = [
+        synapse_roisets.get(roiset, {}).keys()
+        for roiset in exclude_roisets
+    ]
+    exclude_rois = set(chain(*exclude_roi_lists))
     segment_rois = sorted(set(all_rois) - exclude_props - exclude_rois)
     return segment_rois
 
