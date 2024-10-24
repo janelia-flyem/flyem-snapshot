@@ -108,8 +108,6 @@ def _load_element_points(name, table_cfg):
         else:
             element_df = feather.read_feather(path)
 
-    element_df = element_df.astype({'body': np.int64})
-
     if (cfg_type := table_cfg['type']):
         if 'type' in element_df.columns and (element_df['type'] != cfg_type).any():
             raise RuntimeError(f"Element table '{name}' has a type column that does "
