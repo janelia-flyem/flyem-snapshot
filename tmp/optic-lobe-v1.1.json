@@ -1,0 +1,380 @@
+{
+    "title": "optic-lobe-v1.1",
+    "dimensions": {
+        "x": [
+            8e-9,
+            "m"
+        ],
+        "y": [
+            8e-9,
+            "m"
+        ],
+        "z": [
+            8e-9,
+            "m"
+        ]
+    },
+    "position": [
+        20523,
+        34569,
+        34213
+    ],
+    "crossSectionScale": 81.45086866496816,
+    "projectionScale": 107114.03033810652,
+    "layers": [
+        {
+            "type": "image",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/grayscale-clahe-jpeg",
+                "subsources": {
+                    "default": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "tab": "rendering",
+            "name": "em"
+        },
+        {
+            "type": "segmentation",
+            "source": [
+                {
+                    "url": "precomputed://gs://flyem-optic-lobe/v1.1/segmentation",
+                    "subsources": {
+                        "default": true,
+                        "properties": true,
+                        "mesh": true
+                    },
+                    "enableDefaultSubsources": false
+                },
+                {
+                    "url": "precomputed://gs://flyem-optic-lobe/v1.1/segmentation/single-res-meshes",
+                    "enableDefaultSubsources": false
+                }
+            ],
+            "toolBindings": {
+                "Q": "selectSegments"
+            },
+            "tab": "segments",
+            "segments": [],
+            "name": "optic-lobe:v1.1"
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/fullbrain-major-shells",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "rendering",
+            "selectedAlpha": 0,
+            "saturation": 0,
+            "meshSilhouetteRendering": 7,
+            "segments": [
+                "1",
+                "2",
+                "3"
+            ],
+            "colorSeed": 1336242844,
+            "segmentDefaultColor": "#ffffff",
+            "name": "neuropil-shell"
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/fullbrain-roi-v3.7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "selectedAlpha": 0,
+            "meshSilhouetteRendering": 4,
+            "segments": [
+                "4",
+                "38",
+                "44",
+                "46",
+                "48"
+            ],
+            "name": "roi",
+            "visible": false
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/LO(R)-columns-v7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "segments": [],
+            "colorSeed": 1119163746,
+            "name": "LO(R)-columns",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/LO(R)-layers-v7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "segments": [],
+            "colorSeed": 1119163746,
+            "name": "LO(R)-layers",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/LOP(R)-columns-v7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "segments": [],
+            "colorSeed": 1119163746,
+            "name": "LOP(R)-columns",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/LOP(R)-layers-v7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "segments": [],
+            "colorSeed": 1119163746,
+            "name": "LOP(R)-layers",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/ME(R)-columns-v7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "segments": [],
+            "colorSeed": 1119163746,
+            "name": "ME(R)-columns",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/ME(R)-layers-v7",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "segments",
+            "segments": [],
+            "colorSeed": 1119163746,
+            "name": "ME(R)-layers",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/brain-shell-v2.2",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "rendering",
+            "selectedAlpha": 0,
+            "saturation": 0,
+            "meshSilhouetteRendering": 5.9,
+            "segments": [
+                "1"
+            ],
+            "colorSeed": 1336242844,
+            "segmentDefaultColor": "#ffffff",
+            "name": "brain-shell",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/brain-shell-with-lamina-v2.1",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "rendering",
+            "selectedAlpha": 0,
+            "saturation": 0,
+            "meshSilhouetteRendering": 7,
+            "segments": [
+                "1"
+            ],
+            "colorSeed": 1336242844,
+            "segmentDefaultColor": "#ffffff",
+            "name": "brain-shell-with-lamina",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/vnc-shell",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "rendering",
+            "selectedAlpha": 0,
+            "saturation": 0,
+            "meshSilhouetteRendering": 7,
+            "segments": [
+                "1"
+            ],
+            "colorSeed": 1336242844,
+            "segmentDefaultColor": "#ffffff",
+            "name": "vnc-shell",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/OL(R)-v1",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "rendering",
+            "meshSilhouetteRendering": 4,
+            "segments": [
+                "1"
+            ],
+            "segmentDefaultColor": "#ffffff",
+            "name": "OL(R)",
+            "archived": true
+        },
+        {
+            "type": "segmentation",
+            "source": {
+                "url": "precomputed://gs://flyem-optic-lobe/rois/OL(R)-release",
+                "subsources": {
+                    "default": true,
+                    "properties": true,
+                    "mesh": true
+                },
+                "enableDefaultSubsources": false
+            },
+            "pick": false,
+            "tab": "rendering",
+            "objectAlpha": 0.3,
+            "segments": [
+                "1"
+            ],
+            "segmentDefaultColor": "#ffffff",
+            "name": "OL(R)-release-mask",
+            "archived": true
+        },
+        {
+            "type": "annotation",
+            "source": "precomputed://gs://flyem-optic-lobe/v1.1/optic-lobe-v1.1-synapse-partners-minconf-0.5.precomputed",
+            "tab": "rendering",
+            "ignoreNullSegmentFilter": false,
+            "shader": "#uicontrol bool showPre checkbox(default=true)\n#uicontrol bool showPostPartners checkbox(default=true)\n\n#uicontrol vec3 preColor color(default=\"red\")\n#uicontrol vec3 postColor color(default=\"blue\")\n\n#uicontrol float preConfidence slider(min=0.5, max=1, default=0.5)\n#uicontrol float postConfidence slider(min=0.5, max=1, default=0.5)\n\nvoid main() {\n  setColor(defaultColor());\n\n  float preSize = 6.0;\n  float postSize = 4.0;\n  \n  setEndpointMarkerColor(\n    vec4(preColor, 0.5),\n    vec4(postColor, 0.5));\n  \n  if (showPre && showPostPartners) {\n    setLineWidth(1.0);\n    setEndpointMarkerSize(preSize, postSize);\n  }\n  else if (showPostPartners) {\n    setLineWidth(0.0);\n    setEndpointMarkerSize(0.0, postSize);\n  }\n  else if (showPre) {\n    setLineWidth(0.0);\n    setEndpointMarkerSize(preSize, 0.0);\n  }\n  else {\n    setLineWidth(0.0);\n    setEndpointMarkerSize(0.0, 0.0);\n  }\n  \n  if (prop_pre_synaptic_confidence() < preConfidence ||\n      prop_post_synaptic_confidence() < postConfidence) discard;\n}\n",
+            "shaderControls": {
+                "showPostPartners": false
+            },
+            "linkedSegmentationLayer": {
+                "pre_synaptic_cell": "optic-lobe:v1.1"
+            },
+            "filterBySegmentation": [
+                "pre_synaptic_cell"
+            ],
+            "name": "presyn",
+            "archived": true
+        },
+        {
+            "type": "annotation",
+            "source": "precomputed://gs://flyem-optic-lobe/v1.1/optic-lobe-v1.1-synapse-partners-minconf-0.5.precomputed",
+            "tab": "rendering",
+            "ignoreNullSegmentFilter": false,
+            "shader": "#uicontrol bool showPrePartners checkbox(default=true)\n#uicontrol bool showPost checkbox(default=true)\n\n#uicontrol vec3 preColor color(default=\"red\")\n#uicontrol vec3 postColor color(default=\"blue\")\n\n#uicontrol float preConfidence slider(min=0.5, max=1, default=0.5)\n#uicontrol float postConfidence slider(min=0.5, max=1, default=0.5)\n\nvoid main() {\n  setColor(defaultColor());\n\n  float preSize = 6.0;\n  float postSize = 4.0;\n  \n  setEndpointMarkerColor(\n    vec4(preColor, 0.5),\n    vec4(postColor, 0.5));\n  \n  if (showPrePartners && showPost) {\n    setLineWidth(1.0);\n    setEndpointMarkerSize(preSize, postSize);\n  }\n  else if (showPost) {\n    setLineWidth(0.0);\n    setEndpointMarkerSize(0.0, postSize);\n  }\n  else if (showPrePartners) {\n    setLineWidth(0.0);\n    setEndpointMarkerSize(preSize, 0.0);\n  }\n  else {\n    setLineWidth(0.0);\n    setEndpointMarkerSize(0.0, 0.0);\n  }\n  \n  if (prop_pre_synaptic_confidence() < preConfidence ||\n      prop_post_synaptic_confidence() < postConfidence) discard;\n}\n",
+            "shaderControls": {
+                "showPrePartners": false,
+                "postColor": "#00ffff"
+            },
+            "linkedSegmentationLayer": {
+                "post_synaptic_cell": "optic-lobe:v1.1"
+            },
+            "filterBySegmentation": [
+                "post_synaptic_cell"
+            ],
+            "name": "postsyn",
+            "archived": true
+        }
+    ],
+    "showSlices": false,
+    "selectedLayer": {
+        "visible": true,
+        "layer": "optic-lobe:v1.1"
+    },
+    "layout": "3d",
+    "layerListPanel": {
+        "visible": true
+    }
+}
