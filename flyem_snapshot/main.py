@@ -368,8 +368,8 @@ def determine_snapshot_tag(cfg, config_dir):
         - 2023-11-04-def456-unlocked
 
     """
+    uuid, snapshot_tag = None, None
     dvidcfg = cfg['inputs'].get('dvid-seg', {"server": None})
-    uuid = None
     if dvidcfg['server']:
         uuid, snapshot_tag = resolve_snapshot_tag(
             dvidcfg['server'],
