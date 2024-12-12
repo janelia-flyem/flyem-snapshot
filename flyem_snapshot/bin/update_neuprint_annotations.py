@@ -372,8 +372,11 @@ def _post_commands(commands, client):
     Send the list of cypher commands to the neuprint
     server using a Transaction for each one.
     """
-    from neuclease.util import tqdm_proxy
+    from neuclease.util import tqdm_proxy, tqdm_proxy_config
     from neuprint.admin import Transaction
+
+    # I want logged progress bars, no matter what.
+    tqdm_proxy_config['output_file'] = 'logger'
 
     # Send each command in its own transaction to avoid
     # timeouts that occur with large transactions.
