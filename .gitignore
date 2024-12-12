@@ -11,3 +11,6 @@ logs
 .test-data
 *.egg-info
 .vscode/
+# pixi environments
+.pixi
+*.egg-info
