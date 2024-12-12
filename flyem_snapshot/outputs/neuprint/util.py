@@ -87,6 +87,8 @@ def neo4j_type_suffix(series):
         f"Unsupported column: {series.name}, {series.dtype}"
 
     # If dtype is 'object', we have to distinguish between a few cases:
+    # - int (with empty rows)
+    # - float (with empty rows)
     # - string
     # - list-of-strings
     # - list-of-float
@@ -96,6 +98,12 @@ def neo4j_type_suffix(series):
         logger = logging.getLogger(__name__)
         logger.warning(f"No data to infer correct neo4j type for column: {series.name}")
         return 'IGNORE'
+
+    if valid.map(lambda v: np.issubdtype(type(v), np.integer)).all():
+        return 'long'
+
+    if valid.map(lambda v: np.issubdtype(type(v), np.floating)).all():
+        return 'float'
 
     if valid.map(lambda s: isinstance(s, str)).all():
         return 'string'
