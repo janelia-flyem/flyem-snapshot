@@ -139,6 +139,7 @@ fi
 
 start=$(date +%s)
 echo "[$(date)] Ingesting nodes and relationships"
+echo "[$(date)] (There may be a LONG pause after the next line of output.)"
 
 # Our argument list would be way too long to supply on the command line.
 # (Error: Argument list too long)
