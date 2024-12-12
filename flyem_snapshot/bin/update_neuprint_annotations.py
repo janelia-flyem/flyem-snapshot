@@ -192,6 +192,10 @@ def _fetch_comparison_dataframes(dvid_details, client):
         neuprint_df, _syndist = fetch_neurons(NC(client=client), client=client)
         clio_segments = set(clio_df.index) - set(neuprint_df['bodyId'])
         segment_df, _ = fetch_neurons(sorted(clio_segments), client=client)
+
+        # Drop empty columns before concat to avoid pandas warning.
+        neuprint_df = neuprint_df.dropna(axis='columns', how='all')
+        segment_df = segment_df.dropna(axis='columns', how='all')
         neuprint_df = pd.concat((neuprint_df, segment_df))
 
     bodies = neuprint_df['bodyId'].rename('body')
@@ -219,8 +223,8 @@ def _fetch_comparison_dataframes(dvid_details, client):
 
     # Standardize on None as the null value (instead of NaN or "").
     # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
-    clio_df = clio_df.fillna(np.nan).replace([np.nan, ""], [None, None])
-    neuprint_df = neuprint_df.fillna(np.nan).replace([np.nan, ""], [None, None])
+    clio_df = clio_df.replace(["", np.nan, pd.NaT, pd.NA], [None, None, None, None])
+    neuprint_df = neuprint_df.replace(["", np.nan, pd.NaT, pd.NA], [None, None, None, None])
     return clio_df, neuprint_df, clio_segments, timestamp
 
 
@@ -248,8 +252,8 @@ def _compute_changemask(clio_df, neuprint_df):
     changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
 
     # This will ensure that all-float columns have float dtype.
-    clio_df = clio_df.fillna(np.nan)
-    neuprint_df = neuprint_df.fillna(np.nan)
+    clio_df = clio_df.infer_objects(copy=False)
+    neuprint_df = neuprint_df.infer_objects(copy=False)
 
     # Special handling for float columns: We don't demand exact equality.
     float_cols = (clio_df.dtypes == float) & (neuprint_df.dtypes == float)
@@ -403,4 +407,7 @@ def _cypher_literal(x):
 
 
 if __name__ == "__main__":
+    # sys.argv.extend(['-o', '/tmp/debug'])
+    # sys.argv.extend(['--dry-run'])
+    # sys.argv.extend("emdata6.int.janelia.org:9000 :master segmentation_annotations neuprint-cns.janelia.org cns".split())
     main()

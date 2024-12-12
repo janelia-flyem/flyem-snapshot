@@ -137,7 +137,7 @@ def neuprint_segment_annotations(cfg, ann):
     # We will consolidate them before deleting the 'duplicates'.
     for k, v in list(renames.items()):
         if (k != v) and (k in ann) and (v in ann):
-            ann[k].update(ann[v])
+            ann.update({k: ann[v]})
             del ann[v]
             del renames[v]
 
