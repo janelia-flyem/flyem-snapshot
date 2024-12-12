@@ -66,7 +66,7 @@ def main():
     except BaseException:
         if d := args.output_directory:
             os.makedirs(d, exist_ok=True)
-            with open(f'{d}/error.txt') as f:
+            with open(f'{d}/error.txt', 'w') as f:
                 traceback.print_exception(*sys.exc_info(), file=f)
         raise
 
