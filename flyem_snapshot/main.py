@@ -52,8 +52,8 @@ ConfigSchema = {
             "additionalProperties": False,
             "properties": {
                 "dvid-seg": DvidSegSchema,
-                "elements": ElementTablesSchema,
                 "synapses": SnapshotSynapsesSchema,
+                "elements": ElementTablesSchema,
                 "annotations": AnnotationsSchema,
                 "rois": RoisSchema,
                 "body-sizes": BodySizesSchema,
@@ -128,12 +128,12 @@ def main(args):
     """
     Main function.
 
-    Handles everything except CLI argument parsing, which
-    is located in a separate entrypoint script to avoid
-    importing lots of packages when the user just wants to
-    see the --help message.
-
+    Handles everything except CLI argument parsing.
     For argument definitions, see bin/flyem_snapshot_entrypoint.py
+
+    (CLI parsing is implemented in a separate entrypoint
+    script to avoid importing lots of packages when the
+    user just wants to see the --help message.)
     """
     cfg, config_dir = process_args_and_parse_config(args)
 

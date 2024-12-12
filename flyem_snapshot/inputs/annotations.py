@@ -66,6 +66,10 @@ AnnotationsSchema = {
     "additionalProperties": False,
     "properties": {
         "body-annotations-table": {
+            "description":
+                "A CSV or feather file containing a 'body' column and columns for body annotations.\n"
+                "When using DVID, don't provide a file -- the annotations will be loaded from DVID.\n"
+                "Otherwise, a file is required.",
             "type": "string",
             "default": ""  # By default, we read from DVID.
         },
