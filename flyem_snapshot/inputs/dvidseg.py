@@ -38,10 +38,14 @@ DvidSegSchema = {
 
 def load_dvidseg(cfg, snapshot_tag):
     """
-    Use the DVID config values to construct a PointLabeler object,
-    which can then be used to extract body IDs from arbitrary
-    coordinates in a DVID segmentation. (For example, to determine
-    the body IDs under synapse locations.)
+    This function doesn't actually read segmentation voxels.
+    It initializes a PointLabeler object, which can then be used
+    to extract body IDs from arbitrary coordinates in a DVID segmentation
+    (as specified via the uuid/instance in the config).
+
+    The main purpose of the PointLabeler is to determine the body IDs
+    under synapse locations or other point annotations (such as soma
+    locations, etc.).
     """
     if not cfg['server']:
         return None

@@ -49,6 +49,11 @@ def cached(serializer, cache_dir='cache'):
 class SerializerBase:
 
     def __init__(self, name, enforce_matching_signature=True):
+        """
+        If enforce_matching_signature is True, then the @cached decorator will assert
+        that the signature of the serializer's get_cache_key() method matches the
+        signature of the function it decorates.
+        """
         self.name = name
         self.enforce_matching_signature = enforce_matching_signature
 

@@ -74,7 +74,6 @@ SnapshotSynapsesSchema = {
             # NO DEFAULT
         },
         "zone": {
-            # TODO: Eliminate the 'zone' feature in favor of more flexibility in defining report ROIs.
             "description":
                 "Specifically for the male CNS. Whether to PRE-FILTER the synapses to include the brain only, vnc only, or whole cns",
             "type": "string",
@@ -158,7 +157,7 @@ class RawSynapseSerializer(SynapseSerializerBase):
 
 
 @cached(RawSynapseSerializer('labeled-synapses'))
-def load_synapses(cfg, snapshot_tag, pointlabeler):
+def load_synapses(cfg, snapshot_tag, pointlabeler):  # noqa
     point_df, partner_df = _load_raw_synapses(cfg)
 
     point_df, partner_df = _filter_for_zone(point_df, partner_df, cfg['zone'])
