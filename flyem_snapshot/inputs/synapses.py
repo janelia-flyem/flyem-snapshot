@@ -7,6 +7,7 @@ import glob
 import logging
 
 import numpy as np
+import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease.util import Timer, timed, encode_coords_to_uint64, decode_coords_from_uint64
@@ -290,10 +291,20 @@ def _filter_for_confidence(point_df, partner_df, min_conf):
         return point_df, partner_df
 
     with Timer(f"Filtering for min-confidence: {min_conf}", logger):
-        point_df = point_df.loc[point_df['conf'] >= min_conf].copy()
         partner_df = partner_df.loc[
             (partner_df['conf_pre'] >= min_conf) &  # noqa
             (partner_df['conf_post'] >= min_conf)].copy()
+
+        # Keep only the points which are still referenced in partner_df
+        # (For example, make sure tbars are deleted if all of their partners were filtered out.)
+        valid_ids = pd.concat(
+            (
+                partner_df['pre_id'].drop_duplicates().rename('point_id'),
+                partner_df['post_id'].drop_duplicates().rename('point_id')
+            ),
+            ignore_index=True
+        )
+        point_df = point_df.loc[point_df.index.isin(valid_ids)]
 
     return point_df, partner_df
 
