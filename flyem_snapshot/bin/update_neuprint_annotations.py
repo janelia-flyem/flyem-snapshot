@@ -271,14 +271,14 @@ def _compute_changemask(clio_df, neuprint_df):
 
     # Find the positions with different values.
     # If both are NaN/None, they're considered equal.
-    changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
+    changemask = (neuprint_df != clio_df) & (neuprint_df.notnull() | clio_df.notnull())
 
     # This will ensure that all-float columns have float dtype.
     clio_df = clio_df.infer_objects(copy=False)
     neuprint_df = neuprint_df.infer_objects(copy=False)
 
     # Special handling for float columns: We don't demand exact equality.
-    float_cols = (clio_df.dtypes == float) & (neuprint_df.dtypes == float)
+    float_cols = (clio_df.dtypes == float) & (neuprint_df.dtypes == float)  # noqa: E721
     changemask.loc[:, float_cols] &= ~np.isclose(
         clio_df.loc[:, float_cols],
         neuprint_df.loc[:, float_cols]
