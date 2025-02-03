@@ -5,6 +5,9 @@ into the format neuprint needs (column names, status values, etc.)
 import re
 import logging
 
+import numpy as np
+import pandas as pd
+
 from neuclease.util import snakecase_to_camelcase
 
 logger = logging.getLogger(__name__)
@@ -146,11 +149,11 @@ def neuprint_segment_annotations(cfg, ann):
     logger.info(f"Annotation columns after renaming: {ann.columns.tolist()}")
 
     # Drop categorical dtype for this column before using replace()
-    ann['statusLabel'] = ann['statusLabel'].astype(str)
+    ann['statusLabel'] = ann['statusLabel'].astype('string')
 
     # Erase any values which are just "".
     # Better to leave them null.
-    ann = ann.replace('', None)
+    ann = ann.replace(["", pd.NA], [None, None])
 
     # If any columns are completely empty, remove them.
     allnull = ann.isnull().all(axis=0)
