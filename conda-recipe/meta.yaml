@@ -25,7 +25,7 @@ requirements:
     - hvplot
     - jinja2
     - neuclease >=0.7.3
-    - neuprint-python
+    - neuprint-python >=0.5.1
     - pyarrow
     - requests
     - ujson

@@ -91,7 +91,7 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
 
 def export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
     """
-    Element a single CSV file of Element nodes, in which the ROI for all
+    Export a single CSV file of Element nodes, in which the ROI for all
     points in the group are homogenous (i.e. all ROI columns are the same
     in every row).
 

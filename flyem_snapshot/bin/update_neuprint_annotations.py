@@ -21,6 +21,8 @@ import traceback
 import argparse
 from collections import namedtuple
 
+from requests import HTTPError
+
 logger = logging.getLogger(__name__)
 DvidDetails = namedtuple('DvidInstance', 'server uuid instance')
 
@@ -33,7 +35,16 @@ def main():
     parser.add_argument(
         '--output-directory', '-o',
         help="Optional. Export summary files to an output directory. "
-             "If the directory already contains summary files from a prior run, they'll be overwritten.")
+             "If the directory already contains summary files from a prior run, they'll be overwritten."
+    )
+    parser.add_argument(
+        '--default-transaction-size', '-b',
+        type=int,
+        default=200,
+        help="Neuron properties will be updated in batches. "
+             "This is the batch size of each transaction, unless some transactions fail due to timeout errors, "
+             "in which case they will be retried in smaller batches."
+    )
     parser.add_argument(
         '--dry-run', action='store_true',
         help="If given, generate the output files (including cypher commands) for the update, but don't "
@@ -62,7 +73,7 @@ def main():
     )
 
     try:
-        update_neuprint_annotations(dvid_details, args.dry_run, args.output_directory, neuprint_client)
+        update_neuprint_annotations(dvid_details, args.dry_run, args.output_directory, args.default_transaction_size, neuprint_client)
     except BaseException:
         if d := args.output_directory:
             os.makedirs(d, exist_ok=True)
@@ -73,7 +84,7 @@ def main():
     logger.info("DONE")
 
 
-def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, client=None):
+def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, default_transaction_size=100, client=None):
     """
     Compare neuronjson annotations from DVID/Clio with the Neuron/Segment
     properties from Neuprint, and update the Neuprint properties to match
@@ -85,6 +96,16 @@ def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, clien
     Args:
         dvid_details:
             tuple (server, uuid, instance)
+        dry_run:
+            If True, generate the output files (including cypher commands) for the update,
+            but don't actually execute the transactions to update neuprint.
+        log_dir:
+            Optional.  If given, write summary files to this directory.
+        default_transaction_size:
+            The default batch size for each transaction.
+            If any transaction fails due to a timeout error,
+            then it and all subsequent transactions will be retried
+            using smaller transactions.
         client:
             neuprint Client
             Requires admin access to the neuprint server.
@@ -106,7 +127,7 @@ def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, clien
     _dump_summary_files(clio_df, neuprint_df, changemask, commands, log_dir)
 
     clio_df, neuprint_df, changemask, commands = _apply_neuprint_annotation_updates(
-        clio_df, neuprint_df, changemask, commands, timestamp, dry_run, client)
+        clio_df, neuprint_df, changemask, commands, timestamp, dry_run, default_transaction_size, client)
 
     return clio_df, neuprint_df, changemask, commands
 
@@ -122,9 +143,10 @@ def _dump_summary_files(clio_df, neuprint_df, changemask, commands, log_dir):
     changemask.to_csv(f'{d}/changemask.csv', header=True, index=True)
     with open(f'{d}/cypher-update-commands.cypher', 'w') as f:
         f.write('\n'.join(commands))
+        f.write('\n')
 
 
-def _apply_neuprint_annotation_updates(clio_df, neuprint_df, changemask, commands, timestamp, dry_run, client):
+def _apply_neuprint_annotation_updates(clio_df, neuprint_df, changemask, commands, timestamp, dry_run, default_transaction_size, client):
     from neuclease.util import Timer
     _update_meta_neuron_properties(clio_df, dry_run, client)
 
@@ -136,7 +158,7 @@ def _apply_neuprint_annotation_updates(clio_df, neuprint_df, changemask, command
     else:
         msg = f"Updating {len(changemask)} Segments with {changemask.sum().sum()} out-of-date properties."
         with Timer(msg, logger):
-            _post_commands(commands, client)
+            _post_commands(commands, default_transaction_size, client)
         _update_meta_timestamp(timestamp, client)
 
     # Restrict summary DataFrames to the minimal subset
@@ -249,14 +271,14 @@ def _compute_changemask(clio_df, neuprint_df):
 
     # Find the positions with different values.
     # If both are NaN/None, they're considered equal.
-    changemask = (neuprint_df != clio_df) & (~neuprint_df.isnull() | ~clio_df.isnull())
+    changemask = (neuprint_df != clio_df) & (neuprint_df.notnull() | clio_df.notnull())
 
     # This will ensure that all-float columns have float dtype.
     clio_df = clio_df.infer_objects(copy=False)
     neuprint_df = neuprint_df.infer_objects(copy=False)
 
     # Special handling for float columns: We don't demand exact equality.
-    float_cols = (clio_df.dtypes == float) & (neuprint_df.dtypes == float)
+    float_cols = (clio_df.dtypes == float) & (neuprint_df.dtypes == float)  # noqa: E721
     changemask.loc[:, float_cols] &= ~np.isclose(
         clio_df.loc[:, float_cols],
         neuprint_df.loc[:, float_cols]
@@ -371,22 +393,49 @@ def _generate_commands(clio_df, changemask, clio_segments):
     return commands
 
 
-def _post_commands(commands, client):
+def _post_commands(commands, batch_size, client):
     """
     Send the list of cypher commands to the neuprint
-    server using a Transaction for each one.
+    server using a series of Transactions.
+
+    At first, each transaction will include a batch of commands (of the given size),
+    but if one transaction fails, the batch size is halved and the commands are re-sent
+    with the new batch size.  This continues until the batch size is 1.
+    If any transaction still fails using batch size 1, we give up and raise an exception.
     """
-    from neuclease.util import tqdm_proxy, tqdm_proxy_config
+    from itertools import chain
+    from neuclease.util import tqdm_proxy, tqdm_proxy_config, iter_batches
     from neuprint.admin import Transaction
 
     # I want logged progress bars, no matter what.
     tqdm_proxy_config['output_file'] = 'logger'
 
-    # Send each command in its own transaction to avoid
-    # timeouts that occur with large transactions.
-    for q in tqdm_proxy(commands):
-        with Transaction(client.dataset, client=client) as t:
-            t.query(q)
+    with tqdm_proxy(total=len(commands)) as progress:
+        while True:
+            try:
+                batch_size = min(batch_size, len(commands))
+                batches = iter_batches(commands, batch_size)
+                batch_iter = iter(batches)
+
+                for batch in batch_iter:
+                    with Transaction(client.dataset, client=client) as t:
+                        for command in batch:
+                            t.query(command)
+                    progress.update(len(batch))
+
+                # Done: All (remaining) batches succeeded without error.
+                break
+            except HTTPError:
+                if batch_size == 1:
+                    logger.error("Transaction failed even with batch size 1.  Giving up.")
+                    logger.error("Failed cypher command was:")
+                    logger.error(batch[0])
+                    raise
+                logger.warning(f"Transaction failed with batch size: {batch_size}")
+                logger.warning("Moving the failed commands to the end of the queue.")
+                logger.warning(f"Resuming with smaller batch size: {batch_size // 2}")
+                commands = [*chain(*batch_iter), *batch]
+                batch_size //= 2
 
 
 POINT_PATTERN = re.compile(r'{x:\d+, y:\d+, z:\d+}')
@@ -409,5 +458,6 @@ def _cypher_literal(x):
 if __name__ == "__main__":
     # sys.argv.extend(['-o', '/tmp/debug'])
     # sys.argv.extend(['--dry-run'])
+    # sys.argv.extend(['--default-transaction-size', '200'])
     # sys.argv.extend("emdata6.int.janelia.org:9000 :master segmentation_annotations neuprint-cns.janelia.org cns".split())
     main()

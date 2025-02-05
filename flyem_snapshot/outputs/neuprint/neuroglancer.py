@@ -64,7 +64,7 @@ def export_neuroglancer_json_state(cfg, last_mutation):
 
     # First, write out a temporary version of the file before attempting to load as JSON.
     # If we fail to load the JSON for some reason, we can debug the temp file.
-    output_name = f'neuprint/{dset_tag}-ngstate.json'
+    output_name = f'neuprint/{dset_tag}.json'
     with open(output_name, 'w') as f:
         f.write(state_text)
 

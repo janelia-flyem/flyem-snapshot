@@ -289,7 +289,7 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     Drop predictions which fall outside of the known synapse set
     (as listed in synpoint_df).
     """
-    tbar_df = feather.read_feather(path).astype({'body': np.int64})
+    tbar_df = feather.read_feather(path)
     if tbar_df.index.name:
         tbar_df = tbar_df.reset_index()
 
@@ -320,7 +320,9 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     tbar_df = tbar_df.rename(columns=renames)
     nt_cols = list(renames.values())
 
-    if 'point_id' not in tbar_df.columns:
+    if 'point_id' in tbar_df.columns:
+        tbar_df['point_id'] = tbar_df['point_id'].astype(np.uint64)
+    else:
         tbar_df['point_id'] = encode_coords_to_uint64(tbar_df[[*'zyx']].values)
 
     tbar_df = tbar_df.set_index('point_id')
@@ -331,6 +333,11 @@ def _load_tbar_neurotransmitters(path, rescale, translations, synpoint_df):
     #   If there are synapses in synpoint_df which are not present in the tbar
     #   predictions, they will have NaN predictions after this merge.
     presyn_df = synpoint_df.query('kind == "PreSyn"')
+
+    # The merge below will silently produce incorrect results if one index is signed and the other is unsigned.
+    # In that case, pandas must be converting to float64 and losing precision.
+    assert tbar_df.index.name == presyn_df.index.name == 'point_id'
+    assert tbar_df.index.dtype == presyn_df.index.dtype == np.uint64
     tbar_df = presyn_df[['body', *'xyz']].merge(tbar_df.drop(columns=[*'xyz']), 'left', on='point_id')
     return tbar_df
 

@@ -7,6 +7,7 @@ import glob
 import logging
 
 import numpy as np
+import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease.util import Timer, timed, encode_coords_to_uint64, decode_coords_from_uint64
@@ -73,7 +74,6 @@ SnapshotSynapsesSchema = {
             # NO DEFAULT
         },
         "zone": {
-            # TODO: Eliminate the 'zone' feature in favor of more flexibility in defining report ROIs.
             "description":
                 "Specifically for the male CNS. Whether to PRE-FILTER the synapses to include the brain only, vnc only, or whole cns",
             "type": "string",
@@ -157,7 +157,7 @@ class RawSynapseSerializer(SynapseSerializerBase):
 
 
 @cached(RawSynapseSerializer('labeled-synapses'))
-def load_synapses(cfg, snapshot_tag, pointlabeler):
+def load_synapses(cfg, snapshot_tag, pointlabeler):  # noqa
     point_df, partner_df = _load_raw_synapses(cfg)
 
     point_df, partner_df = _filter_for_zone(point_df, partner_df, cfg['zone'])
@@ -174,7 +174,14 @@ def _load_raw_synapses(cfg):
 
     with Timer("Loading synapses from disk", logger):
         point_df = feather.read_feather(points_path)
-        partner_df = feather.read_feather(partners_path)
+        partner_df = feather.read_feather(partners_path).astype({'pre_id': np.uint64, 'post_id': np.uint64})
+
+    # Temporarily ensure point_id is in the columns to simplify the logic below.
+    # (We'll move it to the index below.)
+    if 'point_id' not in point_df.columns and point_df.index.name == 'point_id':
+        point_df = point_df.reset_index()
+
+    point_df = point_df.astype({'point_id': np.uint64})
 
     if 'point_id' not in point_df.columns and not {*'zyx'} <= {*point_df.columns}:
         raise RuntimeError("Synapse point table doesn't have coordinates or point_id")
@@ -290,10 +297,20 @@ def _filter_for_confidence(point_df, partner_df, min_conf):
         return point_df, partner_df
 
     with Timer(f"Filtering for min-confidence: {min_conf}", logger):
-        point_df = point_df.loc[point_df['conf'] >= min_conf].copy()
         partner_df = partner_df.loc[
             (partner_df['conf_pre'] >= min_conf) &  # noqa
             (partner_df['conf_post'] >= min_conf)].copy()
+
+        # Keep only the points which are still referenced in partner_df
+        # (For example, make sure tbars are deleted if all of their partners were filtered out.)
+        valid_ids = pd.concat(
+            (
+                partner_df['pre_id'].drop_duplicates().rename('point_id'),
+                partner_df['post_id'].drop_duplicates().rename('point_id')
+            ),
+            ignore_index=True
+        )
+        point_df = point_df.loc[point_df.index.isin(valid_ids)]
 
     return point_df, partner_df
 
