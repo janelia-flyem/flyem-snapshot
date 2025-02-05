@@ -174,12 +174,14 @@ def _load_raw_synapses(cfg):
 
     with Timer("Loading synapses from disk", logger):
         point_df = feather.read_feather(points_path)
-        partner_df = feather.read_feather(partners_path)
+        partner_df = feather.read_feather(partners_path).astype({'pre_id': np.uint64, 'post_id': np.uint64})
 
     # Temporarily ensure point_id is in the columns to simplify the logic below.
     # (We'll move it to the index below.)
     if 'point_id' not in point_df.columns and point_df.index.name == 'point_id':
         point_df = point_df.reset_index()
+
+    point_df = point_df.astype({'point_id': np.uint64})
 
     if 'point_id' not in point_df.columns and not {*'zyx'} <= {*point_df.columns}:
         raise RuntimeError("Synapse point table doesn't have coordinates or point_id")
