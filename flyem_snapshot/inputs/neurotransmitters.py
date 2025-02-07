@@ -552,6 +552,9 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
     )
     df = group_pred.to_frame()
 
+    # Cells with no type at all should not be given an aggregate celltype prediction.
+    df.loc[df.index.isnull(), 'group_pred'] = None
+
     # Ensure that our final results will include all bodies (or types)
     # from the annotations, even if they weren't present in pred_df
     ann_types = ann['type'].rename('cell_type')
