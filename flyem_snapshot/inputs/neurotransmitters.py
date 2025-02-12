@@ -160,7 +160,8 @@ NeurotransmittersSchema = {
                 "Optional. Table of high-confidence experimental groundtruth, used to override type-level\n"
                 "predictions in the 'consensus' preduction column.\n"
                 "The expected columns match the columns in our final output (but we also accept their camelCase equivalents).\n"
-                "type, consensusNt, ntReference, otherNt, otherNtReference\n",
+                "type, consensusNt, ntReference, otherNt, otherNtReference\n"
+                "We also accept the same column names used in the groud-truth table: cell_type,ground_truth",
             "type": "string",
             "default": ""
         },
@@ -679,7 +680,7 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
 
     # Overwrite cases where experimental groundtruth is available.
     exp_df = pd.read_csv(path)
-    exp_df = exp_df.rename(columns={'type': 'cell_type'})
+    exp_df = exp_df.rename(columns={'type': 'cell_type', 'ground_truth': 'consensus_nt'})
     exp_df = exp_df.rename(columns={c: camelcase_to_snakecase(c) for c in exp_df.columns})
     exp_df = exp_df.set_index('cell_type')
 
