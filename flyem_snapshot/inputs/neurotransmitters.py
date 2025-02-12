@@ -371,6 +371,8 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         if 'split' not in tbar_df:
             msg = "Can't make use of your ground-truth because your point data does not contain a 'split' column."
             raise RuntimeError(msg)
+        if gt_df['cell_type'].isnull().any() or gt_df['ground_truth'].isnull().any():
+            raise RuntimeError("Neurotransmitter ground-truth table contains null values.")
 
     # Append 'cell_type' column to point table
     tbar_df = tbar_df.merge(ann['type'].rename('cell_type'), 'left', on='body')
