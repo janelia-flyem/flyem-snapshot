@@ -165,6 +165,14 @@ NeurotransmittersSchema = {
             "type": "string",
             "default": ""
         },
+        "training-set-split-indicators": {
+            "description":
+                "Values in the 'split' column which indicate that a synapse is in the training set\n"
+                "and thus should be excluded before calculating the confusion matrix.\n",
+            "type": "array",
+            "items": {"type": "string"},
+            "default": ["train", "validation"]
+        },
         "min-body-confidence": {
             "description":
                 "After computing body confidence scores, bodies with lower confidence scores than\n"
@@ -386,7 +394,7 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         .rename(columns=dict(zip(nt_cols, nts)))
         .idxmax(axis=1)
     )
-    confusion_df = _confusion_matrix(tbar_df, gt_df, nts)
+    confusion_df = _confusion_matrix(tbar_df, gt_df, nts, cfg['training-set-split-indicators'])
     tbar_df = tbar_df[['body', 'cell_type', 'pred1']]
     body_df = _calc_group_predictions(tbar_df, ann, confusion_df, gt_df, 'body')
     type_df = _calc_group_predictions(tbar_df, ann, confusion_df, gt_df, 'cell_type')
@@ -422,7 +430,7 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
     return body_df, confusion_df
 
 
-def _confusion_matrix(tbar_df, gt_df, all_nts):
+def _confusion_matrix(tbar_df, gt_df, all_nts, training_indicators):
     """
     Compute the confusion matrix for non-training tbar predictions
     in the given table, using given groundtruth NT mapping
@@ -433,8 +441,8 @@ def _confusion_matrix(tbar_df, gt_df, all_nts):
             tbar prediction table with columns (cell_type, ground_truth, split, pred1),
             where 'pred1' is the top NT prediction and ground_truth is the true NT.
             The 'split' column is used to distinguish between traning and
-            non-training points.  We discard rows labeled 'train' or 'validation'
-            before computing the confusion.
+            non-training points.  We discard rows which are marked with any of the
+            values in the 'training_indicators' list.
         gt_df:
             Table of known NT labels (cell_type, ground_truth).
         all_nts:
@@ -443,7 +451,8 @@ def _confusion_matrix(tbar_df, gt_df, all_nts):
             This is convenient when we test this code with small subsets of data,
             in which not all neurotransmitters may be present but we want the output
             to have the expected rows/columns.
-
+        training_indicators:
+            List of values to look for in the 'split' column which indicate that a synapse is in the training set.
     Returns:
         DataFrame, indexed by 'ground_truth' neurotransmitter, with predicted neurotransmitter ('pred1') in the columns.
 
@@ -470,7 +479,7 @@ def _confusion_matrix(tbar_df, gt_df, all_nts):
     confusion_df = (
         tbar_df
         .assign(ground_truth=tbar_gt)
-        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
+        .query('split not in @training_indicators and ground_truth.notnull()')
         .groupby(['ground_truth', 'pred1'])
         .size()
         .unstack(-1, 0.0)
