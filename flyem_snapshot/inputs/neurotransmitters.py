@@ -160,9 +160,18 @@ NeurotransmittersSchema = {
                 "Optional. Table of high-confidence experimental groundtruth, used to override type-level\n"
                 "predictions in the 'consensus' preduction column.\n"
                 "The expected columns match the columns in our final output (but we also accept their camelCase equivalents).\n"
-                "type, consensusNt, ntReference, otherNt, otherNtReference\n",
+                "type, consensusNt, ntReference, otherNt, otherNtReference\n"
+                "We also accept the same column names used in the groud-truth table: cell_type,ground_truth",
             "type": "string",
             "default": ""
+        },
+        "training-set-split-indicators": {
+            "description":
+                "Values in the 'split' column which indicate that a synapse is in the training set\n"
+                "and thus should be excluded before calculating the confusion matrix.\n",
+            "type": "array",
+            "items": {"type": "string"},
+            "default": ["train", "validation"]
         },
         "min-body-confidence": {
             "description":
@@ -371,6 +380,8 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         if 'split' not in tbar_df:
             msg = "Can't make use of your ground-truth because your point data does not contain a 'split' column."
             raise RuntimeError(msg)
+        if gt_df['cell_type'].isnull().any() or gt_df['ground_truth'].isnull().any():
+            raise RuntimeError("Neurotransmitter ground-truth table contains null values.")
 
     # Append 'cell_type' column to point table
     tbar_df = tbar_df.merge(ann['type'].rename('cell_type'), 'left', on='body')
@@ -383,7 +394,7 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         .rename(columns=dict(zip(nt_cols, nts)))
         .idxmax(axis=1)
     )
-    confusion_df = _confusion_matrix(tbar_df, gt_df, nts)
+    confusion_df = _confusion_matrix(tbar_df, gt_df, nts, cfg['training-set-split-indicators'])
     tbar_df = tbar_df[['body', 'cell_type', 'pred1']]
     body_df = _calc_group_predictions(tbar_df, ann, confusion_df, gt_df, 'body')
     type_df = _calc_group_predictions(tbar_df, ann, confusion_df, gt_df, 'cell_type')
@@ -419,7 +430,7 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
     return body_df, confusion_df
 
 
-def _confusion_matrix(tbar_df, gt_df, all_nts):
+def _confusion_matrix(tbar_df, gt_df, all_nts, training_indicators):
     """
     Compute the confusion matrix for non-training tbar predictions
     in the given table, using given groundtruth NT mapping
@@ -430,8 +441,8 @@ def _confusion_matrix(tbar_df, gt_df, all_nts):
             tbar prediction table with columns (cell_type, ground_truth, split, pred1),
             where 'pred1' is the top NT prediction and ground_truth is the true NT.
             The 'split' column is used to distinguish between traning and
-            non-training points.  We discard rows labeled 'train' or 'validation'
-            before computing the confusion.
+            non-training points.  We discard rows which are marked with any of the
+            values in the 'training_indicators' list.
         gt_df:
             Table of known NT labels (cell_type, ground_truth).
         all_nts:
@@ -440,7 +451,8 @@ def _confusion_matrix(tbar_df, gt_df, all_nts):
             This is convenient when we test this code with small subsets of data,
             in which not all neurotransmitters may be present but we want the output
             to have the expected rows/columns.
-
+        training_indicators:
+            List of values to look for in the 'split' column which indicate that a synapse is in the training set.
     Returns:
         DataFrame, indexed by 'ground_truth' neurotransmitter, with predicted neurotransmitter ('pred1') in the columns.
 
@@ -467,7 +479,7 @@ def _confusion_matrix(tbar_df, gt_df, all_nts):
     confusion_df = (
         tbar_df
         .assign(ground_truth=tbar_gt)
-        .query('split != "train" and split != "validation" and not ground_truth.isnull()')
+        .query('split not in @training_indicators and ground_truth.notnull()')
         .groupby(['ground_truth', 'pred1'])
         .size()
         .unstack(-1, 0.0)
@@ -551,6 +563,9 @@ def _calc_group_predictions(pred_df, ann, confusion_df, gt_df, groupcol):
         .rename('group_pred')
     )
     df = group_pred.to_frame()
+
+    # Cells with no type at all should not be given an aggregate celltype prediction.
+    df.loc[df.index.isnull(), 'group_pred'] = None
 
     # Ensure that our final results will include all bodies (or types)
     # from the annotations, even if they weren't present in pred_df
@@ -674,7 +689,7 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
 
     # Overwrite cases where experimental groundtruth is available.
     exp_df = pd.read_csv(path)
-    exp_df = exp_df.rename(columns={'type': 'cell_type'})
+    exp_df = exp_df.rename(columns={'type': 'cell_type', 'ground_truth': 'consensus_nt'})
     exp_df = exp_df.rename(columns={c: camelcase_to_snakecase(c) for c in exp_df.columns})
     exp_df = exp_df.set_index('cell_type')
 
