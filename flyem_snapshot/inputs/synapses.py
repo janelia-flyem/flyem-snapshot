@@ -162,6 +162,7 @@ def load_synapses(cfg, snapshot_tag, pointlabeler):  # noqa
 
     point_df, partner_df = _filter_for_zone(point_df, partner_df, cfg['zone'])
     point_df, partner_df = _filter_for_confidence(point_df, partner_df, cfg['min-confidence'])
+    point_df, partner_df = _filter_for_self_consistency(point_df, partner_df)
     logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners after filtering")
 
     point_df, partner_df = _update_body_columns(point_df, partner_df, pointlabeler, cfg['processes'])
@@ -297,22 +298,30 @@ def _filter_for_confidence(point_df, partner_df, min_conf):
         return point_df, partner_df
 
     with Timer(f"Filtering for min-confidence: {min_conf}", logger):
+        # Note:
+        #   This can result in inconsistent partner/point tables, but that's
+        #   okay because we will filter for self-consistency in a later step.
+        point_df = point_df.loc[point_df['conf'] >= min_conf]
         partner_df = partner_df.loc[
             (partner_df['conf_pre'] >= min_conf) &  # noqa
-            (partner_df['conf_post'] >= min_conf)].copy()
+            (partner_df['conf_post'] >= min_conf)]
 
-        # Keep only the points which are still referenced in partner_df
-        # (For example, make sure tbars are deleted if all of their partners were filtered out.)
-        valid_ids = pd.concat(
-            (
-                partner_df['pre_id'].drop_duplicates().rename('point_id'),
-                partner_df['post_id'].drop_duplicates().rename('point_id')
-            ),
-            ignore_index=True
-        )
-        point_df = point_df.loc[point_df.index.isin(valid_ids)]
+    return point_df.copy(), partner_df.copy()
 
-    return point_df, partner_df
+
+def _filter_for_self_consistency(point_df, partner_df):
+    logger.info("Filtering partners to exclude unlisted points")
+    valid_pre = partner_df['pre_id'].isin(point_df.index)
+    valid_post = partner_df['post_id'].isin(point_df.index)
+    partner_df = partner_df.loc[valid_pre & valid_post]
+
+    # Also filter point list again, to toss out points which had no partner
+    logger.info("Filtering points to exclude orphaned tbars/psds")
+    valid_ids = pd.concat((partner_df['pre_id'].drop_duplicates().rename('point_id'),  # noqa
+                           partner_df['post_id'].drop_duplicates().rename('point_id')),
+                          ignore_index=True)
+    point_df = point_df.loc[point_df.index.isin(valid_ids)]
+    return point_df.copy(), partner_df.copy()
 
 
 def _update_body_columns(point_df, partner_df, pointlabeler, processes):
