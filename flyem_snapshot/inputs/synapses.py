@@ -238,6 +238,8 @@ def _streamline_synapse_tables(point_df, partner_df):
         if k in point_df.columns
     })
 
+    point_df, partner_df = _drop_fake_synapses(point_df, partner_df)
+
     if point_df['kind'].isnull().any():
         raise RuntimeError("Synapse 'kind' column must not contain null values")
 
@@ -253,6 +255,43 @@ def _streamline_synapse_tables(point_df, partner_df):
         k:v for k,v in t.items()
         if k in partner_df.columns
     })
+    return point_df, partner_df
+
+
+def _drop_fake_synapses(point_df, partner_df):
+    """
+    Sometimes synapse tables that were exported from DVID using
+    ``neuclease.dvid.annotation.fetch_synapses_in_batches()``
+    may contain points whose kind='Fake'.
+    This indicates that at least one synapse had no relationships, so it was
+    added to the table as a point with kind='Fake'.
+    We exclude these points from the output, and filter out the corresponding
+    partners by excluding partners whose pre_id or post_id is 0.
+
+    (This means the stored synapses in DVID are inconsistent, and we generally
+    try to fix the source problem, rather than accommodating it downstream.
+    But we want to support such datasets here if needed.)
+    """
+    syn_kinds = set(point_df['kind'].dtype.categories)
+    if 'Fake' not in syn_kinds:
+        return point_df, partner_df
+
+    if not (point_df['kind'] == 'Fake').any():
+        point_df['kind'] = point_df['kind'].cat.remove_unused_categories()
+        return point_df, partner_df
+
+    logger.warning(
+        "Synapse table contains points whose kind='Fake'. "
+        "This indicates that at least one synapse had no relationships. "
+        "Those synapses will be excluded from the output."
+    )
+    num_fake_points = (point_df['kind'] == 'Fake').sum()
+    num_orphaned_partners = ((partner_df['pre_id'] == 0) | (partner_df['post_id'] == 0)).sum()
+    logger.warning(f"Excluding {num_fake_points} fake points and {num_orphaned_partners} orphaned partners")
+    point_df = point_df.loc[point_df['kind'] != 'Fake']
+    partner_df = partner_df.loc[partner_df['pre_id'] != 0]
+    partner_df = partner_df.loc[partner_df['post_id'] != 0]
+    point_df['kind'] = point_df['kind'].cat.remove_unused_categories()
     return point_df, partner_df
 
 
