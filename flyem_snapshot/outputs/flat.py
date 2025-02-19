@@ -147,8 +147,11 @@ def _export_significant_synapse_partners(ann, partner_export_df, file_tag):
     with Timer("Constructing significant-only synapse partner export", logger):
         significant_bodies = ann.query(f'status >= "{MIN_SIGNIFICANT_STATUS}"').index
         logger.info(f"There are {len(significant_bodies)} with status '{MIN_SIGNIFICANT_STATUS}' or better.")
-        significant_partner_export_df = partner_export_df.query(
-            'body_pre in @significant_bodies and body_post in @significant_bodies')
+        significant_partner_export_df = (
+            partner_export_df
+            .query('body_pre in @significant_bodies and body_post in @significant_bodies')
+            .reset_index(drop=True)
+        )
 
     msg = f"Writing significant-only synapse partner export (with only {MIN_SIGNIFICANT_STATUS} or better)"
     with Timer(msg, logger):
