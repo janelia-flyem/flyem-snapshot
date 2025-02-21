@@ -22,7 +22,7 @@ from .inputs.sizes import BodySizesSchema, load_body_sizes
 from .inputs.neurotransmitters import NeurotransmittersSchema, load_neurotransmitters
 
 from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
-from .outputs.neurotransmitters import NeurotransmiterExportSchema, export_neurotransmitters
+from .outputs.neurotransmitters import NeurotransmitterExportSchema, export_neurotransmitters
 from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
@@ -66,7 +66,7 @@ ConfigSchema = {
             "additionalProperties": False,
             "properties": {
                 # TODO: BigQuery exports
-                "neurotransmitters": NeurotransmiterExportSchema,
+                "neurotransmitters": NeurotransmitterExportSchema,
                 "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,

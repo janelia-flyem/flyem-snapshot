@@ -239,7 +239,13 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # Neurotransmitters are supposed to be computed anew for each neuprint snapshot,
     # not loaded into clio.  But for historical reasons, we did upload NT predictions into the MANC clio.
     # We do NOT want to use those clio NT values to overwite neuprint NT values.
-    nt_cols = [col for col in clio_df.columns if col.startswith('nt') or col.startswith('predictedNt')]
+    nt_cols = [
+        'predicted_nt', 'predicted_nt_confidence',
+        'celltype_predicted_nt', 'celltype_predicted_nt_confidence',
+        'celltype_total_nt_predictions',
+        'consensus_nt'
+    ]
+    nt_cols = [col for col in clio_df.columns if col.startswith('nt') or col in nt_cols]
     clio_df = clio_df.drop(columns=nt_cols)
     neuprint_df = neuprint_df.drop(columns=nt_cols)
 

@@ -11,7 +11,7 @@ from ..caches import cached, SentinelSerializer
 logger = logging.getLogger(__name__)
 
 
-NeurotransmiterExportSchema = {
+NeurotransmitterExportSchema = {
     "type": "object",
     "default": {},
     "additionalProperties": False,

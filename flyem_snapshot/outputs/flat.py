@@ -12,7 +12,7 @@ from ..util import restrict_synapses_to_roi
 
 logger = logging.getLogger(__name__)
 
-MIN_PRIMARY_STATUS = "Sensory Anchor"
+MIN_SIGNIFICANT_STATUS = "Sensory Anchor"
 
 FlatConnectomeSchema = {
     "type": "object",
@@ -51,7 +51,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     Export the full list of pre-post partners in not-so-compact form,
     for external users, with full x/y/z columns.
     Also export the full body-to-body weighted connectome, and also
-    the abridged body-to-body weighted connectome for only 'primary' bodies.
+    the abridged body-to-body weighted connectome for only 'significant' bodies.
     """
     if not cfg['export-connectome']:
         return
@@ -63,8 +63,8 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     partner_export_df = _export_synapse_partners(cfg, point_df, partner_df, file_tag)
     _export_weighted_connectome(partner_export_df, file_tag)
 
-    primary_partner_export_df = _export_primary_synapse_partners(ann, partner_export_df, file_tag)
-    _export_primary_weighted_connectome(ann, primary_partner_export_df, file_tag)
+    significant_partner_export_df = _export_significant_synapse_partners(ann, partner_export_df, file_tag)
+    _export_significant_weighted_connectome(ann, significant_partner_export_df, file_tag)
 
     _export_ranked_body_stats(ann, point_df, partner_df, file_tag)
 
@@ -143,24 +143,30 @@ def _export_weighted_connectome(partner_export_df, file_tag):
         )
 
 
-def _export_primary_synapse_partners(ann, partner_export_df, file_tag):
-    with Timer("Constructing primary-only synapse partner export", logger):
-        primary_bodies = ann.query(f'status >= "{MIN_PRIMARY_STATUS}"').index
-        logger.info(f"There are {len(primary_bodies)} with status '{MIN_PRIMARY_STATUS}' or better.")
-        primary_partner_export_df = partner_export_df.query('body_pre in @primary_bodies and body_post in @primary_bodies')
-
-    with Timer(f"Writing primary-only synapse partner export (with only {MIN_PRIMARY_STATUS} or better)", logger):
-        feather.write_feather(
-            primary_partner_export_df,
-            f'flat-connectome/syn-partners-{file_tag}-primary-only.feather'
+def _export_significant_synapse_partners(ann, partner_export_df, file_tag):
+    with Timer("Constructing significant-only synapse partner export", logger):
+        significant_bodies = ann.query(f'status >= "{MIN_SIGNIFICANT_STATUS}"').index
+        logger.info(f"There are {len(significant_bodies)} with status '{MIN_SIGNIFICANT_STATUS}' or better.")
+        significant_partner_export_df = (
+            partner_export_df
+            .query('body_pre in @significant_bodies and body_post in @significant_bodies')
+            .reset_index(drop=True)
         )
-    return primary_partner_export_df
+
+    msg = f"Writing significant-only synapse partner export (with only {MIN_SIGNIFICANT_STATUS} or better)"
+    with Timer(msg, logger):
+        feather.write_feather(
+            significant_partner_export_df,
+            f'flat-connectome/syn-partners-{file_tag}-significant-only.feather'
+        )
+    return significant_partner_export_df
 
 
-def _export_primary_weighted_connectome(ann, primary_partner_export_df, file_tag):
-    with Timer(f"Constructing primary-only weighted connectome (with only {MIN_PRIMARY_STATUS} or better)", logger):
-        primary_connectome = (
-            primary_partner_export_df[['body_pre', 'body_post']]
+def _export_significant_weighted_connectome(ann, significant_partner_export_df, file_tag):
+    msg = f"Constructing significant-only weighted connectome (with only {MIN_SIGNIFICANT_STATUS} or better)"
+    with Timer(msg, logger):
+        significant_connectome = (
+            significant_partner_export_df[['body_pre', 'body_post']]
             .value_counts()
             .rename('weight')
             .reset_index()
@@ -176,10 +182,10 @@ def _export_primary_weighted_connectome(ann, primary_partner_export_df, file_tag
             )
         )
 
-    with Timer("Writing primary-only weighted connectome", logger):
+    with Timer("Writing significant-only weighted connectome", logger):
         feather.write_feather(
-            primary_connectome,
-            f'flat-connectome/connectome-weights-{file_tag}-primary-only.feather'
+            significant_connectome,
+            f'flat-connectome/connectome-weights-{file_tag}-significant-only.feather'
         )
 
 
