@@ -763,5 +763,5 @@ class RoiVolCache:
         files = self.files
         with Timer(f"Writing {files.vol}", logger):
             np.save(files.vol, roi_vol)
-            dump_json(roi_box, files.box, unsplit_int_lists=True)
+            dump_json(roi_box, files.box, unsplit_number_lists=True)
             dump_json(self.roi_ids, files.ids)

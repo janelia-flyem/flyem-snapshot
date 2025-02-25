@@ -72,4 +72,4 @@ def export_neuroglancer_json_state(cfg, last_mutation):
 
     # Now write the final version.
     logger.info(f"Writing {output_name}")
-    dump_json(state, output_name, indent=2, unsplit_int_lists=True)
+    dump_json(state, output_name, indent=2, unsplit_number_lists=True)
