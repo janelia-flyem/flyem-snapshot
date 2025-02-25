@@ -631,22 +631,25 @@ def _replace_unspecified_with_parent_rois(cfg, point_df, roisets):
     For roisets (columns) which ended up with any <unspecified> points (i.e. label 0),
     those point ROIs can be overwritten with a value from the 'parent' roiset column.
 
-    For example if we initially loaded this:
+    For example, suppose we initially loaded the following columns
+    for three roisets (shell, primary, subprimary):
 
-        x  y  z  shell        primary     subprimary
-        1  2  3  Brain          ME(R)   ME_layer_1_R
-        4  5  6  Brain  <unspecified>  <unspecified>
-        7  8  9    VNC            ANm  <unspecified>
-        0  1  2    VNC  <unspecified>  <unspecified>
+        x  y  z          shell        primary     subprimary
+        1  2  3          Brain          ME(R)   ME_layer_1_R
+        4  5  6          Brain  <unspecified>  <unspecified>
+        7  8  9            VNC            ANm  <unspecified>
+        0  1  2            VNC  <unspecified>  <unspecified>
+        3  4  5  <unspecified>  <unspecified>  <unspecified>
 
     and 'shell' is the 'parent-roiset' of the 'primary' roiset, which is in turn
     the parent of the 'subprimary' roiset, then the final table will be:
 
-        x  y  z  shell            primary       subprimary
-        1  2  3  Brain              ME(R)     ME_layer_1_R
-        4  5  6  Brain  Brain-unspecified    <unspecified>
-        7  8  9    VNC                ANm  ANm-unspecified
-        0  1  2    VNC    VNC-unspecified    <unspecified>
+        x  y  z          shell            primary       subprimary
+        1  2  3          Brain              ME(R)     ME_layer_1_R
+        4  5  6          Brain  Brain-unspecified    <unspecified>
+        7  8  9            VNC                ANm  ANm-unspecified
+        0  1  2            VNC    VNC-unspecified    <unspecified>
+        3  4  5  <unspecified>      <unspecified>    <unspecified>
 
     Note that the <unspecified> values are only replaced if the parent column has an actual ROI to offer.
     """
