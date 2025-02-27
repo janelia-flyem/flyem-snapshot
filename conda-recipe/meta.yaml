@@ -36,6 +36,11 @@ requirements:
     - firefox
     - geckodriver
 
+    # If I add apptainer as a linux-only dependency,
+    # then I'll have to change this package not to be noarch anymore.
+    # - apptainer  # [linux]
+
+
 test:
   imports:
     - flyem_snapshot.outputs
