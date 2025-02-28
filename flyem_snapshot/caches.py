@@ -6,9 +6,12 @@ import functools
 from abc import abstractmethod
 from itertools import chain
 
+import numpy as np
+import pyarrow.feather as feather
+
 from neuclease.util import Timer
 
-from .util import checksum
+from .util.checksum import checksum
 
 logger = logging.getLogger(__name__)
 
@@ -105,3 +108,31 @@ class SentinelSerializer(SerializerBase):
 
     def load_from_file(self, path):
         open(path, 'rb').close()
+
+
+def cache_dataframe(df, path):
+    """
+    A wrapper around feather.write_feather with an extra check to ensure
+    that NaN data will not change after a round-trip of write/read.
+    Raises an error if the dataframe doesn't conform.
+    """
+    # Standardize on None as the null value (instead of NaN or "").
+    # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
+    FAKENULL = '__cache_dataframe_nullval__'
+    bad_columns = []
+    for col, dtype in df.dtypes.items():
+        if dtype != object:
+            continue
+
+        if (df[col].replace([np.nan], [FAKENULL]) != df[col].replace([None], FAKENULL)).any():
+            bad_columns.append(col)
+    if bad_columns:
+        msg = (
+            "DataFrame cannot be cached because it contains column(s) of 'object' dtype "
+            "that contain np.nan. write_feather() will convert them to None, giving them "
+            "a different checksum.  Convert them to None yourself using Series.replace([np.nan], [None])) "
+            "before returning the dataframe, so it can be cached.\n"
+            f"The nan-containing columns are: [{bad_columns}]"
+        )
+        raise RuntimeError(msg)
+    feather.write_feather(df, path)

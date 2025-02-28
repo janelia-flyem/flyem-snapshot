@@ -8,7 +8,7 @@ from neuclease.util import Timer, decode_coords_from_uint64
 from neuclease.misc.completeness import ranked_synapse_counts
 
 from ..caches import cached, SentinelSerializer
-from ..util import restrict_synapses_to_roi
+from ..util.util import restrict_synapses_to_roi
 
 logger = logging.getLogger(__name__)
 

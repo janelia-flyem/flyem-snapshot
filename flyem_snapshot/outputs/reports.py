@@ -26,7 +26,7 @@ from neuclease.misc.completeness import (
     variable_width_hbar,
 )
 
-from ..util import export_bokeh
+from ..util.export_bokeh import export_bokeh
 from ..caches import cached, SentinelSerializer
 
 _ = hvplot.pandas  # linting

@@ -19,8 +19,9 @@ from .synapse import export_neuprint_synapses, export_neuprint_synapse_connectio
 from .synapseset import export_synapsesets
 from .element import export_neuprint_elements, export_neuprint_elements_closeto
 from .elementset import export_neuprint_elementsets
-from ...util import restrict_synapses_to_roi
-from ...caches import cached, SentinelSerializer, checksum
+from ...util.util import restrict_synapses_to_roi
+from ...util.checksum import checksum
+from ...caches import cached, SentinelSerializer
 
 logger = logging.getLogger(__name__)
 

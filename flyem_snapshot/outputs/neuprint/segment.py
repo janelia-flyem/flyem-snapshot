@@ -11,7 +11,7 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
 
-from ...util import checksum
+from ...util.checksum import checksum
 from .util import append_neo4j_type_suffixes
 
 logger = logging.getLogger(__name__)
