@@ -211,9 +211,9 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # and then follow up with a query to fetch whatever Clio bodies
     # that query didn't catch, which must be mere Segments in neuprint.
     with Timer("Fetching Neuprint Neuron properties", logger):
-        neuprint_df, _syndist = fetch_neurons(NC(client=client), client=client)
+        neuprint_df = fetch_neurons(NC(client=client), omit_rois=True, client=client)
         clio_segments = set(clio_df.index) - set(neuprint_df['bodyId'])
-        segment_df, _ = fetch_neurons(sorted(clio_segments), client=client)
+        segment_df = fetch_neurons(sorted(clio_segments), omit_rois=True, client=client)
 
         # Drop empty columns before concat to avoid pandas warning.
         neuprint_df = neuprint_df.dropna(axis='columns', how='all')
