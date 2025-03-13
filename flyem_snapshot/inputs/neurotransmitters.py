@@ -60,8 +60,9 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import timed, encode_coords_to_uint64, camelcase_to_snakecase
 
-from ..util import restrict_synapses_to_roi, checksum, cache_dataframe, replace_object_nan_with_none
-from ..caches import cached, SerializerBase
+from ..util.util import replace_object_nan_with_none, restrict_synapses_to_roi
+from ..util.checksum import checksum
+from ..caches import cached, SerializerBase, cache_dataframe
 
 logger = logging.getLogger(__name__)
 

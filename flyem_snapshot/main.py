@@ -28,7 +28,8 @@ from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
 
 from .caches import cached, SerializerBase
-from .util import checksum, log_lsf_details
+from .util.lsf import log_lsf_details
+from .util.checksum import checksum
 
 logger = logging.getLogger(__name__)
 

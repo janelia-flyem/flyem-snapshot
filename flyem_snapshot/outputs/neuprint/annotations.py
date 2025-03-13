@@ -138,11 +138,14 @@ def neuprint_segment_annotations(cfg, ann):
     # Due to source data problems, it's possible that
     # renaming columns introduces DUPLICATE columns.
     # We will consolidate them before deleting the 'duplicates'.
-    for k, v in list(renames.items()):
-        if (k != v) and (k in ann) and (v in ann):
-            ann.update({k: ann[v]})
-            del ann[v]
-            del renames[v]
+    rn = pd.Series(renames)
+    for _v, s in rn.groupby(rn.values):
+        if len(s) == 1:
+            continue
+        ann[s.index[0]] = ann[s.index].bfill(axis=1).iloc[:, 0]
+        ann = ann.drop(columns=s.index[1:])
+        for k in s.index[1:]:
+            del renames[k]
 
     ann = ann[[*renames.keys()]]
     ann = ann.rename(columns=renames)

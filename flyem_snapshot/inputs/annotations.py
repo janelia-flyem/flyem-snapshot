@@ -14,7 +14,7 @@ from neuclease.dvid.keyvalue import fetch_body_annotations
 from neuclease.dvid.annotation import fetch_all_elements
 from neuclease.dvid.labelmap import fetch_labels_batched
 
-from ..util import export_bokeh
+from ..util.export_bokeh import export_bokeh
 
 _ = hvplot.pandas  # for linting
 

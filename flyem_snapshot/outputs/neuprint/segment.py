@@ -11,7 +11,7 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
 
-from ...util import checksum
+from ...util.checksum import checksum
 from .util import append_neo4j_type_suffixes
 
 logger = logging.getLogger(__name__)
@@ -527,6 +527,19 @@ def _construct_export_df_for_common_roiset(neuron_df):
         export_type = neo4j_to_numpy.get(neo4j_type, None)
         if not export_type or export_type == pandas_dtype:
             continue
+
+        # For columns which should be exported as numerics,
+        # coerce incompatible values to null (but warn about them).
+        if np.issubdtype(export_type, np.number):
+            nullcount = neuron_df[c].isnull().sum()
+            neuron_df[c] = pd.to_numeric(neuron_df[c], errors='coerce')
+            if neuron_df[c].isnull().sum() > nullcount:
+                # (The current function is running in a subprocess,
+                # so we can't use the global logger variable.)
+                logging.getLogger(__name__).warning(
+                    f"Segment annotation column {c} has values which cannot be "
+                    "converted to numeric types. Setting those values to null."
+                )
 
         if neuron_df[c].notnull().all():
             neuron_df[c] = neuron_df[c].astype(export_type)

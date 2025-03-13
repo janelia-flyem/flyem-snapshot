@@ -54,8 +54,8 @@ def export_neuroglancer_json_state(cfg, last_mutation):
     dset_tag = f"{dset}:{tag}" if tag else dset
 
     repl = cfg['neuroglancer']['replacements']
-    repl['DATASET_AND_TAG'] = repl['DATASET_AND_TAG'] or dset_tag
-    if last_mutation and not repl['DVID_UUID']:
+    repl['DATASET_AND_TAG'] = repl.get('DATASET_AND_TAG') or dset_tag
+    if last_mutation and not repl.get('DVID_UUID'):
         repl['DVID_UUID'] = last_mutation['uuid']
 
     state_text = open(cfg['neuroglancer']['json-state'], 'r').read()
@@ -72,4 +72,4 @@ def export_neuroglancer_json_state(cfg, last_mutation):
 
     # Now write the final version.
     logger.info(f"Writing {output_name}")
-    dump_json(state, output_name, indent=2, unsplit_int_lists=True)
+    dump_json(state, output_name, indent=2, unsplit_number_lists=True)

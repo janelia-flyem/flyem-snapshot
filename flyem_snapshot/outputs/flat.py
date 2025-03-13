@@ -8,7 +8,7 @@ from neuclease.util import Timer, decode_coords_from_uint64
 from neuclease.misc.completeness import ranked_synapse_counts
 
 from ..caches import cached, SentinelSerializer
-from ..util import restrict_synapses_to_roi
+from ..util.util import restrict_synapses_to_roi
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,11 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
 def _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf):
     filtering_roiset = cfg['restrict-connectivity-to-roiset']
     if filtering_roiset:
+        if filtering_roiset not in point_df.columns:
+            raise RuntimeError(
+                "Cannot filter flat-connectome according to your 'restrict-connectivity-to-roiset' "
+                f"config because roi-set '{filtering_roiset}' is not listed in the synapse table."
+            )
         with Timer(f"Excluding synapses whose ROI is unspecified within roi-set: '{filtering_roiset}'"):
             point_df, partner_df = restrict_synapses_to_roi(filtering_roiset, None, point_df, partner_df)
 
@@ -85,6 +90,12 @@ def _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf):
 
 def _export_synapse_partners(cfg, point_df, partner_df, file_tag):
     labeling_roiset = cfg['roi-set']
+    if labeling_roiset not in partner_df.columns:
+        raise RuntimeError(
+            f"Cannot export flat-connectome with roi-set '{labeling_roiset}' "
+            "because it isn't listed in the synapse table."
+        )
+
     with Timer("Constructing synapse partner export", logger):
         partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', labeling_roiset]]
 

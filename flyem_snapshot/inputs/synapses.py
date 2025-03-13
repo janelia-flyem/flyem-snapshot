@@ -12,8 +12,8 @@ import pyarrow.feather as feather
 
 from neuclease.util import Timer, timed, encode_coords_to_uint64, decode_coords_from_uint64
 
-from ..util import checksum, cache_dataframe
-from ..caches import cached, SerializerBase
+from ..util.checksum import checksum
+from ..caches import cached, SerializerBase, cache_dataframe
 
 logger = logging.getLogger(__name__)
 

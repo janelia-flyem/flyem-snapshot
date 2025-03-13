@@ -30,7 +30,16 @@ requirements:
     - requests
     - ujson
     - python-cityhash
-    - apptainer  # [linux]
+
+    # Required by bokeh for making PNGs
+    - selenium
+    - firefox
+    - geckodriver
+
+    # If I add apptainer as a linux-only dependency,
+    # then I'll have to change this package not to be noarch anymore.
+    # - apptainer  # [linux]
+
 
 test:
   imports:
