@@ -105,8 +105,13 @@ def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, bod
 
 @timed
 def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, ann):
-    prepost = point_df[['body', 'kind']].value_counts().unstack(fill_value=0)
-    prepost.columns = ['post', 'pre']
+    prepost = (
+        point_df[['body', 'kind']]
+        .value_counts()
+        .unstack(fill_value=0)
+        .rename(columns={'PreSyn': 'pre', 'PostSyn': 'post'})
+        [['post', 'pre']]
+    )
 
     upstream = prepost['post'].rename('upstream')
     downstream = partner_df['body_pre'].value_counts().rename('downstream').rename_axis('body')
@@ -241,8 +246,13 @@ def _roi_elm_for_roiset(cfg, point_df, partner_df, element_tables, roiset_name, 
                 .rename(columns={roiset_name: 'roi'})
             )
 
-    roi_prepost = point_df[['body', 'roi', 'kind']].value_counts().unstack(fill_value=0)
-    roi_prepost.columns = ['post', 'pre']
+    roi_prepost = (
+        point_df[['body', 'roi', 'kind']]
+        .value_counts()
+        .unstack(fill_value=0)
+        .rename(columns={'PreSyn': 'pre', 'PostSyn': 'post'})
+        [['post', 'pre']]
+    )
 
     # Note:
     #   Both 'upstream' AND 'downstream' ROI are determined by the post-synaptic point location.
