@@ -552,6 +552,20 @@ def standardize_config(cfg, config_dir):
     # but we insert its loaded contents into the main config for all neuprint steps to use.
     if neuprintcfg['export-neuprint-snapshot'] and isinstance(neuprintcfg['meta'], str):
         metacfg = load_config(neuprintcfg['meta'], NeuprintMetaSchema)
+        with switch_cwd(os.path.dirname(neuprintcfg['meta'])):
+            def fix_hierarchy_paths(rh):
+                if isinstance(rh, str) and rh.endswith(('.json', '.yaml')):
+                    # Right now we don't tackle the case where a part of the hierarchy
+                    # included via a file and that file itself includes others files
+                    # which are not absolute paths.
+                    return os.path.abspath(rh)
+                elif isinstance(rh, dict):
+                    return {k: fix_hierarchy_paths(v) for k,v in rh.items()}
+                else:
+                    return rh
+
+            metacfg['roiHierarchy'] = fix_hierarchy_paths(metacfg['roiHierarchy'])
+
         neuprintcfg['meta'] = metacfg
 
 
