@@ -501,6 +501,16 @@ def _get_neuroglancer_base_link(state_path):
 
 @PrefixFilter.with_context("downstream capture")
 def _export_downstream_capture_histogram(cfg, snapshot_tag, roiset, name, partner_df):
+    if not partner_df['captured_pre'].astype(bool).any():
+        logger.error("No upstream bodies in the capture set defined by 'capture-statuses'.")
+        logger.error("Skipping downstream capture histogram.")
+        return
+
+    if not partner_df['captured_post'].astype(bool).any():
+        logger.error("No downstream bodies in the capture set defined by 'capture-statuses'.")
+        logger.error("Skipping downstream capture histogram.")
+        return
+
     _name = '-'.join(name.split())
     os.makedirs(f"reports/{roiset}/reports/{_name}", exist_ok=True)
 
