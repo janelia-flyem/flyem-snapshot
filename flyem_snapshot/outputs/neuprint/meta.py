@@ -118,6 +118,20 @@ RoiHierarchySchema = {
     }
 }
 
+# This schema is used when the ROI hierarchy (or part of it)
+# is defined in a stand-alone file.  This is the schema of such a file.
+# (We have to define a special schema so that the 'definitions' of the
+# schema can be placed at the top level of the schema.)
+RoiHierarchyFileSchema = {
+    "default": {},
+    "definitions": {
+        "rh-def-recursive": RoiHierarchyDefinition
+    },
+    "additionalProperties": {
+        "$ref": "#/definitions/rh-def-recursive"
+    }
+}
+
 NeuronColumnSchema = {
     "type": "object",
     "default": {},
@@ -427,7 +441,7 @@ def load_roi_hierarchy(rhcfg, roisets):
             rois = roisets[roiset_name].keys()
             return {k: None for k in rois}
         elif re.match('.*(yaml|json)$', rhcfg):
-            rhcfg = load_config(rhcfg, RoiHierarchySchema)
+            rhcfg = load_config(rhcfg, RoiHierarchyFileSchema)
             return load_roi_hierarchy(rhcfg, roisets)
         raise RuntimeError(f"bad string entry in roi-hierarchy: '{rhcfg}'")
 
