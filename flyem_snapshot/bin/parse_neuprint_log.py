@@ -192,8 +192,10 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, dedup
 
             # Aggressively deduplicate each chunk to save RAM.
             if deduplicate == 'keep-last':
+                df['user_req_count'] = df.groupby('user').transform('size')
                 df = df.drop_duplicates('user', keep='last')
             if deduplicate == 'keep-first':
+                df['user_req_count'] = df.groupby('user').transform('size')
                 df = df.drop_duplicates('user', keep='first')
 
             chunk_dfs.append(df)
@@ -206,8 +208,10 @@ def parse_file(log_file, chunk_size, tail_bytes, timezone, discard_cypher, dedup
     log_df.insert(0, 'datetime', t)
 
     if deduplicate == 'keep-last':
+        log_df['user_req_count'] = log_df.groupby('user')['user_req_count'].transform('sum')
         log_df = log_df.drop_duplicates('user', keep='last')
     if deduplicate == 'keep-first':
+        log_df['user_req_count'] = log_df.groupby('user')['user_req_count'].transform('sum')
         log_df = log_df.drop_duplicates('user', keep='first')
 
     return log_df
