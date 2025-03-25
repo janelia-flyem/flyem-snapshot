@@ -73,8 +73,9 @@ CLIO_TO_NEUPRINT_PROPERTIES = {
     'major output': '',
 }
 
-# Note any 'statusLabel' (DVID status) that isn't
-# listed here will appear in neuprint unchanged.
+# Note:
+#   Any 'statusLabel' (DVID status) that isn't
+#   listed here will appear in neuprint unchanged.
 NEUPRINT_STATUSLABEL_TO_STATUS = {
     'Unimportant':              'Unimportant',  # noqa
     'Glia':                     'Glia',         # noqa
