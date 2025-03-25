@@ -659,15 +659,18 @@ def _append_celltype_predictions_to_body_df(body_df, type_df):
             'num_tbar_nt_predictions': 'total_nt_predictions',
             'num_tbar_nt_predictions_celltype': 'celltype_total_nt_predictions',
         })
-        .fillna({
-            'total_nt_predictions': 0,
-            'celltype_total_nt_predictions': 0,
-        })
-        .astype({
-            'total_nt_predictions': np.int32,
-            'celltype_total_nt_predictions': np.int32,
-        })
+        .fillna({'total_nt_predictions': 0})
     )
+
+    # If a cell has no assigned type yet, consider it to be the only member of its type.
+    # Therefore, its celltype_total_nt_predictions is the same as its own prediction count.
+    body_df = body_df.fillna({'celltype_total_nt_predictions': body_df['total_nt_predictions']})
+
+    body_df = body_df.astype({
+        'total_nt_predictions': np.int32,
+        'celltype_total_nt_predictions': np.int32,
+    })
+
     return body_df
 
 
@@ -684,6 +687,10 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
 
     # Start with the celltype majority prediction...
     body_df['consensus_nt'] = body_df['celltype_predicted_nt']
+
+    # But if a cell has no assigned type yet, consider it to be the only member of its type.
+    # Therefore, give it a celltype_predicted_nt according to its own predicted_nt.
+    body_df.loc[body_df['cell_type'].isnull(), 'consensus_nt'] = body_df.loc[body_df['cell_type'].isnull(), 'predicted_nt']
 
     # Apply user-provided overrides (e.g. replace 'octopamine' with 'unclear').
     body_df['consensus_nt'].update(body_df['consensus_nt'].map(cfg['override-celltype-before-consensus']))
