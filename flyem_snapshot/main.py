@@ -451,6 +451,7 @@ def standardize_config(cfg, config_dir):
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
+    output_ntcfg = cfg['outputs']['neurotransmitters']
 
     uuid, snapshot_tag, output_dir = determine_snapshot_tag(cfg, config_dir)
     jobcfg['snapshot-tag'] = snapshot_tag
@@ -468,6 +469,11 @@ def standardize_config(cfg, config_dir):
         # By default, the ROI config uses the main server/uuid.
         roicfg['dvid']['server'] = roicfg['dvid']['server'] or dvidcfg['server']
         roicfg['dvid']['uuid'] = roicfg['dvid']['uuid'] or uuid
+
+        # By default, the neurotransmitter dvid backport goes to the main dvid server/uuid.
+        output_ntcfg['dvid']['server'] = output_ntcfg['dvid']['server'] or dvidcfg['server']
+        output_ntcfg['dvid']['uuid'] = output_ntcfg['dvid']['uuid'] or uuid
+        output_ntcfg['dvid']['neuronjson_instance'] = output_ntcfg['dvid']['neuronjson_instance'] or f"{dvidcfg['instance']}_annotations"
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.
