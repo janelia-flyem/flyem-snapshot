@@ -226,6 +226,8 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # In some cases (such as spatial points), what neuprint
     # RETURNS isn't in the format that we need to WRITE.
     # So process the values just like we did with clio_df.
+    # (First, name 'statusLabel' to 'status' to hit the same code path that the clio annotations use.)
+    neuprint_df = neuprint_df.drop(columns=['status']).rename(columns={'statusLabel': 'status'})
     neuprint_df = neuprint_segment_annotations(cfg, neuprint_df)
 
     # We handle all *columns* from clio, but only *bodies* which are in both clio and neuprint.
