@@ -5,7 +5,6 @@ into the format neuprint needs (column names, status values, etc.)
 import re
 import logging
 
-import numpy as np
 import pandas as pd
 
 from neuclease.util import snakecase_to_camelcase
@@ -161,15 +160,16 @@ def neuprint_segment_annotations(cfg, ann):
         if col in ('positionType', 'locationType'):
             continue
 
-        ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
-        if (ann[col].notnull() & ~ispoint).any():
-            ann[col] = ann[col].map(_convert_point)
-            ispoint = ann[col].map(lambda x: hasattr(x, '__len__') and len(x) == 3)
-            if (ann[col].notnull() & ~ispoint).any():
-                # Even after conversion, there are _still_ bad entries!
-                logger.warning(f"Annotation column {col} has non-null values that aren't points. Ignoring those items.")
+        count = ann[col].notnull().sum()
+        ann[col] = ann[col].map(_convert_point)
+        newcount = ann[col].notnull().sum()
+        if newcount != count:
+            logger.warning(
+                f"Point annotation column {col} has {count - newcount}"
+                " values which could not be processed as points."
+            )
 
-        valid = ann[col].notnull() & ispoint
+        valid = ann[col].notnull()
         ann.loc[~valid, col] = None
         ann.loc[valid, col] = [
             f"{{x:{x}, y:{y}, z:{z}}}"
@@ -179,17 +179,62 @@ def neuprint_segment_annotations(cfg, ann):
     return ann
 
 
-def _convert_point(x):
-    # Try converting strings like '123, 456, 789' to lists
-    if not isinstance(x, str) or ',' not in x:
-        return x
-    try:
-        # In clio, points might be strings, such as:
-        # - "123, 456, 789"
-        # - "[123, 456, 789]"
-        p = eval(x)
-        if len(p) == 3:
-            return list(p)
-        return x
-    except Exception:
-        return x
+def _convert_point(p):
+    """
+    Convert the given entity from various possible forms of point data into to a standard form.
+
+    The input may be one of the following:
+
+    - A string like '123, 456, 789'
+    - A string like '[123, 456, 789]'
+    - A string like '{x: 123, y: 456, z: 789}'
+    - A list or array of three ints or floats
+    - a neo4j spatial coordinate like this:
+        {
+            'coordinates': [24481, 36044, 67070],
+            'crs': {'name': 'cartesian-3d',
+            'properties': {'href': 'http://spatialreference.org/ref/sr-org/9157/ogcwkt/',
+            'type': 'ogcwkt'},
+            'srid': 9157,
+            'type': 'link'},
+            'type': 'Point'
+        }
+
+    The output form is just a list: [x, y, z].
+    If the input is None or cannot be interpreted as a point, then None is returned.
+    """
+    match p:
+        case None:
+            return None
+
+        case {'coordinates': coords} if len(coords) == 3:
+            return coords
+
+        case {'x': x, 'y': y, 'z': z}:
+            return [x, y, z]
+
+        case [x, y, z] if all(isinstance(v, int) for v in (x, y, z)):
+            return [x, y, z]
+
+        case [x, y, z]:
+            try:
+                return [float(x), float(y), float(z)]
+            except (ValueError, TypeError):
+                return None
+
+        case str() as s:
+            s = s.strip('[]{} ')
+
+            try:
+                pattern = (
+                    r'(?:x:\s*)?(\d+\.?\d*)\s*,\s*'
+                    r'(?:y:\s*)?(\d+\.?\d*)\s*,\s*'
+                    r'(?:z:\s*)?(\d+\.?\d*)\s*$'
+                )
+                if match := re.match(pattern, s):
+                    return [eval(x) for x in match.groups()]
+            except (ValueError, TypeError):
+                return None
+
+        case _:
+            return None
