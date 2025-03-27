@@ -468,4 +468,15 @@ if __name__ == "__main__":
     # sys.argv.extend(['--dry-run'])
     # sys.argv.extend(['--default-transaction-size', '200'])
     # sys.argv.extend("emdata6.int.janelia.org:9000 :master segmentation_annotations neuprint-cns.janelia.org cns".split())
+
+    # sys.argv.extend(['-o', '/tmp/debug'])
+    # sys.argv.extend(['--dry-run'])
+    # sys.argv.extend(['--default-transaction-size', '200'])
+    # sys.argv.extend("emdata5.int.janelia.org:8400 :master segmentation_annotations neuprint-pre.janelia.org vnc".split())
+
+    # sys.argv.extend(['-o', '/tmp/debug'])
+    # sys.argv.extend(['--dry-run'])
+    # sys.argv.extend(['--default-transaction-size', '200'])
+    # sys.argv.extend("emdata7.int.janelia.org:8700 :new-agglo segmentation_annotations neuprint-pre.janelia.org yakuba-vnc".split())
+
     main()
