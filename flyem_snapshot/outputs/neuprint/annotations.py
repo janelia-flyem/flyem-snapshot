@@ -52,25 +52,6 @@ CLIO_TO_NEUPRINT_PROPERTIES = {
     'soma_position': 'somaLocation',
     'tosoma_position': 'tosomaLocation',
     'root_position': 'rootLocation',
-
-    # hemibrain stuff
-    'primary neurite': 'primaryNeurite',
-    'cell body fiber': 'cellBodyFiber',
-    'synonym': 'synonyms',  # Wasn't in the original hemibrain release; now we add it for compatibility with MANC
-
-    # hemibrain stuff to exclude
-    'body ID': '',
-    'comment': '',
-    'naming user': '',
-    '0.5 status': '',
-    '0.2 status': '',
-    'assigned': '',
-    'tips sparsely traced status': '',
-    'property': '',
-    'location': '',
-    'cross midline': '',
-    'major input': '',
-    'major output': '',
 }
 
 # Note:
