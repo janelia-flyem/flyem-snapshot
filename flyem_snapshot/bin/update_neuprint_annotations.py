@@ -446,7 +446,7 @@ def _post_commands(commands, batch_size, client):
                 batch_size //= 2
 
 
-POINT_PATTERN = re.compile(r'{x:\d+, y:\d+, z:\d+}')
+POINT_PATTERN = re.compile(r'{x:-?\d+, y:-?\d+, z:-?\d+}')
 
 
 def _cypher_literal(x):

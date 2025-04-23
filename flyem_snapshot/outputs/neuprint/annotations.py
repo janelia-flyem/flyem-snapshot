@@ -227,9 +227,9 @@ def _convert_point(p):
 
             try:
                 pattern = (
-                    r'(?:x:\s*)?(\d+\.?\d*)\s*,\s*'
-                    r'(?:y:\s*)?(\d+\.?\d*)\s*,\s*'
-                    r'(?:z:\s*)?(\d+\.?\d*)\s*$'
+                    r'(?:x:\s*)?(-?\d+\.?\d*)\s*,\s*'
+                    r'(?:y:\s*)?(-?\d+\.?\d*)\s*,\s*'
+                    r'(?:z:\s*)?(-?\d+\.?\d*)\s*$'
                 )
                 if match := re.match(pattern, s):
                     return [eval(x) for x in match.groups()]
