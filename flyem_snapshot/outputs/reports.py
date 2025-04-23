@@ -528,6 +528,8 @@ def _export_downstream_capture_histogram(cfg, snapshot_tag, roiset, name, partne
         .astype(np.int32)
     )
     df = df.rename(columns={True: 'captured', False: 'not_captured'})
+    df.columns.name = None
+
     df['capture_frac'] = (df['captured'] / (df['captured'] + df['not_captured'])).astype(np.float32)
 
     logger.info(f"Exporting {_name}-downstream-capture-{snapshot_tag} table and plot")
