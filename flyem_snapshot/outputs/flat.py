@@ -7,8 +7,10 @@ from neuclease import PrefixFilter
 from neuclease.util import Timer, decode_coords_from_uint64
 from neuclease.misc.completeness import ranked_synapse_counts
 
+from google.cloud import storage
+
 from ..caches import cached, SentinelSerializer
-from ..util.util import restrict_synapses_to_roi
+from ..util.util import restrict_synapses_to_roi, upload_file_to_gcs
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,18 @@ FlatConnectomeSchema = {
             "type": "string",
             "default": ""
         },
+        "gc-project": {
+            "description":
+                "Google Cloud project.\n",
+            "type": "string",
+            "default": "FlyEM-Private"
+        },
+        "gcs-bucket": {
+            "description":
+                "Google Cloud Storage bucket to export the flat-connectome to.\n",
+            "type": "string",
+            "default": ""
+        },
     }
 }
 
@@ -55,18 +69,25 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     """
     if not cfg['export-connectome']:
         return
+    # Initialize Google cloud client and select project
+    client = storage.Client()
+    if cfg['gc-project'] and cfg['gcs-bucket']:
+        client.project = cfg['gc-project']
+    else:
+        cfg['gcs-bucket'] = ""
 
     os.makedirs('flat-connectome', exist_ok=True)
 
     point_df, partner_df, file_tag = _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf)
 
-    partner_export_df = _export_synapse_partners(cfg, point_df, partner_df, file_tag)
-    _export_weighted_connectome(partner_export_df, file_tag)
+    partner_export_df = _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag)
+    _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag)
 
-    significant_partner_export_df = _export_significant_synapse_partners(ann, partner_export_df, file_tag)
-    _export_significant_weighted_connectome(ann, significant_partner_export_df, file_tag)
+    significant_partner_export_df = _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag)
+    _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag)
 
-    _export_ranked_body_stats(ann, point_df, partner_df, file_tag)
+    _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag)
+
 
 
 def _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf):
@@ -88,7 +109,7 @@ def _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf):
     return point_df, partner_df, file_tag
 
 
-def _export_synapse_partners(cfg, point_df, partner_df, file_tag):
+def _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag):
     labeling_roiset = cfg['roi-set']
     if labeling_roiset not in partner_df.columns:
         raise RuntimeError(
@@ -125,20 +146,24 @@ def _export_synapse_partners(cfg, point_df, partner_df, file_tag):
         partner_export_df = partner_export_df[partner_cols]
 
     with Timer("Writing synapse partner export", logger):
+        fname = f'flat-connectome/syn-partners-{file_tag}.feather'
         feather.write_feather(
             partner_export_df,
-            f'flat-connectome/syn-partners-{file_tag}.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
     with Timer("Writing synapse point export", logger):
+        fname = f'flat-connectome/syn-points-{file_tag}.feather'
         feather.write_feather(
             point_df,
-            f'flat-connectome/syn-points-{file_tag}.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     return partner_export_df
 
 
-def _export_weighted_connectome(partner_export_df, file_tag):
+def _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag):
     with Timer("Constructing weighted connectome", logger):
         connectome = (
             partner_export_df[['body_pre', 'body_post']]
@@ -148,13 +173,15 @@ def _export_weighted_connectome(partner_export_df, file_tag):
         )
 
     with Timer("Writing weighted connectome", logger):
+        fname = f'flat-connectome/connectome-weights-{file_tag}.feather'
         feather.write_feather(
             connectome,
-            f'flat-connectome/connectome-weights-{file_tag}.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
 
-def _export_significant_synapse_partners(ann, partner_export_df, file_tag):
+def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag):
     with Timer("Constructing significant-only synapse partner export", logger):
         significant_bodies = ann.query(f'status >= "{MIN_SIGNIFICANT_STATUS}"').index
         logger.info(f"There are {len(significant_bodies)} with status '{MIN_SIGNIFICANT_STATUS}' or better.")
@@ -166,14 +193,16 @@ def _export_significant_synapse_partners(ann, partner_export_df, file_tag):
 
     msg = f"Writing significant-only synapse partner export (with only {MIN_SIGNIFICANT_STATUS} or better)"
     with Timer(msg, logger):
+        fname = f'flat-connectome/syn-partners-{file_tag}-significant-only.feather'
         feather.write_feather(
             significant_partner_export_df,
-            f'flat-connectome/syn-partners-{file_tag}-significant-only.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
     return significant_partner_export_df
 
 
-def _export_significant_weighted_connectome(ann, significant_partner_export_df, file_tag):
+def _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag):
     msg = f"Constructing significant-only weighted connectome (with only {MIN_SIGNIFICANT_STATUS} or better)"
     with Timer(msg, logger):
         significant_connectome = (
@@ -194,13 +223,15 @@ def _export_significant_weighted_connectome(ann, significant_partner_export_df, 
         )
 
     with Timer("Writing significant-only weighted connectome", logger):
+        fname = f'flat-connectome/connectome-weights-{file_tag}-significant-only.feather'
         feather.write_feather(
             significant_connectome,
-            f'flat-connectome/connectome-weights-{file_tag}-significant-only.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
 
-def _export_ranked_body_stats(ann, point_df, partner_df, file_tag):
+def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag):
     with Timer("Computing ranked body stats table", logger):
         # A version of this table is also exported for each 'report' in the config,
         # but we also export it here as part of the 'flat' connectome export.
@@ -215,7 +246,9 @@ def _export_ranked_body_stats(ann, point_df, partner_df, file_tag):
         })
 
     with Timer("Writing ranked body stats table", logger):
+        fname = f'flat-connectome/body-stats-{file_tag}.feather'
         feather.write_feather(
             syn_counts_df.reset_index(),
-            f'flat-connectome/body-stats-{file_tag}.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
