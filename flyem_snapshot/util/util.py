@@ -1,3 +1,4 @@
+from google.cloud import storage
 import numpy as np
 import pandas as pd
 
@@ -62,3 +63,20 @@ def restrict_synapses_to_roi(roiset, roi, point_df, partner_df):
     point_df = point_df.loc[point_df.index.isin(valid_ids)]
 
     return point_df, partner_df
+
+
+def upload_file_to_gcs(bucket_name, source, destination):
+    """ Upload a file to Google Cloud Storage
+        Keyword arguments:
+          bucket_name: name of the GCS bucket
+          source: local path to the file to upload
+          destination: GCS destination
+        Returns:
+            None
+    """
+    if not bucket_name:
+        return
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(destination)
+    blob.upload_from_filename(source)

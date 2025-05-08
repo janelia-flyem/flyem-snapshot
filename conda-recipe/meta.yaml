@@ -30,6 +30,9 @@ requirements:
     - requests
     - ujson
     - python-cityhash
+    - google-api-python-client
+    - google-cloud-sdk
+    - google-cloud-storage
 
     # Required by bokeh for making PNGs
     - selenium
