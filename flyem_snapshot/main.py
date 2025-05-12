@@ -225,7 +225,7 @@ def main_impl(cfg):
         # Produce outputs
         #
         min_conf = cfg['inputs']['synapses']['min-confidence']
-        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
+        export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df, snapshot_tag)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)

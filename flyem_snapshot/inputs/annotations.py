@@ -8,6 +8,7 @@ import pandas as pd
 import holoviews as hv
 import pyarrow.feather as feather
 
+from google.cloud import storage
 
 from neuclease import PrefixFilter
 from neuclease.dvid.keyvalue import fetch_body_annotations
@@ -15,6 +16,7 @@ from neuclease.dvid.annotation import fetch_all_elements
 from neuclease.dvid.labelmap import fetch_labels_batched
 
 from ..util.export_bokeh import export_bokeh
+from ..util.util import upload_file_to_gcs
 
 _ = hvplot.pandas  # for linting
 
@@ -137,6 +139,18 @@ AnnotationsSchema = {
             "type": ["integer", "null"],
             "default": None
         },
+        "gc-project": {
+            "description":
+                "Google Cloud project.\n",
+            "type": "string",
+            "default": "FlyEM-Private"
+        },
+        "gcs-bucket": {
+            "description":
+                "Google Cloud Storage bucket to export files to.\n",
+            "type": "string",
+            "default": "flyem-snapshots"
+        },
     }
 }
 
@@ -157,6 +171,12 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
     """
     os.makedirs('tables', exist_ok=True)
     os.makedirs('reports', exist_ok=True)
+    # Initialize Google cloud client and select project
+    client = storage.Client()
+    if cfg['gc-project'] and cfg['gcs-bucket']:
+        client.project = cfg['gc-project']
+    else:
+        cfg['gcs-bucket'] = ""
 
     ann = _load_raw_annotations(cfg, pointlabeler)
     for pa_cfg in cfg['point-annotations']:
@@ -180,12 +200,14 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
         logger.info("Discarding obsolete column 'group_old'")
         del ann['group_old']
 
+    fname = f'tables/body-annotations-{snapshot_tag}.feather'
     feather.write_feather(
         ann.reset_index(),
-        f'tables/body-annotations-{snapshot_tag}.feather'
+        fname
     )
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
-    _export_body_status_counts(ann, snapshot_tag)
+    _export_body_status_counts(ann, snapshot_tag, cfg)
 
     return ann
 
@@ -276,11 +298,13 @@ def _apply_value_replacements(cfg, ann):
         ann[tgt_col] = ann[src_col].astype(object).replace(rpl['replacements'])
 
 
-def _export_body_status_counts(ann, snapshot_tag):
+def _export_body_status_counts(ann, snapshot_tag, cfg):
     vc = ann['status'].value_counts().sort_index(ascending=False)
     vc = vc[vc > 0]
     vc = vc[vc.index != ""]
-    vc.to_csv(f'tables/body-status-counts-{snapshot_tag}.csv', index=True, header=True)
+    fname = f'tables/body-status-counts-{snapshot_tag}.csv'
+    vc.to_csv(fname, index=True, header=True)
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     try:
         title = f'body status counts ({snapshot_tag})'

@@ -26,7 +26,10 @@ from neuclease.misc.completeness import (
     variable_width_hbar,
 )
 
+from google.cloud import storage
+
 from ..util.export_bokeh import export_bokeh
+from ..util.util import upload_file_to_gcs
 from ..caches import cached, SentinelSerializer
 
 _ = hvplot.pandas  # linting
@@ -65,7 +68,7 @@ ReportSchema = {
                 "If not provided, then a name will be chosen automatically from the selected ROI(s)",
             "type": "string",
             "default": ""
-        }
+        },
     }
 }
 
@@ -128,7 +131,19 @@ ReportSetSchema = {
             # to look at all bodies which will eventually become Roughly traced,
             # i.e. all Sensory Anchor bodies.
             "default": DEFAULT_BODY_STATUS_CATEGORIES[DEFAULT_BODY_STATUS_CATEGORIES.index('Sensory Anchor'):]
-        }
+        },
+        "gc-project": {
+            "description":
+                "Google Cloud project.\n",
+            "type": "string",
+            "default": "FlyEM-Private"
+        },
+        "gcs-bucket": {
+            "description":
+                "Google Cloud Storage bucket to export the flat-connectome to.\n",
+            "type": "string",
+            "default": "flyem-snapshots"
+        },
     }
 }
 
@@ -147,10 +162,17 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
         logger.info("No reports requested.")
         return
 
+    # Initialize Google cloud client and select project
+    client = storage.Client()
+
     logger.info(f"point_df.columns: {point_df.columns.tolist()}")
     logger.info(f"partner_df.columns: {partner_df.columns.tolist()}")
 
     for reportset_cfg in cfg:
+        if reportset_cfg['gc-project'] and reportset_cfg['gcs-bucket']:
+            client.project = reportset_cfg['gc-project']
+        else:
+            reportset_cfg['gcs-bucket'] = ""
         roiset = reportset_cfg['roiset']
         _export_reportset(reportset_cfg, point_df, partner_df, ann, snapshot_tag, roiset=roiset)
 
@@ -228,7 +250,7 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         all_syncounts[name] = syncounts
         all_status_stats[name] = status_stats
 
-    _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats)
+    _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats, snapshot_tag)
 
 
 @PrefixFilter.with_context('{name}')
@@ -264,13 +286,17 @@ def _export_report(cfg, snapshot_tag, roiset, name, report_point_df, report_part
     return syncounts, status_stats
 
 
-def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats):
+def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats, snapshot_tag):
 
-    with open(f'reports/{roiset}/{roiset}-all_syncounts.pkl', 'wb') as f:
+    fname = f'reports/{roiset}/{roiset}-all_syncounts.pkl'
+    with open(fname, 'wb') as f:
         pickle.dump(all_syncounts, f)
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
-    with open(f'reports/{roiset}/{roiset}-all_status_stats.pkl', 'wb') as f:
+    fname = f'reports/{roiset}/{roiset}-all_status_stats.pkl'
+    with open(fname, 'wb') as f:
         pickle.dump(all_status_stats, f)
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     if next(iter(all_status_stats.values())) is None:
         # We can't export any capture summaries if no body statuses were given.
@@ -311,7 +337,9 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
     }
     all_status_stats = pd.concat(all_status_stats.values(), ignore_index=True)
     all_status_stats['status'] = all_status_stats['status'].astype(STATUS_DTYPE)
-    all_status_stats.to_csv(f'reports/{roiset}/{roiset}-all-status-stats.csv', index=False, header=True)
+    fname = f'reports/{roiset}/{roiset}-all-status-stats.csv'
+    all_status_stats.to_csv(fname, index=False, header=True)
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     # This unstack() will result in multi-level columns:
     # level 0: traced_presyn_frac                            traced_postsyn_frac                        ...
@@ -363,12 +391,15 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
                 .merge(names_df, 'left', on='name')
                 .sort_values('report_index')
             )
-            df.to_csv(f'reports/{roiset}/{subset_name}/csv/{subset_name}-cumulative-{level0}-by-status.csv', index=False, header=True)
-
+            fname = f'reports/{roiset}/{subset_name}/csv/{subset_name}-cumulative-{level0}-by-status.csv'
+            df.to_csv(fname, index=False, header=True)
+            upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
             # The dataframe has cumulative connectivity,
             # but for the stacked bar chart we don't want cumulative.
             df[relevant_statuses] -= df[relevant_statuses].shift(1, axis=1, fill_value=0)
-            df.to_csv(f'reports/{roiset}/{subset_name}/csv/{subset_name}-{level0}-by-status.csv', index=False, header=True)
+            fname = f'reports/{roiset}/{subset_name}/csv/{subset_name}-{level0}-by-status.csv'
+            df.to_csv(fname, index=False, header=True)
+            upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
             p = variable_width_hbar(
                 df,
@@ -439,15 +470,19 @@ def _completeness_forecast(cfg, snapshot_tag, roiset, name, point_df, partner_df
             stop_at_rank=stop_at_rank
         )
 
+        fname = f'reports/{roiset}/reports/{_name}/{_name}-conn_df-{snapshot_tag}.feather'
         feather.write_feather(
             conn_df,
-            f'reports/{roiset}/reports/{_name}/{_name}-conn_df-{snapshot_tag}.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
+        fname = f'reports/{roiset}/reports/{_name}/{_name}-syn_counts_df-{snapshot_tag}.feather'
         feather.write_feather(
             syn_counts_df.reset_index(),
-            f'reports/{roiset}/reports/{_name}/{_name}-syn_counts_df-{snapshot_tag}.feather'
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     with Timer("Generating completeness curve plot"):
         title = f'{name}: Cumulative connectivity by ranked body ({snapshot_tag})'
@@ -531,10 +566,12 @@ def _export_downstream_capture_histogram(cfg, snapshot_tag, roiset, name, partne
     df['capture_frac'] = (df['captured'] / (df['captured'] + df['not_captured'])).astype(np.float32)
 
     logger.info(f"Exporting {_name}-downstream-capture-{snapshot_tag} table and plot")
+    fname = f'reports/{roiset}/reports/{_name}/{_name}-downstream-capture-{snapshot_tag}.feather'
     feather.write_feather(
         df.reset_index(),
-        f"reports/{roiset}/reports/{_name}/{_name}-downstream-capture-{snapshot_tag}.feather"
+        fname
     )
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     p = df['capture_frac'].hvplot.hist(
         title=f"{name}: Downstream capture, {min_capture_status} or better ({snapshot_tag})",
