@@ -9,6 +9,10 @@ from neuclease import PrefixFilter
 from neuclease.util import Timer
 from neuclease.dvid.labelmap import fetch_sizes, fetch_mutations, compute_affected_bodies
 
+from google.cloud import storage
+
+from ..util.util import upload_file_to_gcs
+
 logger = logging.getLogger(__name__)
 
 BodySizesSchema = {
@@ -44,6 +48,18 @@ BodySizesSchema = {
             "type": ["integer", "null"],
             "default": None
         },
+        "gc-project": {
+            "description":
+                "Google Cloud project.\n",
+            "type": "string",
+            "default": "FlyEM-Private"
+        },
+        "gcs-bucket": {
+            "description":
+                "Google Cloud Storage bucket to export files to.\n",
+            "type": "string",
+            "default": "flyem-snapshots"
+        },
     }
 }
 
@@ -60,6 +76,13 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
         logger.info("Body sizes will not be emitted due to load-sizes: false")
         return None
 
+    # Initialize Google cloud client and select project
+    client = storage.Client()
+    if cfg['gc-project'] and cfg['gcs-bucket']:
+        client.project = cfg['gc-project']
+    else:
+        cfg['gcs-bucket'] = ""
+
     dvidseg = pointlabeler and pointlabeler.dvidseg
     cache_file = cfg['cache-file']
     cache_uuid = cfg['cache-uuid']
@@ -69,7 +92,7 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
         return None
 
     if not cache_file:
-        return _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, cfg['processes'])
+        return _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, cfg['processes'], cfg)
 
     cached_sizes = feather.read_feather(cache_file).astype({'body': np.int64}).set_index('body')['size']
     if bool(dvidseg) != bool(cache_uuid):
@@ -95,14 +118,16 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
     )
 
     os.makedirs('tables', exist_ok=True)
+    fname = f'tables/body-size-cache-{snapshot_tag}.feather'
     feather.write_feather(
         combined_sizes.reset_index(),
-        f'tables/body-size-cache-{snapshot_tag}.feather')
+        fname)
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     return combined_sizes
 
 
-def _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, processes):
+def _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, processes, cfg):
     # No cache: Gotta fetch them all from DVID
     # (Takes ~1 hour for the full CNS -- would be worse if we had to also fetch sizes of NON-synaptic bodies.)
     logger.info("No body sizes cache provided.")
@@ -115,9 +140,12 @@ def _fetch_all_body_sizes(dvidseg, body_lists, snapshot_tag, processes):
         )
 
     os.makedirs('tables', exist_ok=True)
+    fname = f'tables/body-size-cache-{snapshot_tag}.feather'
     feather.write_feather(
         sizes.reset_index(),
-        f'tables/body-size-cache-{snapshot_tag}.feather')
+        fname)
+    upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+
     return sizes
 
 

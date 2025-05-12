@@ -5,6 +5,10 @@ from neuclease.util import dump_json
 from neuclease.dvid.labelmap import fetch_complete_mappings
 from neuclease.dvid.labelmap.pointlabeler import PointLabeler, DvidSeg
 
+from google.cloud import storage
+
+from ..util.util import upload_file_to_gcs
+
 DvidSegSchema = {
     "description": "dvid segmentation (labelmap) location",
     "type": "object",
@@ -31,7 +35,19 @@ DvidSegSchema = {
             "description": "Set to true if you'd like to export DVID's in-memory mapping (supervoxel: body) for your own needs.",
             "type": "boolean",
             "default": False
-        }
+        },
+        "gc-project": {
+            "description":
+                "Google Cloud project.\n",
+            "type": "string",
+            "default": "FlyEM-Private"
+        },
+        "gcs-bucket": {
+            "description":
+                "Google Cloud Storage bucket to export files to.\n",
+            "type": "string",
+            "default": "flyem-snapshots"
+        },
     }
 }
 
@@ -49,6 +65,12 @@ def load_dvidseg(cfg, snapshot_tag):
     """
     if not cfg['server']:
         return None
+    # Initialize Google cloud client and select project
+    client = storage.Client()
+    if cfg['gc-project'] and cfg['gcs-bucket']:
+        client.project = cfg['gc-project']
+    else:
+        cfg['gcs-bucket'] = ""
     dvidseg = DvidSeg(cfg['server'], cfg['uuid'], cfg['instance'])
 
     mapping = None
@@ -58,10 +80,12 @@ def load_dvidseg(cfg, snapshot_tag):
         # We export the complete mapping (rather than the minimal mapping),
         # since that can be more convenient for certain analyses.
         mapping = fetch_complete_mappings(*dvidseg)
+        fname = f'tables/complete-nonsingleton-mapping-{snapshot_tag}.feather'
         feather.write_feather(
             mapping.reset_index(),
-            f"tables/complete-nonsingleton-mapping-{snapshot_tag}.feather"
+            fname
         )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
     pointlabeler = PointLabeler(*dvidseg, mapping=mapping)
     dump_json(pointlabeler.last_mutation, 'last-mutation.json')

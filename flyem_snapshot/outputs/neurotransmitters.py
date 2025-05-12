@@ -6,7 +6,10 @@ import pyarrow.feather as feather
 from neuclease import PrefixFilter
 from neuclease.util import Timer
 
+from google.cloud import storage
+
 from ..caches import cached, SentinelSerializer
+from ..util.util import upload_file_to_gcs
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +44,34 @@ NeurotransmitterExportSchema = {
                 "the restriction ROI.\n",
             "default": "",
             "type": "string",
-        }
+        },
+        "gc-project": {
+            "description":
+                "Google Cloud project.\n",
+            "type": "string",
+            "default": "FlyEM-Private"
+        },
+        "gcs-bucket": {
+            "description":
+                "Google Cloud Storage bucket to export files to.\n",
+            "type": "string",
+            "default": "flyem-snapshots"
+        },
     }
 }
 
 
 @PrefixFilter.with_context('neurotransmitters')
 @cached(SentinelSerializer('neurotransmitter-export'))
-def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
+def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df, snapshot_tag):
     if not cfg['export-neurotransmitters']:
         return
+    # Initialize Google cloud client and select project
+    client = storage.Client()
+    if cfg['gc-project'] and cfg['gcs-bucket']:
+        client.project = cfg['gc-project']
+    else:
+        cfg['gcs-bucket'] = ""
 
     with Timer("Constructing tbar neurotransmitter table", logger):
         tbar_nt = tbar_nt[[c for c in tbar_nt.columns if c.startswith('nt')]]
@@ -69,10 +90,16 @@ def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
     with Timer("Writing neurotransmitter tables", logger):
         os.makedirs('nt', exist_ok=True)
         assert tbar_df.index.name == 'point_id'
-        feather.write_feather(tbar_df.reset_index(), 'nt/tbar-neurotransmitters.feather')
+        fname = 'nt/tbar-neurotransmitters.feather'
+        feather.write_feather(tbar_df.reset_index(), fname)
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
         assert body_nt.index.name == 'body'
-        feather.write_feather(body_nt.reset_index(), 'nt/body-neurotransmitters.feather')
+        fname = 'nt/body-neurotransmitters.feather'
+        feather.write_feather(body_nt.reset_index(), fname)
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
         if nt_confusion is not None:
-            nt_confusion.to_csv('nt/neurotransmitter-confusion.csv', index=True, header=True)
+            fname = 'nt/neurotransmitter-confusion.csv'
+            nt_confusion.to_csv(fname, index=True, header=True)
+            upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
