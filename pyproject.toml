@@ -1,0 +1,51 @@
+[project]
+name = "flyem-snapshot"
+description = "Generate connectome exports, neuprint databases and reports from flat files and DVID checkpoints."
+readme = "README.md"
+requires-python = ">=3.7"
+license = "BSD-3-Clause"
+authors = [
+    {name = "FlyEM Team", email = "flyem-developers@janelia.hhmi.org"}
+]
+urls = {Homepage = "https://github.com/janelia-flyem/flyem-snapshot"}
+dynamic = ["version", "dependencies"]
+
+[project.scripts]
+flyem-snapshot = "flyem_snapshot.bin.flyem_snapshot_entrypoint:main"
+ingest-neuprint-snapshot-using-apptainer = "flyem_snapshot.bin.ingest_neuprint_snapshot_using_apptainer:main"
+inspect-neuprint-snapshot = "flyem_snapshot.bin.inspect_neuprint_snapshot:main"
+parse-neuprint-log = "flyem_snapshot.bin.parse_neuprint_log:main"
+update-neuprint-annotations = "flyem_snapshot.bin.update_neuprint_annotations:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "versioneer"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+
+[tool.pytest.ini_options]
+testpaths = ["flyem_snapshot/tests"]
+addopts = "-s --tb=native"
+
+# Don't hide stderr -- that's how we see faulthandler output!
+
+[tool.flake8]
+ignore = ["E231", "E201", "E202", "E226", "E222"]
+max-line-length = 160
+
+[tool.pylink]
+disable = ["invalid-name"]
+
+[tool.versioneer]
+VCS = "git"
+# Use 'X.Y.post.devZ' style
+# See https://github.com/warner/python-versioneer/blob/master/details.md#how-do-i-select-a-version-style
+style = "pep440-pre"
+versionfile_source = "flyem_snapshot/_version.py"
+versionfile_build = "flyem_snapshot/_version.py"
+tag_prefix = ""
+parentdir_prefix = "flyem-snapshot-"

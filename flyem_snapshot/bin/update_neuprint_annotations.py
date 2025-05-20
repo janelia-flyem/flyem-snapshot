@@ -187,7 +187,7 @@ def _fetch_comparison_dataframes(dvid_details, client):
     import numpy as np
     import pandas as pd
     from neuclease.dvid import fetch_all
-    from neuclease.util import Timer
+    from neuclease.util import Timer, snakecase_to_camelcase
     from neuprint import fetch_neurons, NeuronCriteria as NC
     from flyem_snapshot.outputs.neuprint.annotations import neuprint_segment_annotations
 
@@ -226,6 +226,8 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # In some cases (such as spatial points), what neuprint
     # RETURNS isn't in the format that we need to WRITE.
     # So process the values just like we did with clio_df.
+    # (First, name 'statusLabel' to 'status' to hit the same code path that the clio annotations use.)
+    neuprint_df = neuprint_df.drop(columns=['status']).rename(columns={'statusLabel': 'status'})
     neuprint_df = neuprint_segment_annotations(cfg, neuprint_df)
 
     # We handle all *columns* from clio, but only *bodies* which are in both clio and neuprint.
@@ -240,11 +242,11 @@ def _fetch_comparison_dataframes(dvid_details, client):
     # not loaded into clio.  But for historical reasons, we did upload NT predictions into the MANC clio.
     # We do NOT want to use those clio NT values to overwite neuprint NT values.
     nt_cols = [
-        'predicted_nt', 'predicted_nt_confidence',
-        'celltype_predicted_nt', 'celltype_predicted_nt_confidence',
-        'celltype_total_nt_predictions',
+        'total_nt_predictions', 'predicted_nt', 'predicted_nt_confidence',
+        'celltype_total_nt_predictions', 'celltype_predicted_nt', 'celltype_predicted_nt_confidence',
         'consensus_nt'
     ]
+    nt_cols = [*map(snakecase_to_camelcase, nt_cols)]
     nt_cols = [col for col in clio_df.columns if col.startswith('nt') or col in nt_cols]
     clio_df = clio_df.drop(columns=nt_cols)
     neuprint_df = neuprint_df.drop(columns=nt_cols)
@@ -444,7 +446,7 @@ def _post_commands(commands, batch_size, client):
                 batch_size //= 2
 
 
-POINT_PATTERN = re.compile(r'{x:\d+, y:\d+, z:\d+}')
+POINT_PATTERN = re.compile(r'{x:-?\d+, y:-?\d+, z:-?\d+}')
 
 
 def _cypher_literal(x):
@@ -466,4 +468,15 @@ if __name__ == "__main__":
     # sys.argv.extend(['--dry-run'])
     # sys.argv.extend(['--default-transaction-size', '200'])
     # sys.argv.extend("emdata6.int.janelia.org:9000 :master segmentation_annotations neuprint-cns.janelia.org cns".split())
+
+    # sys.argv.extend(['-o', '/tmp/debug'])
+    # sys.argv.extend(['--dry-run'])
+    # sys.argv.extend(['--default-transaction-size', '200'])
+    # sys.argv.extend("emdata5.int.janelia.org:8400 :master segmentation_annotations neuprint-pre.janelia.org vnc".split())
+
+    # sys.argv.extend(['-o', '/tmp/debug'])
+    # sys.argv.extend(['--dry-run'])
+    # sys.argv.extend(['--default-transaction-size', '200'])
+    # sys.argv.extend("emdata7.int.janelia.org:8700 :new-agglo segmentation_annotations neuprint-pre.janelia.org yakuba-vnc".split())
+
     main()
