@@ -82,6 +82,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
     'Leaves':                   'Traced',       # noqa
     'PRT Orphan':               'Traced',       # noqa
     'Prelim Roughly traced':    'Traced',       # noqa
+    'RT Hard to trace':         'Traced',       # noqa
     'RT Orphan':                'Traced',       # noqa
     'Roughly traced':           'Traced',       # noqa
     'Traced in ROI':            'Traced',       # noqa
