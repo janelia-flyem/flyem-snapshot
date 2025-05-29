@@ -1,6 +1,7 @@
 import os
 import pyarrow.feather as feather
 
+from neuclease import PrefixFilter
 from neuclease.util import dump_json
 from neuclease.dvid.labelmap import fetch_complete_mappings
 from neuclease.dvid.labelmap.pointlabeler import PointLabeler, DvidSeg
@@ -36,6 +37,7 @@ DvidSegSchema = {
 }
 
 
+@PrefixFilter.with_context('dvidseg')
 def load_dvidseg(cfg, snapshot_tag):
     """
     This function doesn't actually read segmentation voxels.
