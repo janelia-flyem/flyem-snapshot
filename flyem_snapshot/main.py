@@ -26,6 +26,7 @@ from .outputs.neurotransmitters import NeurotransmitterExportSchema, export_neur
 from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
+from .outputs.skeletons import SkeletonSchema, export_skeletons
 
 from .caches import cached, SerializerBase
 from .util.lsf import log_lsf_details
@@ -71,6 +72,7 @@ ConfigSchema = {
                 "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
+                "skeletons": SkeletonSchema,
             }
         },
         "job-settings": {
@@ -230,7 +232,14 @@ def main_impl(cfg):
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
-
+        if 'skeletons' in cfg['outputs'] and 'export-skeletons' in cfg['outputs']['skeletons'] \
+            and cfg['outputs']['skeletons']['export-skeletons']:
+            # If we don't know the server/UUID, get them from the inputs:dvid-seg config.
+            if 'server' not in cfg['outputs']['skeletons'] or not cfg['outputs']['skeletons']['server']:
+                cfg['outputs']['skeletons']['server'] = cfg['inputs']['dvid-seg']['server']
+            if 'uuid' not in cfg['outputs']['skeletons'] or not cfg['outputs']['skeletons']['uuid']:
+                cfg['outputs']['skeletons']['uuid'] = cfg['inputs']['dvid-seg']['uuid']
+            export_skeletons(cfg['outputs']['skeletons'], ann)
 
 class SynapsesWithRoiSerializer(SerializerBase):
 
