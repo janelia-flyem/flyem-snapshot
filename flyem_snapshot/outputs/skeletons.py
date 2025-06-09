@@ -14,7 +14,7 @@ import pandas as pd
 from neuclease import PrefixFilter
 from neuclease.dvid.keyvalue import fetch_keys, fetch_keyvalues
 from neuclease.util import (
-    compute_parallel, iter_batches, skeleton_to_neuroglancer, swc_to_dataframe, tqdm_proxy
+    compute_parallel, skeleton_to_neuroglancer, swc_to_dataframe, tqdm_proxy
 )
 
 logger = logging.getLogger(__name__)
@@ -59,12 +59,26 @@ SkeletonSchema = {
 }
 
 
-def _write_single_skeleton(key, swc_bytes):
+def _process_single_skeleton(server, uuid, instance, key):
     """
-    Write a single skeleton to an SWC file and a Neuroglancer file.
+    Fetch a single skeleton from the DVID server and write two files:
+        - an SWC file
+        - a Neuroglancer "precomputed" skeleton file
+
+    Returns:
+        (key, success) tuple, where success is True if the skeleton
+        exists on the DVID server and was written successfully.
     """
     assert key.endswith('_swc')
     body = key[:-4]
+
+    try:
+        swc_bytes = fetch_key(server, uuid, instance, key)
+    except HTTPError as e:
+        return key, False
+
+    if not swc_bytes:
+        return key, False
 
     fname = f"skeletons/skeletons-swc/{body}.swc"
     with open(fname, "wb") as f:
@@ -75,6 +89,7 @@ def _write_single_skeleton(key, swc_bytes):
     # FIXME: Need to provide resolution here, using a value from the config
     #        that is auto-filled using the DVID segmentation by default.
     skeleton_to_neuroglancer(df, output_path=f"skeletons/skeletons-precomputed/{body}")
+    return key, True
 
 
 @PrefixFilter.with_context('skeletons')
@@ -96,7 +111,10 @@ def export_skeletons(cfg, ann=None):
         keys = fetch_keys(*skeleton_src)
         keys = [k for k in keys if re.match(r"\d+_swc$", k)]
         if not keys:
-            logger.warning(f"No skeleton keys found in the DVID instance ({'/'.join(skeleton_src)})")
+            logger.warning(
+                "Not exporting skeletons: No skeleton keys found in the DVID instance "
+                f"({'/'.join(skeleton_src)})"
+            )
             return
     elif len(ann) == 0:
         logger.warning("Not exporting skeletons: No body IDs in the annotations table.")
@@ -112,16 +130,16 @@ def export_skeletons(cfg, ann=None):
 
     logger.info(f"Processing skeletons for {len(keys)} body IDs")
 
-    processed_keys = set()
-    for batch_keys in tqdm_proxy(iter_batches(keys, batch_size=1000)):
-        kv = fetch_keyvalues(*skeleton_src, batch_keys)
-        kv = {k: v for k, v in kv.items() if v}  # drop empty
-        compute_parallel(_write_single_skeleton, kv.items(), starmap=True, processes=8, show_progress=False)
-        processed_keys |= set(kv.keys())
+    results = compute_parallel(
+        partial(_process_single_skeleton, *skeleton_src),
+        keys,
+        processes=8,
+        show_progress=False,
+    )
+    results = pd.DataFrame(results, columns=['key', 'success'])
 
-    logger.info(f"Processed {len(processed_keys)} skeletons")
-    if missing_keys := set(keys) - processed_keys:
-        missing_keys = pd.Series(sorted(missing_keys), name='body')
+    if not results['success'].all():
+        missing_keys = results.loc[~results['success'], 'key']
         missing_keys.to_csv('skeletons/missing-skeletons.csv', index=False, header=True)
         logger.warning(
             f"Did not find skeletons for {len(missing_keys)} body IDs from the annotations. "
