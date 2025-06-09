@@ -232,14 +232,7 @@ def main_impl(cfg):
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
-        if 'skeletons' in cfg['outputs'] and 'export-skeletons' in cfg['outputs']['skeletons'] \
-            and cfg['outputs']['skeletons']['export-skeletons']:
-            # If we don't know the server/UUID, get them from the inputs:dvid-seg config.
-            if 'server' not in cfg['outputs']['skeletons'] or not cfg['outputs']['skeletons']['server']:
-                cfg['outputs']['skeletons']['server'] = cfg['inputs']['dvid-seg']['server']
-            if 'uuid' not in cfg['outputs']['skeletons'] or not cfg['outputs']['skeletons']['uuid']:
-                cfg['outputs']['skeletons']['uuid'] = cfg['inputs']['dvid-seg']['uuid']
-            export_skeletons(cfg['outputs']['skeletons'], ann)
+        export_skeletons(cfg['outputs']['skeletons'], ann)
 
 class SynapsesWithRoiSerializer(SerializerBase):
 
@@ -461,6 +454,7 @@ def standardize_config(cfg, config_dir):
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
     output_ntcfg = cfg['outputs']['neurotransmitters']
+    skeletoncfg = cfg['outputs']['skeletons']
 
     uuid, snapshot_tag, output_dir = determine_snapshot_tag(cfg, config_dir)
     jobcfg['snapshot-tag'] = snapshot_tag
@@ -483,6 +477,10 @@ def standardize_config(cfg, config_dir):
         output_ntcfg['dvid']['server'] = output_ntcfg['dvid']['server'] or dvidcfg['server']
         output_ntcfg['dvid']['uuid'] = output_ntcfg['dvid']['uuid'] or uuid
         output_ntcfg['dvid']['neuronjson_instance'] = output_ntcfg['dvid']['neuronjson_instance'] or f"{dvidcfg['instance']}_annotations"
+
+        # By default, the skeleton dvid backport goes to the main dvid server/uuid.
+        skeletoncfg['dvid']['server'] = skeletoncfg['dvid']['server'] or dvidcfg['server']
+        skeletoncfg['dvid']['uuid'] = skeletoncfg['dvid']['uuid'] or uuid
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.

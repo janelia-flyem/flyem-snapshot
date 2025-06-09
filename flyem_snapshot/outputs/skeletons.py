@@ -17,32 +17,42 @@ from neuclease.util import compute_parallel, iter_batches, skeleton_to_neuroglan
 logger = logging.getLogger(__name__)
 
 TestConfig = {"export-skeletons": True,
-              "server": "https://hemibrain-dvid.janelia.org",
-              "uuid": "15aee239",
-              "instance": "segmentation_skeletons",
+              "dvid": {
+                  "server": "https://hemibrain-dvid.janelia.org",
+                  "uuid": "15aee239",
+                  "instance": "segmentation_skeletons",
+              }
 }
 SkeletonSchema = {
+    "description": "Settings for skeleton export.",
+    "type": "object",
+    "default": {},
     "properties": {
         "export-skeletons": {
             "description": "If true, export the skeletons.",
             "type": "boolean",
             "default": True,
         },
-        "server": {
-            "description": "DVID server",
-            "type": "string",
-            "default": ""
+        "dvid": {
+            "description": "DVID server/UUID and instance to export skeletons from.",
+            "type": "object",
+            "additionalProperties": False,
+            "default": {},
+            "properties": {
+                "server": {
+                    "type": "string",
+                    "default": ""
+                },
+                "uuid": {
+                    "type": "string",
+                    "default": ""
+                },
+                "instance": {
+                    "type": "string",
+                    "default": "segmentation_skeletons"
+                }
+            }
         },
-        "uuid": {
-            "description": "UUID",
-            "type": "string",
-            "default": ""
-        },
-        "instance": {
-            "description": "Instance",
-            "type": "string",
-            "default": "segmentation_skeletons"
-        }
     }
 }
 
@@ -64,12 +74,14 @@ def export_skeletons(cfg, ann=None):
     """
     Export skeletons.
     """
-    if not (cfg['export-skeletons'] and cfg['server'] and cfg['uuid'] and cfg['instance']):
+    if not (cfg['export-skeletons'] and cfg['dvid']['server'] and cfg['dvid']['uuid'] \
+            and cfg['dvid']['instance']):
         return
     if ann is None:
         # Get body IDs
-        logger.info(f"Fetching {cfg['instance']} for {cfg['server']} {cfg['uuid']}")
-        ret = fetch_keys(cfg['server'], cfg['uuid'], cfg['instance'])
+        logger.info(f"Fetching {cfg['dvid']['instance']} for " \
+                    + f"{cfg['dvid']['server']} {cfg['dvid']['uuid']}")
+        ret = fetch_keys(cfg['dvid']['server'], cfg['dvid']['uuid'], cfg['dvid']['instance'])
         bid = []
         for key in ret:
             if not re.match(r"\d+_swc$", key):
@@ -92,7 +104,8 @@ def export_skeletons(cfg, ann=None):
     bnum = 0
     for btch in id_batches:
         bnum += 1
-        ret = fetch_keyvalues(cfg['server'], cfg['uuid'], cfg['instance'], btch, batch_size=1000)
+        ret = fetch_keyvalues(cfg['dvid']['server'], cfg['dvid']['uuid'],
+                              cfg['dvid']['instance'], btch, batch_size=1000)
         swclist = []
         for key, val in ret.items():
             if val:
@@ -104,7 +117,7 @@ def export_skeletons(cfg, ann=None):
         compute_parallel(_write_single_skeleton, swclist, processes=8)
     logger.info(f"Wrote {cnt:,} skeleton{'' if cnt == 1 else 's'}")
 
-
+# Command-line entry point for testing with hemibrain (no annotations)
 if __name__ == "__main__":
     test_cfg = TestConfig
     export_skeletons(test_cfg)
