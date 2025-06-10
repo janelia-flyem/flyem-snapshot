@@ -3,18 +3,21 @@ Export skeletons from a DVID server. Files are written to:
     skeletons/skeletons-swc/
     skeletons/skeletons-precomputed/
 The skeletons-swc/ directory contains the SWC files, and the skeletons-precomputed/
-directory contains the Neuroglancer precomputed files.
+directory contains the Neuroglancer precomputed files. If skeletons are missing,
+they are written to skeletons/missing-skeletons.csv.
 """
+from functools import partial
 import logging
 import os
 import re
 
 import pandas as pd
+import requests.exceptions
 
 from neuclease import PrefixFilter
-from neuclease.dvid.keyvalue import fetch_keys, fetch_keyvalues
+from neuclease.dvid.keyvalue import fetch_key, fetch_keys
 from neuclease.util import (
-    compute_parallel, skeleton_to_neuroglancer, swc_to_dataframe, tqdm_proxy
+    compute_parallel, skeleton_to_neuroglancer, swc_to_dataframe
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,6 @@ logger = logging.getLogger(__name__)
 #   - Need to provide resolution (in nanometers) in the config.
 #   - Allow parallel process count to be configured?
 #   - Allow user to narrow the set of skeletons to export by including or excluding body statuses?
-#   - Auto-set the skeleton instance from the dvid segmentation instance: f"{seg_instance}_skeletons"
 
 SkeletonSchema = {
     "description": "Settings for skeleton export.",
@@ -74,7 +76,10 @@ def _process_single_skeleton(server, uuid, instance, key):
 
     try:
         swc_bytes = fetch_key(server, uuid, instance, key)
-    except HTTPError as e:
+    except requests.exceptions.HTTPError:
+        return key, False
+    except Exception as e:
+        logger.warning(f"An exception of type {type(e).__name__} occurred. Arguments:\n{e.args}")
         return key, False
 
     if not swc_bytes:
@@ -105,7 +110,7 @@ def export_skeletons(cfg, ann=None):
     )
     if not (cfg['export-skeletons'] and all(skeleton_src)):
         return
-    
+
     if ann is None:
         logger.info(f"Fetching all keys from {'/'.join(skeleton_src)}")
         keys = fetch_keys(*skeleton_src)

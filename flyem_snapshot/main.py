@@ -481,6 +481,7 @@ def standardize_config(cfg, config_dir):
         # By default, the skeleton dvid backport goes to the main dvid server/uuid.
         skeletoncfg['dvid']['server'] = skeletoncfg['dvid']['server'] or dvidcfg['server']
         skeletoncfg['dvid']['uuid'] = skeletoncfg['dvid']['uuid'] or uuid
+        skeletoncfg['dvid']['instance'] = skeletoncfg['dvid']['instance'] or f"{dvidcfg['instance']}_skeletons"
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.
