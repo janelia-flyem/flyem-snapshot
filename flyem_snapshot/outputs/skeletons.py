@@ -9,20 +9,22 @@ import logging
 import os
 import re
 
-from neuclease.dvid.keyvalue import fetch_keys, fetch_keyvalues
-from neuclease.util import compute_parallel, iter_batches, skeleton_to_neuroglancer, \
-                           swc_to_dataframe
+import pandas as pd
 
+from neuclease import PrefixFilter
+from neuclease.dvid.keyvalue import fetch_keys, fetch_keyvalues
+from neuclease.util import (
+    compute_parallel, skeleton_to_neuroglancer, swc_to_dataframe, tqdm_proxy
+)
 
 logger = logging.getLogger(__name__)
 
-TestConfig = {"export-skeletons": True,
-              "dvid": {
-                  "server": "https://hemibrain-dvid.janelia.org",
-                  "uuid": "15aee239",
-                  "instance": "segmentation_skeletons",
-              }
-}
+# TODO:
+#   - Need to provide resolution (in nanometers) in the config.
+#   - Allow parallel process count to be configured?
+#   - Allow user to narrow the set of skeletons to export by including or excluding body statuses?
+#   - Auto-set the skeleton instance from the dvid segmentation instance: f"{seg_instance}_skeletons"
+
 SkeletonSchema = {
     "description": "Settings for skeleton export.",
     "type": "object",
@@ -49,75 +51,110 @@ SkeletonSchema = {
                 },
                 "instance": {
                     "type": "string",
-                    "default": "segmentation_skeletons"
+                    "default": ""
                 }
             }
-        },
+        }
     }
 }
 
-def _write_single_skeleton(swcdict):
+
+def _process_single_skeleton(server, uuid, instance, key):
     """
-    Write a single skeleton to an SWC file and a Neuroglancer file.
+    Fetch a single skeleton from the DVID server and write two files:
+        - an SWC file
+        - a Neuroglancer "precomputed" skeleton file
+
+    Returns:
+        (key, success) tuple, where success is True if the skeleton
+        exists on the DVID server and was written successfully.
     """
-    key = list(swcdict.keys())[0]
-    val = swcdict[key]
-    fname = f"skeletons/skeletons-swc/{key}".replace('_', '.')
+    assert key.endswith('_swc')
+    body = key[:-4]
+
+    try:
+        swc_bytes = fetch_key(server, uuid, instance, key)
+    except HTTPError as e:
+        return key, False
+
+    if not swc_bytes:
+        return key, False
+
+    fname = f"skeletons/skeletons-swc/{body}.swc"
     with open(fname, "wb") as f:
-        f.write(val)
-        df = swc_to_dataframe(val)
-        skeleton_to_neuroglancer(df, output_path="skeletons/skeletons-precomputed/" \
-                                                 + key.replace('_swc', ''))
+        f.write(swc_bytes)
+
+    df = swc_to_dataframe(swc_bytes)
+
+    # FIXME: Need to provide resolution here, using a value from the config
+    #        that is auto-filled using the DVID segmentation by default.
+    skeleton_to_neuroglancer(df, output_path=f"skeletons/skeletons-precomputed/{body}")
+    return key, True
 
 
+@PrefixFilter.with_context('skeletons')
 def export_skeletons(cfg, ann=None):
     """
-    Export skeletons.
+    Export skeletons in both SWC and Neuroglancer precomputed format.
+    The set of skeletons to export is taken from the body annotations table.
     """
-    if not (cfg['export-skeletons'] and cfg['dvid']['server'] and cfg['dvid']['uuid'] \
-            and cfg['dvid']['instance']):
+    skeleton_src = (
+        cfg['dvid']['server'],
+        cfg['dvid']['uuid'],
+        cfg['dvid']['instance'],
+    )
+    if not (cfg['export-skeletons'] and all(skeleton_src)):
         return
+    
     if ann is None:
-        # Get body IDs
-        logger.info(f"Fetching {cfg['dvid']['instance']} for " \
-                    + f"{cfg['dvid']['server']} {cfg['dvid']['uuid']}")
-        ret = fetch_keys(cfg['dvid']['server'], cfg['dvid']['uuid'], cfg['dvid']['instance'])
-        bid = []
-        for key in ret:
-            if not re.match(r"\d+_swc$", key):
-                continue
-            bid.append(key)
-    else:
-        if ann.empty:
+        logger.info(f"Fetching all keys from {'/'.join(skeleton_src)}")
+        keys = fetch_keys(*skeleton_src)
+        keys = [k for k in keys if re.match(r"\d+_swc$", k)]
+        if not keys:
+            logger.warning(
+                "Not exporting skeletons: No skeleton keys found in the DVID instance "
+                f"({'/'.join(skeleton_src)})"
+            )
             return
-        bid = [f"{str(x)}_swc" for x in ann['bodyid'].tolist()]
+    elif len(ann) == 0:
+        logger.warning("Not exporting skeletons: No body IDs in the annotations table.")
+        return
+    else:
+        assert ann.index.name == 'body'
+        keys = ann.index.astype(str) + "_swc"
 
-    # Get SWCs
-    # Split the body IDs into batches of 1000 and then fetch and write each batch
     os.makedirs('skeletons/skeletons-swc', exist_ok=True)
     os.makedirs('skeletons/skeletons-precomputed', exist_ok=True)
-    with open('skeletons/skeletons-swc/info', 'w', encoding='ascii') as f:
+    with open('skeletons/skeletons-swc/info', 'w', encoding='utf-8') as f:
         f.write('{"@type": "neuroglancer_skeletons"}\n')
-    id_batches = iter_batches(bid, batch_size=5000)
-    logger.info(f"Found {len(id_batches):,} batches containing {len(bid):,} body IDs")
-    cnt = 0
-    bnum = 0
-    for btch in id_batches:
-        bnum += 1
-        ret = fetch_keyvalues(cfg['dvid']['server'], cfg['dvid']['uuid'],
-                              cfg['dvid']['instance'], btch, batch_size=1000)
-        swclist = []
-        for key, val in ret.items():
-            if val:
-                swclist.append(({key: val}))
-        if not swclist:
-            continue
-        # Write files
-        cnt += len(swclist)
-        compute_parallel(_write_single_skeleton, swclist, processes=8)
-    logger.info(f"Wrote {cnt:,} skeleton{'' if cnt == 1 else 's'}")
+
+    logger.info(f"Processing skeletons for {len(keys)} body IDs")
+
+    results = compute_parallel(
+        partial(_process_single_skeleton, *skeleton_src),
+        keys,
+        processes=8,
+        show_progress=False,
+    )
+    results = pd.DataFrame(results, columns=['key', 'success'])
+
+    if not results['success'].all():
+        missing_keys = results.loc[~results['success'], 'key']
+        missing_keys.to_csv('skeletons/missing-skeletons.csv', index=False, header=True)
+        logger.warning(
+            f"Did not find skeletons for {len(missing_keys)} body IDs from the annotations. "
+            "See skeletons/missing-skeletons.csv."
+        )
 
 # Command-line entry point for testing with hemibrain (no annotations)
 if __name__ == "__main__":
-    test_cfg = TestConfig
-    export_skeletons(test_cfg)
+    test_config = {
+        "export-skeletons": True,
+        "dvid": {
+            "server": "https://hemibrain-dvid.janelia.org",
+            "uuid": "15aee239",
+            "instance": "segmentation_skeletons",
+        },
+    }
+
+    export_skeletons(test_config)
