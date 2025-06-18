@@ -245,7 +245,7 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
 
     # Append this column to the annotation DataFrame, overwriting the column if necessary.
     # (Even if the column exists in Clio, we're overriding it with the data from DVID.)
-    # Note: If more than one point lands on the same body, we drop duplicates.
+    # Note: If more than one point lands on the same body, we drop all but one.
     df = df.drop_duplicates('body').set_index('body')
     ann.drop(columns=[col], errors='ignore', inplace=True)
     ann[col] = df[col]
@@ -256,12 +256,14 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
             logger.warning(f"Annotation instance {instance} contains no properties named '{prop}'")
             continue
 
-        # DVID stores annotation properties as strings, even if they're int or float
-        # Attempt to convert to float if possible.
+        # DVID annotation properties are stored as strings,
+        # even if they would ideally be stored as int or float.
+        # Attempt to convert back to float if possible,
+        # otherwise leave as string.
         try:
             df[prop.lower()] = df[prop.lower()].astype(np.float32)
         except ValueError:
-            continue
+            logger.warning(f"Annotation instance {instance} contains non-numeric property '{prop}'; keeping as string.")
 
         ann.drop(columns=[propcol], errors='ignore', inplace=True)
         ann[propcol] = df[prop.lower()]
