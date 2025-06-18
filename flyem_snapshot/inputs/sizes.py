@@ -82,6 +82,7 @@ def load_body_sizes(cfg, pointlabeler, body_lists, snapshot_tag):
 
     outofdate_bodies = _determine_out_of_date_bodies(dvidseg, cache_uuid)
     if len(outofdate_bodies) == 0:
+        logger.info("Using cached body sizes exclusively. Cache is up-to-date.")
         return cached_sizes
 
     with Timer("Fetching non-cached neuron sizes", logger):
