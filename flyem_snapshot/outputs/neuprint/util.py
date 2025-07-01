@@ -78,8 +78,13 @@ def neo4j_type_suffix(series):
             "and give it an explicit foo:boolean header."
         )
         raise RuntimeError(msg)
+
     if np.issubdtype(series.dtype, np.integer):
-        return 'int'
+        if series.abs().max() < 2**31:
+            return 'int'
+        else:
+            return 'long'
+
     if np.issubdtype(series.dtype, np.floating):
         return 'float'
 
