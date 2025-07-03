@@ -236,7 +236,7 @@ def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file
         # A version of this table is also exported for each 'report' in the config,
         # but we also export it here as part of the 'flat' connectome export.
         # Here we also include status/class/type/instance.
-        extra_cols = [c for c in ('status', 'class', 'type', 'instance') if c in ann.columns]
+        extra_cols = [c for c in ('status', 'superclass', 'class', 'type', 'instance') if c in ann.columns]
         syn_counts_df = ranked_synapse_counts(point_df, partner_df, body_annotations_df=ann[extra_cols])
         syn_counts_df = syn_counts_df.rename(columns={
             'OutputPartners': 'downstream',
