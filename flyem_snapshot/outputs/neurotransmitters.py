@@ -144,9 +144,12 @@ def _backport_to_dvid(cfg, body_nt):
 
     # Find the rows that have changed.
     changed = ((orig_ann_nt != ann_nt) & (orig_ann_nt.notnull() | ann_nt.notnull())).any(axis=1)
-    ann_nt = ann_nt[changed]
+    if not changed.any():
+        logger.info("No neurotransmitter predictions differ from those already in DVID.")
+        return
 
     with Timer(f"Posting backported neurotransmitter predictions to DVID for {len(ann_nt)} bodies", logger):
+        ann_nt = ann_nt[changed]
         ann_nt['bodyid'] = ann_nt.index
         kv = ann_nt.to_dict(orient='index')
         post_keyvalues(*dvid_inst, kv)
