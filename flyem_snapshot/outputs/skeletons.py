@@ -35,7 +35,7 @@ SkeletonSchema = {
         "export-skeletons": {
             "description": "If true, export the skeletons.",
             "type": "boolean",
-            "default": True,
+            "default": False,
         },
         "dvid": {
             "description": "DVID server/UUID and instance to export skeletons from.",
