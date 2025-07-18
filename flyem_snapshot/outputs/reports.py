@@ -304,9 +304,9 @@ def _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stat
         name: s.set_index('status')
                .reindex(relevant_statuses)
                .assign(name=name)
-               .reset_index()
                .ffill()
                .fillna(0.0)
+               .reset_index()
         for name, s in all_status_stats.items()
     }
     all_status_stats = pd.concat(all_status_stats.values(), ignore_index=True)
