@@ -228,7 +228,16 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         all_syncounts[name] = syncounts
         all_status_stats[name] = status_stats
 
-    _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats)
+    try:
+        _export_roiset_capture_summaries(cfg, roiset, all_syncounts, all_status_stats)
+    except Exception as ex:
+        import traceback
+        logger.error(f"Error exporting capture summaries. See DEBUG feather files.")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
+        for name, syncounts in all_syncounts.items():
+            feather.write_feather(syncounts, f"reports/{roiset}/all_syncounts-{name}-DEBUG.feather")
+        for name, status_stats in all_status_stats.items():
+            feather.write_feather(status_stats, f"reports/{roiset}/all_status_stats-{name}-DEBUG.feather")
 
 
 @PrefixFilter.with_context('{name}')
