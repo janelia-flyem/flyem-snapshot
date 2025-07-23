@@ -189,6 +189,14 @@ NeurotransmittersSchema = {
             "type": "integer",
             "default": 50
         },
+        "min-celltype-confidence": {
+            "description":
+                "After computing type-level confidence scores, cell types with lower confidence scores than\n"
+                "this threshold will not be assigned a type-level NT prediction.\n"
+                "Instead, they'll be assigned 'unclear' as their type-level NT prediction.\n",
+            "type": "number",
+            "default": 0.5
+        },
         "min-celltype-presyn": {
             "description":
                 "If the total number of tbars across all cells of a type does not meet this threshold,\n"
@@ -404,7 +412,22 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         # Apply thresholds to erase unreliable predictions.
         body_df.loc[body_df['confidence'] < cfg['min-body-confidence'], 'top_pred'] = 'unclear'
         body_df.loc[body_df['num_tbar_nt_predictions'] < cfg['min-body-presyn'], 'top_pred'] = 'unclear'
-        type_df.loc[type_df['num_tbar_nt_predictions'] < cfg['min-celltype-presyn'], 'top_pred'] = 'unclear'
+
+        type_df.loc[type_df['confidence'] < cfg['min-celltype-confidence'], 'top_pred'] = 'unclear'
+
+        # According to the spec above:
+        #    "In the cases where there is only 1 neuron per type (per side), then should use the
+        #    50 synapse per-cell threshold so there is no conflict between cell and cell type level for these cells."
+        type_df = (
+            type_df.merge(
+                body_df['cell_type'].value_counts().rename('num_cells'),
+                'left',
+                on='cell_type')
+            )
+        type_df['num_cells'] = type_df['num_cells'].fillna(0).astype(np.int32)
+
+        min_celltype_presyn = np.where(type_df['num_cells'] <= 1, cfg['min-body-presyn'], cfg['min-celltype-presyn'])
+        type_df.loc[type_df['num_tbar_nt_predictions'] < min_celltype_presyn, 'top_pred'] = 'unclear'
 
     body_df = _append_celltype_predictions_to_body_df(body_df, type_df)
     body_df = body_df.set_index('body')
