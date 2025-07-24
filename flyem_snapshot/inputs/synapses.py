@@ -63,7 +63,9 @@ SnapshotSynapsesSchema = {
         "synapse-points": {
             "description":
                 "A feather file containing the synapse points, with a 'body' column.\n"
-                "If an 'sv' column is also present, it can be used to much more efficiently update the body column if needed.\n",
+                "If an 'sv' column is also present, it can be used to much more efficiently update the body column if needed.\n"
+                "Aside from point_id/x/y/z, and ROI columns (matching your roi sets), all other columns in the\n"
+                "input table are exported as :Element properties when exporting to neuprint.\n",
             "type": "string",
             # NO DEFAULT
         },
