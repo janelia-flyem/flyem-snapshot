@@ -295,7 +295,10 @@ def load_neurotransmitters(cfg, synpoint_df, synpartner_df, ann):
 
     tbar_df = _load_tbar_neurotransmitters(path, cfg['rescale-coords'], cfg['translate-names'], synpoint_df)
     body_df, confusion_df = _compute_body_neurotransmitters(cfg, tbar_df, ann)
-    tbar_df = tbar_df.drop(columns=['split'], errors='ignore')
+
+    # It's convenient for offline analysis if we keep the split column.
+    tbar_df['split'] = tbar_df['split'].astype('category')
+
     return tbar_df, body_df, confusion_df
 
 
