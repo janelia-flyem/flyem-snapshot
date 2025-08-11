@@ -140,8 +140,8 @@ def neuprint_segment_annotations(cfg, ann):
     # Better to leave them null.
     ann = ann.replace(["", pd.NA], [None, None])
 
-    # If any columns are completely empty, remove them.
-    allnull = ann.isnull().all(axis=0)
+    # If any columns are completely empty (other than statusLabel), remove them.
+    allnull = ann.drop(columns=['statusLabel']).isnull().all(axis=0)
     empty_cols = allnull.loc[allnull].index
     if len(empty_cols) > 0:
         logger.info(f"Deleting empty annotation columns: {empty_cols.tolist()}")
