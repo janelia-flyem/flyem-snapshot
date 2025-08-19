@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# This next eight lines are all that need to be changed to run for a different instance.
+INSTANCE="fish2"
+PROJECT="fishemf"
+CONFIG_DIR="/groups/flyem/data/snapshots/snapshot-configs/${INSTANCE}/master"
+MAX_RUNTIME='6:00'
+SENDTO="neuprint-updates-fish-aaaaqvjm2vabn3onhdnntzuory@hhmi.org.slack.com"
+DEVELOPER="svirskasr@hhmi.org"
+source /groups/flyem/proj/cluster/miniforge/bin/activate flyem-312
+export DVID_ADMIN_TOKEN=<<ENTER TOKEN HERE>>
+
+# Configuration
+TODAY=$(date '+%Y%m%d')
+CONFIG_FILE="${INSTANCE}-master-snapshot.yaml"
+WORK_DIR="/groups/flyem/data/snapshots/${INSTANCE}"
+JOB_NAME="snapshot-${INSTANCE}"
+DESTINATION="emdata5:/data15/app/neo4j/data/db/${INSTANCE}_${TODAY}"
+
+. /misc/lsf/conf/profile.lsf
+
+date
+
+CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
+if [ -d ${CONFIG_DIR} ]; then
+  echo "Will use config ${CONFIG_FILE} from ${CONFIG_DIR}"
+else
+  echo "Config directory ${CONFIG_DIR} does not exist"
+  exit -1
+fi
+if [ -r $CONFIG_PATH ]; then
+  echo "Reading config from ${CONFIG_PATH}"
+else
+  echo "Config file ${CONFIG_PATH} does not exist"
+  exit -1
+fi
+cd ${WORK_DIR}
+OUTPUT_PATH=`flyem-snapshot --config ${CONFIG_PATH} --print-output-directory`
+echo "Will write output to ${OUTPUT_PATH}"
+OUTPUT_DIR=`echo ${OUTPUT_PATH} | awk -F'/' '{print $NF}'`
+
+mkdir -p logs
+SLOTS=32
+
+# Function to clean up LSF job on abnormal exit
+cleanup() {
+    if [[ -n "$JOB_ID" ]]; then
+        echo "Caught termination signal. Killing LSF job $JOB_ID..."
+        bkill "$JOB_ID"
+    fi
+}
+
+# Function to wait for completion of job
+wait_for_completion()
+{
+    # Sometimes 'bjobs' lags behind the true job state, so we
+    # need to wait until it's caught up before verifying the job status
+    while true; do
+        JOB_INFO=$(bjobs -noheader -o "stat exit_code" "$JOB_ID" 2>/dev/null)
+        # If job is no longer found in bjobs, assume it's done
+        if [[ -z "$JOB_INFO" ]]; then
+            break
+        fi
+	    JOB_STATUS=$(echo "$JOB_INFO" | awk '{print $1}')
+        EXIT_CODE=$(echo "$JOB_INFO" | awk '{print $2}')
+        if [[ "$JOB_STATUS" != "RUN" ]]; then
+            break
+        fi
+        echo "Waiting for job $JOB_ID to exit RUN state..."
+        sleep 5  # Adjust sleep time as needed
+    done
+}
+
+# Trap only on SIGINT and SIGTERM, but NOT EXIT
+trap cleanup SIGINT SIGTERM
+
+# Create snapshot
+echo "flyem-snapshot --config ${CONFIG_PATH}"
+JOB_ID=$(bsub -P ${PROJECT} -n ${SLOTS} -J ${JOB_NAME} -o logs/lsf-snapshot-output.log -W ${MAX_RUNTIME} flyem-snapshot --config ${CONFIG_PATH} | awk '{print $2}' | tr -d '<>')
+echo "Submitted snapshot job ${JOB_ID}"
+bwait -w "ended($JOB_ID)"
+wait_for_completion
+sleep 2
+
+# See if it actually ran - we should have a neuprint directory
+TEST_DIR="${OUTPUT_DIR}/neuprint"
+if [ ! -e "$TEST_DIR" ]; then
+  echo "${TEST_DIR} does not exist - snapshot job failed"
+  exit
+fi
+
+# Ingestion
+echo "ingest-neuprint-snapshot-using-apptainer ${OUTPUT_DIR}"
+JOB_ID=$(bsub -P ${PROJECT} -n ${SLOTS} -J ${JOB_NAME} -o logs/lsf-ingest-output.log -W ${MAX_RUNTIME} ingest-neuprint-snapshot-using-apptainer ${OUTPUT_DIR} | awk '{print $2}' | tr -d '<>')
+echo "Submitted ingestion job ${JOB_ID}"
+bwait -w "ended($JOB_ID)"
+wait_for_completion
+sleep 2
+
+# Disable the trap since the script is completing normally
+trap - SIGINT SIGTERM
+
+# Copy database to emdata5
+echo "Copying database to ${DESTINATION}"
+#scp -r ${OUTPUT_PATH}/neo4j/data flyem@${DESTINATION}
+rsync -av ${OUTPUT_PATH}/neo4j/data/* flyem@${DESTINATION}
+
+# Restart the instance (neo4j and neuprinthttp)
+echo "Restarting ${INSTANCE}"
+ssh flyem@emdata5 "/data15/app/neo4j/data/db/restart_instance.sh ${INSTANCE}"
+ret="$?"
+if [ $ret -ne 0 ]; then
+  echo "${INSTANCE} did not restart (${ret})"| mailx -s "${INSTANCE} did not restart" ${DEVELOPER}
+  exit
+fi
+
+# Send an email
+echo "neuprint-${INSTANCE} has been updated to the latest snapshot (${TODAY})" | mailx -s "neuprint-${INSTANCE} updated" ${SENDTO}
