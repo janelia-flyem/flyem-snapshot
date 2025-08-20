@@ -160,7 +160,7 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
 
     ann = _load_raw_annotations(cfg, pointlabeler)
     for pa_cfg in cfg['point-annotations']:
-        _append_dvid_point_annotations(pa_cfg, pa_cfg['instance'], ann, pointlabeler, cfg['processes'])
+        ann = _append_dvid_point_annotations(pa_cfg, pa_cfg['instance'], ann, pointlabeler, cfg['processes'])
 
     _apply_value_replacements(cfg, ann)
 
@@ -241,6 +241,7 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
         df[[*'zyx']].values,
         processes=processes
     )
+    df['body'] = df['body'].astype(np.int64)
     df[col] = df[[*'xyz']].values.tolist()
 
     # Append this column to the annotation DataFrame, overwriting the column if necessary.
@@ -248,7 +249,14 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
     # Note: If more than one point lands on the same body, we drop all but one.
     df = df.drop_duplicates('body').set_index('body')
     ann.drop(columns=[col], errors='ignore', inplace=True)
-    ann[col] = df[col]
+
+    # Use outer merge to ensure that we introduce new rows
+    # if a body has a point annotation but no body annotations.
+    ann = (
+        ann
+        .drop(columns=[col], errors='ignore')
+        .merge(df[col], how='outer', left_index=True, right_index=True)
+    )
 
     # Repeat for the extracted point properties.
     for prop, propcol in pa_cfg['extract-properties'].items():
@@ -268,6 +276,7 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
         ann.drop(columns=[propcol], errors='ignore', inplace=True)
         ann[propcol] = df[prop.lower()]
 
+    return ann
 
 def _apply_value_replacements(cfg, ann):
     for rpl in cfg['replace-values']:
