@@ -73,6 +73,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 
     'Anchor':                   'Anchor',       # noqa
     'Cleaved Anchor':           'Anchor',       # noqa
+    'Will be merged':           'Anchor',       # noqa
     'Sensory Anchor':           'Anchor',       # noqa
     'Cervical Anchor':          'Anchor',       # noqa
     'Soma Anchor':              'Anchor',       # noqa
@@ -81,6 +82,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 
     'Leaves':                   'Traced',       # noqa
     'PRT Orphan':               'Traced',       # noqa
+    'Reviewed':                 'Traced',       # noqa
     'Prelim Roughly traced':    'Traced',       # noqa
     'RT Hard to trace':         'Traced',       # noqa
     'RT Orphan':                'Traced',       # noqa
