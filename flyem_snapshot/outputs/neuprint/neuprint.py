@@ -157,10 +157,20 @@ NeuprintSchema = {
                     "default": ["rootLocation", "somaLocation", "class", "type", "instance", "group", "somaSide", "synonyms"],
                 },
                 "status": {
-                    "description": "Segments with one of these neuprint statuses will be labeled Neurons\n",
+                    "description":
+                    "Segments with one of these neuprint statuses will be labeled Neurons.\n"
+                    "Note: These should be neuprint 'status' values, not 'statusLabel' values.",
                     "type": "array",
                     "items": {"type": "string"},
                     "default": ["Traced", "Anchor"],
+                },
+                "excluded-status": {
+                    "description":
+                        "Segments with one of these neuprint statuses will NOT be labeled as Neurons, regardless of their other properties.\n"
+                        "Note: These should be neuprint 'status' values, not 'statusLabel' values.",
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": ["Unimportant", "Glia"],
                 }
             }
         },
