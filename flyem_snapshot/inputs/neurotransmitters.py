@@ -387,6 +387,10 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         gt_df = None
     else:
         gt_df = pd.read_csv(cfg['ground-truth'])
+
+        # If working with the male cns, the column might be different.
+        gt_df = gt_df.rename(columns={'mcns_type': 'cell_type'})
+
         if not {*gt_df.columns} >= {'cell_type', 'ground_truth'}:
             raise RuntimeError("Neurotransmitter ground-truth table does not supply the necessary columns.")
         if 'split' not in tbar_df:
@@ -723,6 +727,10 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
 
     # Overwrite cases where experimental groundtruth is available.
     exp_df = pd.read_csv(path)
+    
+    # mcns might have special column name in the groundtruth table.
+    exp_df = exp_df.rename(columns={'mcns_type': 'cell_type'})
+
     exp_df = exp_df.rename(columns={'type': 'cell_type', 'ground_truth': 'consensus_nt'})
     exp_df = exp_df.rename(columns={c: camelcase_to_snakecase(c) for c in exp_df.columns})
     exp_df = exp_df.set_index('cell_type')
