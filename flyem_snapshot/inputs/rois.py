@@ -453,6 +453,8 @@ def _load_roi_col(roiset_name, roi_ids, point_df):
             roi_ids['<unspecified>'] = 0
 
     if roiset_name in point_df.columns:
+        if point_df[roiset_name].dtype == 'category' and '<unspecified>' not in point_df[roiset_name].dtype.categories:
+            point_df[roiset_name] = point_df[roiset_name].cat.add_categories("<unspecified>")
         point_df[roiset_name] = point_df[roiset_name].fillna("<unspecified>")
 
         # If it's present, <unspecified> is always listed first.
