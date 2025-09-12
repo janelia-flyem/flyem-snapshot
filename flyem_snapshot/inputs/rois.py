@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from neuclease import PrefixFilter
-from neuclease.util import Timer, timed, extract_labels_from_volume, dump_json, narrowest_dtype
+from neuclease.util import Timer, timed, extract_labels_from_volume, dump_json, narrowest_dtype, IncompleteLabelNamesError
 from neuclease.dvid.voxels import fetch_volume_box
 from neuclease.dvid.labelmap import fetch_labelmap_voxels_chunkwise
 from neuclease.dvid.roi import fetch_combined_roi_volume
@@ -319,7 +319,14 @@ def _load_columns_for_roiset_impl(roiset_name, roiset_cfg, point_df, dvid_cfg, p
         raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
 
     roi_vol, roi_box, roi_ids = _load_roi_vol_from_cache_or_dvid(roiset_name, roi_ids, roiset_cfg['labelmap'], dvid_cfg, processes)
-    extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=False)
+    try:
+        extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=False)
+    except IncompleteLabelNamesError as ex:
+        raise RuntimeError(
+            f"The listed rois for roiset '{roiset_name}' names are "
+            "incomplete for the set of IDs in the ROI volume."
+        ) from ex
+
     if '<unspecified>' in point_df[roiset_name].dtype.categories:
         roi_ids['<unspecified>'] = 0
 
