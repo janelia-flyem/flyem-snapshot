@@ -676,7 +676,7 @@ def _load_neuron_columns(metacfg, neuron_df):
             # Note:
             #   Empty strings were already removed when the annotations
             #   were prepped for neuprint, so none of these choices will be "".
-            assert "" not in item['choices']
+            assert "" not in item['choices'], f"Empty string in choices for column '{col}'"
     return neuron_columns
 
 

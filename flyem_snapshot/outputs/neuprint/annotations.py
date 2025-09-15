@@ -138,6 +138,10 @@ def neuprint_segment_annotations(cfg, ann):
     # Drop categorical dtype for this column before using replace()
     ann['statusLabel'] = ann['statusLabel'].astype('string')
 
+    # Neuprint uses 'simplified' status choices,
+    # referring to the original (dvid) status as 'statusLabel'.
+    ann['status'] = ann['statusLabel'].replace(NEUPRINT_STATUSLABEL_TO_STATUS)
+
     # Erase any values which are just "".
     # Better to leave them null.
     ann = ann.replace(["", pd.NA], [None, None])
@@ -148,10 +152,6 @@ def neuprint_segment_annotations(cfg, ann):
     if len(empty_cols) > 0:
         logger.info(f"Deleting empty annotation columns: {empty_cols.tolist()}")
         ann = ann.drop(columns=empty_cols)
-
-    # Neuprint uses 'simplified' status choices,
-    # referring to the original (dvid) status as 'statusLabel'.
-    ann['status'] = ann['statusLabel'].replace(NEUPRINT_STATUSLABEL_TO_STATUS)
 
     # Points must be converted to neo4j spatial points.
     # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
