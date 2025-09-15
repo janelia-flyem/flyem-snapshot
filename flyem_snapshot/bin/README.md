@@ -60,3 +60,8 @@ If it isn't, the following steps are taken by the
 An email is then sent to Slack for the appropriate channel indicating that the
 server was restarted.
 
+**NOTE**: If you're going to bring a server down, it's highly recommended that
+you disable the health check:
+1. Go to [https://jenkins.int.janelia.org/view/FlyEM/job/flyem_neuprint_health_check/configure](https://jenkins.int.janelia.org/view/FlyEM/job/flyem_neuprint_health_check/configure)
+2. Uncheck "Enable" in the upper right portion on the page.
+3. Don't forget to re-enable it when you bring the server back up. Go to the same page, and click the contol next to "Disable" in the upper right portion on the page.
