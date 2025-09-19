@@ -3,6 +3,7 @@ import pyarrow.feather as feather
 
 from neuclease import PrefixFilter
 from neuclease.util import dump_json
+from neuclease.dvid.repo import is_locked
 from neuclease.dvid.labelmap import fetch_complete_mappings
 from neuclease.dvid.labelmap.pointlabeler import PointLabeler, DvidSeg
 
@@ -52,19 +53,31 @@ def load_dvidseg(cfg, snapshot_tag):
     if not cfg['server']:
         return None
     dvidseg = DvidSeg(cfg['server'], cfg['uuid'], cfg['instance'])
+    pointlabeler = PointLabeler(*dvidseg)
+    dump_json(pointlabeler.last_mutation, 'last-mutation.json')
 
-    mapping = None
-    if cfg['export-mapping']:
-        os.makedirs('tables', exist_ok=True)
+    if not cfg['export-mapping']:
+        return pointlabeler
 
+    os.makedirs('tables', exist_ok=True)
+    if is_locked(dvidseg.server, dvidseg.uuid):
+        mapping_path = f"tables/complete-nonsingleton-mapping-{snapshot_tag}.feather"
+    else:
+        mutid = pointlabeler.last_mutation['mutid']
+        mapping_path = f"tables/complete-nonsingleton-mapping-{snapshot_tag}-mutid-{mutid}.feather"
+
+    if not os.path.exists(mapping_path):
         # We export the complete mapping (rather than the minimal mapping),
         # since that can be more convenient for certain analyses.
+        # NOTE:
+        #   For unlocked UUIDs which may be undergoing edits,
+        #   there's a race condition here: the mapping may change
+        #   while we're downloading it.
+        #   See https://github.com/janelia-flyem/flyem-snapshot/issues/6
         mapping = fetch_complete_mappings(*dvidseg)
-        feather.write_feather(
-            mapping.reset_index(),
-            f"tables/complete-nonsingleton-mapping-{snapshot_tag}.feather"
-        )
+        feather.write_feather(mapping.reset_index(), mapping_path)
 
-    pointlabeler = PointLabeler(*dvidseg, mapping=mapping)
-    dump_json(pointlabeler.last_mutation, 'last-mutation.json')
+        # Spare the pointlabeler from re-fetching the mapping.
+        pointlabeler = PointLabeler(*dvidseg, mapping=mapping)
+
     return pointlabeler
