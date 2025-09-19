@@ -17,7 +17,7 @@ import numpy as np
 import requests.exceptions
 
 from neuclease import PrefixFilter
-from neuclease.dvid.keyvalue import fetch_key, fetch_keys
+from neuclease.dvid.keyvalue import fetch_instance_info, fetch_key, fetch_keys
 from neuclease.util import (
     compute_parallel, skeleton_to_neuroglancer, swc_to_dataframe
 )
@@ -60,6 +60,16 @@ SkeletonSchema = {
                     "default": ""
                 }
             }
+        },
+        "coordinate-resolution-nm": {
+            "description": "Units of the resolution (in nanometers).",
+            "type": "array",
+            "items": {
+                "type": "number",
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "default": [0, 0, 0],
         },
         "processes": {
             "description":
@@ -125,6 +135,12 @@ def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodi
     Export skeletons in both SWC and Neuroglancer precomputed format.
     The set of skeletons to export is taken from the body annotations table.
     """
+    if (np.array(cfg['coordinate-resolution-nm']) == 0).any():
+        if pointlabeler is None:
+            raise RuntimeError("Skeleton coordinate resolution must be set in the config.")
+        info = fetch_instance_info(*pointlabeler.dvidseg)
+        cfg['coordinate-resolution-nm'] = info['Extended']['VoxelSize']
+
     del snapshot_tag
     del pointlabeler
 
@@ -164,7 +180,7 @@ def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodi
     logger.info(f"Processing skeletons for {len(keys)} body IDs")
 
     results = compute_parallel(
-        partial(_process_single_skeleton, *skeleton_src),
+        partial(_process_single_skeleton, *skeleton_src, cfg['coordinate-resolution-nm']),
         keys,
         processes=cfg['processes'],
     )
@@ -172,7 +188,7 @@ def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodi
     return results
 
 
-def _process_single_skeleton(server, uuid, instance, key):
+def _process_single_skeleton(server, uuid, instance, resolution, key):
     """
     Fetch a single skeleton from the DVID server and write two files:
         - an SWC file
@@ -202,9 +218,7 @@ def _process_single_skeleton(server, uuid, instance, key):
 
     df = swc_to_dataframe(swc_bytes)
 
-    # FIXME: Need to provide resolution here, using a value from the config
-    #        that is auto-filled using the DVID segmentation by default.
-    skeleton_to_neuroglancer(df, output_path=f"skeletons/skeletons-precomputed/{body}")
+    skeleton_to_neuroglancer(df, orig_resolution_nm=resolution, output_path=f"skeletons/skeletons-precomputed/{body}")
     return key, True
 
 
