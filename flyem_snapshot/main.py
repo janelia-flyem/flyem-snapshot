@@ -229,10 +229,11 @@ def main_impl(cfg):
         min_conf = cfg['inputs']['synapses']['min-confidence']
         export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+        export_skeletons(cfg['outputs']['skeletons'], snapshot_tag, ann, pointlabeler)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
-        export_skeletons(cfg['outputs']['skeletons'], ann)
+
 
 class SynapsesWithRoiSerializer(SerializerBase):
 
@@ -478,7 +479,7 @@ def standardize_config(cfg, config_dir):
         output_ntcfg['dvid']['uuid'] = output_ntcfg['dvid']['uuid'] or uuid
         output_ntcfg['dvid']['neuronjson_instance'] = output_ntcfg['dvid']['neuronjson_instance'] or f"{dvidcfg['instance']}_annotations"
 
-        # By default, the skeleton dvid backport goes to the main dvid server/uuid.
+        # By default, the skeletons come from the main dvid server/uuid.
         skeletoncfg['dvid']['server'] = skeletoncfg['dvid']['server'] or dvidcfg['server']
         skeletoncfg['dvid']['uuid'] = skeletoncfg['dvid']['uuid'] or uuid
         skeletoncfg['dvid']['instance'] = skeletoncfg['dvid']['instance'] or f"{dvidcfg['instance']}_skeletons"
