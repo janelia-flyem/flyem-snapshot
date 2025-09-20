@@ -6,6 +6,8 @@ import pickle
 import logging.config
 from collections.abc import Mapping
 
+import pandas as pd
+
 from confiddler import dump_default_config, load_config, dump_config
 from neuclease import PrefixFilter
 from neuclease.util import Timer, switch_cwd, dump_json
@@ -21,12 +23,12 @@ from .inputs.rois import RoisSchema, load_point_rois, merge_partner_rois
 from .inputs.sizes import BodySizesSchema, load_body_sizes
 from .inputs.neurotransmitters import NeurotransmittersSchema, load_neurotransmitters
 
-from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
 from .outputs.neurotransmitters import NeurotransmitterExportSchema, export_neurotransmitters
+from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
+from .outputs.skeletons import SkeletonsSchema, export_skeletons
 from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
-from .outputs.skeletons import SkeletonSchema, export_skeletons
 
 from .caches import cached, SerializerBase
 from .util.lsf import log_lsf_details
@@ -72,7 +74,7 @@ ConfigSchema = {
                 "flat-connectome": FlatConnectomeSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
-                "skeletons": SkeletonSchema,
+                "skeletons": SkeletonsSchema,
             }
         },
         "job-settings": {
@@ -480,9 +482,19 @@ def standardize_config(cfg, config_dir):
         output_ntcfg['dvid']['neuronjson_instance'] = output_ntcfg['dvid']['neuronjson_instance'] or f"{dvidcfg['instance']}_annotations"
 
         # By default, the skeletons come from the main dvid server/uuid.
-        skeletoncfg['dvid']['server'] = skeletoncfg['dvid']['server'] or dvidcfg['server']
-        skeletoncfg['dvid']['uuid'] = skeletoncfg['dvid']['uuid'] or uuid
-        skeletoncfg['dvid']['instance'] = skeletoncfg['dvid']['instance'] or f"{dvidcfg['instance']}_skeletons"
+        skel_instances = []
+        for name, skel_instance_cfg in skeletoncfg.items():
+            if name == 'processes':
+                continue
+            skel_dvid_cfg = skel_instance_cfg['dvid']
+            skel_dvid_cfg['server'] = skel_dvid_cfg['server'] or dvidcfg['server']
+            skel_dvid_cfg['uuid'] = skel_dvid_cfg['uuid'] or uuid
+            skel_dvid_cfg['instance'] = skel_dvid_cfg['instance'] or f"{dvidcfg['instance']}_skeletons"
+            skel_instances.append((name, skel_dvid_cfg['server'], skel_dvid_cfg['uuid'], skel_dvid_cfg['instance']))
+        
+        skel_instances = pd.DataFrame(skel_instances, columns=['name', 'server', 'uuid', 'instance'])
+        if len(dupes := skel_instances.loc[skel_instances.duplicated()]):
+            raise RuntimeError(f"Config has duplicate skeleton instances: {dupes}")
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.

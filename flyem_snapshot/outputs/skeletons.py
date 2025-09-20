@@ -1,10 +1,11 @@
 """
 Export skeletons from a DVID server. Files are written to:
+
     skeletons/skeletons-swc/
     skeletons/skeletons-precomputed/
+
 The skeletons-swc/ directory contains the SWC files, and the skeletons-precomputed/
-directory contains the Neuroglancer precomputed files. If skeletons are missing,
-they are written to skeletons/missing-skeletons.csv.
+directory contains the Neuroglancer precomputed skeleton files.
 """
 from functools import partial
 import logging
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 #   - Allow parallel process count to be configured?
 #   - Allow user to narrow the set of skeletons to export by including or excluding body statuses?
 
-SkeletonSchema = {
+SingleInstanceSkeletonSchema = {
     "description": "Settings for skeleton export.",
     "type": "object",
     "default": {},
@@ -70,7 +71,15 @@ SkeletonSchema = {
             "minItems": 3,
             "maxItems": 3,
             "default": [0, 0, 0],
-        },
+        }
+    }
+}
+
+SkeletonsSchema = {
+    "description": "Settings for exporting one or more skeleton instances from DVID.",
+    "type": "object",
+    "default": {},
+    "properties": {
         "processes": {
             "description":
                 "How many processes should be used to export skeletons?\n"
@@ -78,8 +87,18 @@ SkeletonSchema = {
             "type": ["integer", "null"],
             "default": None
         },
-    }
+    },
+    "additionalProperties": SingleInstanceSkeletonSchema,
 }
+
+
+def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None):
+    cfg = copy.copy(cfg)
+    processes = cfg['processes']
+    del cfg['processes']
+    for name, instance_cfg in cfg.items():
+        export_skeleton_instance(name, instance_cfg, snapshot_tag, ann, pointlabeler, processes=processes)
+
 
 class SkeletonSerializer(SerializerBase):
     """
@@ -88,15 +107,13 @@ class SkeletonSerializer(SerializerBase):
     but attempts to re-export skeletons that weren't successfully exported in the last run.
     """
 
-    def get_cache_key(self, cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodies=None):
+    def get_cache_key(self, cfg_name, cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodies=None, processes=0):
+        self.cfg_name = cfg_name
         self.cfg = cfg
         self.snapshot_tag = snapshot_tag
         self.ann = ann
         self.pointlabeler = pointlabeler
-
-        cfg = copy.copy(cfg)
-        cfg['processes'] = 0
-
+        self.processes = processes
         cfg_hash = hex(checksum(cfg))
 
         if ann is not None:
@@ -109,31 +126,46 @@ class SkeletonSerializer(SerializerBase):
         else:
             mutid = pointlabeler.last_mutation["mutid"]
 
-        return f'{snapshot_tag}-seg-{mutid}-ann-{ann_body_hash}-skeletons-{cfg_hash}.csv'
+        return f'{snapshot_tag}-seg-{mutid}-ann-{ann_body_hash}-{self.name}-{cfg_hash}.csv'
 
     def save_to_file(self, results, path):
+        if results is None and os.path.exists(path):
+            os.remove(path)
+            return
+
         results.to_csv(path, index=True, header=True)
         if not results['success'].all():
             num_failed = (~results['success']).sum()
             logger.warning(
-                f"Failed to export skeletons for {num_failed} body IDs. See {path}"
+                f"Failed to export skeletons for {num_failed} body IDs. See {os.path.abspath(path)}"
             )
 
     def load_from_file(self, path):
         results = pd.read_csv(path)
         if not results['success'].all():
-            failed_bodies = results.loc[~results['success']].index.str[:-4].map(int).unique()
-            new_results = export_skeletons(self.cfg, self.snapshot_tag, self.ann, self.pointlabeler, failed_bodies)
+            failed_bodies = results.loc[~results['success']].index.str[:len('_swc')].map(int).unique()
+            new_results = export_skeletons(
+                self.cfg_name,
+                self.cfg,
+                self.snapshot_tag,
+                self.ann,
+                self.pointlabeler,
+                failed_bodies,
+                processes=self.processes
+            )
             results.loc[new_results.index, 'success'] = new_results['success']
         return results
 
 
-@PrefixFilter.with_context('skeletons')
-@cached(SkeletonSerializer('skeletons'))
-def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodies=None):
+@PrefixFilter.with_context('skeletons-{cfg_name}')
+@cached(SkeletonSerializer('skeletons-{cfg_name}'))
+def export_skeleton_instance(cfg_name, cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodies=None, processes=0):
     """
     Export skeletons in both SWC and Neuroglancer precomputed format.
     The set of skeletons to export is taken from the body annotations table.
+
+    The SkeletonSerializer ensures that we don't rerun the full export if it's already been
+    completed, but it does call this function if there are missing skeletons from the last run.
     """
     if (np.array(cfg['coordinate-resolution-nm']) == 0).any():
         if pointlabeler is None:
@@ -150,7 +182,7 @@ def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodi
         cfg['dvid']['instance'],
     )
     if not (cfg['export-skeletons'] and all(skeleton_src)):
-        return
+        return None
 
     if subset_bodies is not None:
         logger.info(f"Exporting skeletons for a subset of {len(subset_bodies)} bodies")
@@ -172,23 +204,24 @@ def export_skeletons(cfg, snapshot_tag, ann=None, pointlabeler=None, subset_bodi
         assert ann.index.name == 'body'
         keys = ann.index.astype(str) + "_swc"
 
-    os.makedirs('skeletons/skeletons-swc', exist_ok=True)
-    os.makedirs('skeletons/skeletons-precomputed', exist_ok=True)
-    with open('skeletons/skeletons-precomputed/info', 'w', encoding='utf-8') as f:
+    dirname = f'skeletons-{cfg_name}'
+    os.makedirs(f'{dirname}/skeletons-swc', exist_ok=True)
+    os.makedirs(f'{dirname}/skeletons-precomputed', exist_ok=True)
+    with open(f'{dirname}/skeletons-precomputed/info', 'w', encoding='utf-8') as f:
         f.write('{"@type": "neuroglancer_skeletons"}\n')
 
     logger.info(f"Processing skeletons for {len(keys)} body IDs")
 
     results = compute_parallel(
-        partial(_process_single_skeleton, *skeleton_src, cfg['coordinate-resolution-nm']),
+        partial(_process_single_skeleton, *skeleton_src, cfg['coordinate-resolution-nm'], dirname),
         keys,
-        processes=cfg['processes'],
+        processes=processes,
     )
     results = pd.DataFrame(results, columns=['key', 'success']).set_index('key')
     return results
 
 
-def _process_single_skeleton(server, uuid, instance, resolution, key):
+def _process_single_skeleton(server, uuid, instance, resolution, dirname, key):
     """
     Fetch a single skeleton from the DVID server and write two files:
         - an SWC file
@@ -199,7 +232,7 @@ def _process_single_skeleton(server, uuid, instance, resolution, key):
         exists on the DVID server and was written successfully.
     """
     assert key.endswith('_swc')
-    body = key[:-4]
+    body = key[:-len('_swc')]
 
     try:
         swc_bytes = fetch_key(server, uuid, instance, key)
@@ -212,25 +245,11 @@ def _process_single_skeleton(server, uuid, instance, resolution, key):
     if not swc_bytes:
         return key, False
 
-    fname = f"skeletons/skeletons-swc/{body}.swc"
+    fname = f"{dirname}/skeletons-swc/{body}.swc"
     with open(fname, "wb") as f:
         f.write(swc_bytes)
 
     df = swc_to_dataframe(swc_bytes)
 
-    skeleton_to_neuroglancer(df, orig_resolution_nm=resolution, output_path=f"skeletons/skeletons-precomputed/{body}")
+    skeleton_to_neuroglancer(df, orig_resolution_nm=resolution, output_path=f"{dirname}/skeletons-precomputed/{body}")
     return key, True
-
-
-# Command-line entry point for testing with hemibrain (no annotations)
-if __name__ == "__main__":
-    test_config = {
-        "export-skeletons": True,
-        "dvid": {
-            "server": "https://hemibrain-dvid.janelia.org",
-            "uuid": "15aee239",
-            "instance": "segmentation_skeletons",
-        },
-    }
-
-    export_skeletons(test_config)
