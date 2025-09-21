@@ -12,6 +12,8 @@ from google.cloud import storage
 from ..caches import cached, SentinelSerializer
 from ..util.util import restrict_synapses_to_roi, upload_file_to_gcs
 
+from .neuprint.annotations import neuprint_segment_annotations
+
 logger = logging.getLogger(__name__)
 
 MIN_SIGNIFICANT_STATUS = "Sensory Anchor"
@@ -86,6 +88,7 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     significant_partner_export_df = _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag)
     _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag)
 
+    _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag)
     _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag)
 
 
@@ -236,6 +239,21 @@ def _export_significant_weighted_connectome(cfg, ann, significant_partner_export
         upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
 
+def _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag):
+    """
+    Export the body annotation table, but with with the same filtering
+    and column names that we use when exporting to neuprint.
+    """
+    neuprint_ann = neuprint_segment_annotations({}, ann, convert_points_to_neo4j_spatial=False)
+    with Timer("Writing body annotation table", logger):
+        fname = f'flat-connectome/body-annotations-{file_tag}.feather'
+        feather.write_feather(
+            neuprint_ann.reset_index(),
+            fname
+        )
+        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+
+
 def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag):
     with Timer("Computing ranked body stats table", logger):
         # A version of this table is also exported for each 'report' in the config,
@@ -257,3 +275,5 @@ def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file
             fname
         )
         upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+
+
