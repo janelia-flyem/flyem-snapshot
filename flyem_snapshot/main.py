@@ -26,6 +26,7 @@ from .inputs.neurotransmitters import NeurotransmittersSchema, load_neurotransmi
 from .outputs.neurotransmitters import NeurotransmitterExportSchema, export_neurotransmitters
 from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
 from .outputs.skeletons import SkeletonsSchema, export_skeletons
+from .outputs.meshes import MeshesSchema, export_meshes
 from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
@@ -72,9 +73,10 @@ ConfigSchema = {
                 # TODO: BigQuery exports
                 "neurotransmitters": NeurotransmitterExportSchema,
                 "flat-connectome": FlatConnectomeSchema,
+                "skeletons": SkeletonsSchema,
+                "meshes": MeshesSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
-                "skeletons": SkeletonsSchema,
             }
         },
         "job-settings": {
@@ -232,6 +234,7 @@ def main_impl(cfg):
         export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
         export_skeletons(cfg['outputs']['skeletons'], snapshot_tag, ann, pointlabeler)
+        export_meshes(cfg['outputs']['meshes'], snapshot_tag, ann, pointlabeler)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
@@ -458,6 +461,7 @@ def standardize_config(cfg, config_dir):
     neuprintcfg = cfg['outputs']['neuprint']
     output_ntcfg = cfg['outputs']['neurotransmitters']
     skeletoncfg = cfg['outputs']['skeletons']
+    meshcfg = cfg['outputs']['meshes']
 
     uuid, snapshot_tag, output_dir = determine_snapshot_tag(cfg, config_dir)
     jobcfg['snapshot-tag'] = snapshot_tag
@@ -494,7 +498,22 @@ def standardize_config(cfg, config_dir):
         
         skel_instances = pd.DataFrame(skel_instances, columns=['name', 'server', 'uuid', 'instance'])
         if len(dupes := skel_instances.loc[skel_instances.duplicated()]):
-            raise RuntimeError(f"Config has duplicate skeleton instances: {dupes}")
+            raise RuntimeError(f"Config has duplicate skeleton instances (including the default instance): {dupes}")
+
+        # By default, the meshes come from the main dvid server/uuid.
+        mesh_instances = []
+        for name, mesh_instance_cfg in meshcfg.items():
+            if name == 'processes':
+                continue
+            mesh_dvid_cfg = mesh_instance_cfg['dvid']
+            mesh_dvid_cfg['server'] = mesh_dvid_cfg['server'] or dvidcfg['server']
+            mesh_dvid_cfg['uuid'] = mesh_dvid_cfg['uuid'] or uuid
+            mesh_dvid_cfg['instance'] = mesh_dvid_cfg['instance'] or f"{dvidcfg['instance']}_meshes"
+            mesh_instances.append((name, mesh_dvid_cfg['server'], mesh_dvid_cfg['uuid'], mesh_dvid_cfg['instance']))
+        
+        mesh_instances = pd.DataFrame(mesh_instances, columns=['name', 'server', 'uuid', 'instance'])
+        if len(dupes := mesh_instances.loc[mesh_instances.duplicated()]):
+            raise RuntimeError(f"Config has duplicate mesh instances (including the default instance): {dupes}")
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.
