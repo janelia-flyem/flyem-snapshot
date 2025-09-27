@@ -541,7 +541,7 @@ META_PROPERTIES = [
 ]
 
 
-def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_totals, roisets):
+def export_neuprint_meta(cfg, last_mutation, ann_timestamp, neuron_df, dataset_totals, roi_totals, roisets):
     """
     """
     metacfg = cfg['meta']
@@ -585,7 +585,10 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
         if not metacfg['latestMutationId']:
             meta['latestMutationId'] = last_mutation['mutid']
         if not metacfg['lastDatabaseEdit']:
-            meta['lastDatabaseEdit'] = str(last_mutation['timestamp'])
+            timestamp = str(last_mutation['timestamp'])
+            if ann_timestamp is not None:
+                timestamp = f'{timestamp} / {ann_timestamp} (segment property update)'
+            meta['lastDatabaseEdit'] = timestamp
     else:
         # These must not be empty strings or neuprintHTTP will crash.
         if not metacfg['uuid']:

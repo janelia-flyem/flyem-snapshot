@@ -216,7 +216,7 @@ def main_impl(cfg):
         #
         snapshot_tag = cfg['job-settings']['snapshot-tag']
         pointlabeler = load_dvidseg(cfg['inputs']['dvid-seg'], snapshot_tag)
-        ann = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
+        ann, ann_timestamp = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
         point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
         element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
         all_bodies = [
@@ -235,7 +235,7 @@ def main_impl(cfg):
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
         export_skeletons(cfg['outputs']['skeletons'], snapshot_tag, ann, pointlabeler)
         export_meshes(cfg['outputs']['meshes'], snapshot_tag, ann, pointlabeler)
-        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
+        export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, ann_timestamp, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
 

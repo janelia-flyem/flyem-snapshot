@@ -10,7 +10,9 @@ import pyarrow.feather as feather
 
 
 from neuclease import PrefixFilter
+from neuclease.dvid.repo import fetch_repo_instances
 from neuclease.dvid.keyvalue import fetch_body_annotations
+from neuclease.dvid.neuronjson import fetch_all
 from neuclease.dvid.annotation import fetch_all_elements
 from neuclease.dvid.labelmap import fetch_labels_batched
 
@@ -152,7 +154,7 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
     os.makedirs('tables', exist_ok=True)
     os.makedirs('reports', exist_ok=True)
 
-    ann = _load_raw_annotations(cfg, pointlabeler)
+    ann, ann_timestamp = _load_raw_annotations(cfg, pointlabeler)
     for pa_cfg in cfg['point-annotations']:
         ann = _append_dvid_point_annotations(pa_cfg, pa_cfg['instance'], ann, pointlabeler, cfg['processes'])
 
@@ -181,19 +183,30 @@ def load_annotations(cfg, pointlabeler, snapshot_tag):
 
     _export_body_status_counts(ann, snapshot_tag)
 
-    return ann
+    return ann, ann_timestamp
 
 
 def _load_raw_annotations(cfg, pointlabeler):
     table_path = Path(cfg['body-annotations-table'])
+    ann_timestamp = None
     if not cfg['body-annotations-table']:
         ann_name = ' / '.join(pointlabeler.dvidseg)
         logger.info(f"Reading body annotations from DVID: {ann_name}")
-        ann = fetch_body_annotations(
+        instance_triple = (
             pointlabeler.dvidseg.server,
             pointlabeler.dvidseg.uuid,
             pointlabeler.dvidseg.instance + '_annotations'
         )
+        instance_type = fetch_repo_instances(*instance_triple[:2])[instance_triple[2]]
+        if instance_type == 'neuronjson':
+            # For neuronjson instances, we can get the timestamp of the last edit.
+            ann = fetch_all(*instance_triple, show='time')
+            ann_timestamp = pd.concat(ann[c].dropna() for c in ann.columns if c.endswith('_time')).max()
+            ann = ann.drop(columns=[c for c in ann.columns if c.endswith('_time')])
+        else:
+            assert instance_type == 'keyvalue'
+            ann = fetch_body_annotations(*instance_triple)
+
         # Feather seems to have a hard time if empty strings are in otherwise int columns.
         # Currently, it's legitimate to replace '' with None for all neuprint properties
         # we have so far, except for 'status', since that would mess up the category dtype!
@@ -212,7 +225,7 @@ def _load_raw_annotations(cfg, pointlabeler):
         ann = feather.read_feather(table_path).set_index('body')
 
     ann.index = ann.index.astype(np.int64)
-    return ann
+    return ann, ann_timestamp
 
 
 @PrefixFilter.with_context('{instance}')

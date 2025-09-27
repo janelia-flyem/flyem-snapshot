@@ -260,10 +260,12 @@ NeuprintSchema = {
 
 class NeuprintSentinelSerializer(SentinelSerializer):
 
-    def get_cache_key(self, cfg, point_df, partner_df, element_tables,
-                      ann, body_sizes, tbar_nt, body_nt,
-                      syn_roisets, element_roisets, pointlabeler):
-
+    def get_cache_key(
+        self,
+        cfg, point_df, partner_df, element_tables,
+        ann, ann_timestamp, body_sizes, tbar_nt, body_nt,
+        syn_roisets, element_roisets, pointlabeler
+    ):
         cfg = copy.copy(cfg)
         cfg['processes'] = 0
 
@@ -271,7 +273,7 @@ class NeuprintSentinelSerializer(SentinelSerializer):
             csums = [
                 checksum(data) for data in (
                     cfg, point_df, partner_df, element_tables,
-                    ann, body_sizes, tbar_nt, body_nt,
+                    ann, ann_timestamp,body_sizes, tbar_nt, body_nt,
                     syn_roisets, element_roisets
                 )
             ]
@@ -286,8 +288,11 @@ class NeuprintSentinelSerializer(SentinelSerializer):
 
 @PrefixFilter.with_context('neuprint')
 @cached(NeuprintSentinelSerializer('neuprint-export', True))
-def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, tbar_nt, body_nt,
-                    syn_roisets, element_roisets, pointlabeler):
+def export_neuprint(
+    cfg, point_df, partner_df, element_tables,
+    ann, ann_timestamp, body_sizes, tbar_nt, body_nt,
+    syn_roisets, element_roisets, pointlabeler
+):
     """
     Export CSV files for each of the following:
 
@@ -348,6 +353,7 @@ def export_neuprint(cfg, point_df, partner_df, element_tables, ann, body_sizes, 
     export_neuprint_meta(
         cfg,
         last_mutation,
+        ann_timestamp,
         neuron_df,
         dataset_totals,
         roi_totals,
