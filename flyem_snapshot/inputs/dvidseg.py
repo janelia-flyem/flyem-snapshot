@@ -66,6 +66,14 @@ def load_dvidseg(cfg, snapshot_tag):
         mutid = pointlabeler.last_mutation['mutid']
         mapping_path = f"tables/complete-nonsingleton-mapping-{snapshot_tag}-mutid-{mutid}.feather"
 
+    # Note:
+    #   We could consider loading the mapping into the pointlabeler from the cached
+    #   file, but in most cases, the fact that the mapping cache is still valid is
+    #   a sign that the synapses and elements won't need to be relabeled, either.
+    #   Pre-emptively loading the mapping into RAM would incur a potentially large RAM
+    #   overhead (~8GB for the MaleCNS) in such cases even though it wouldn't be used.
+    #   In cases where it *is* needed, it will be automatically fetched (albeit slowly)
+    #   by the pointlabeler at the time it is needed.
     if not os.path.exists(mapping_path):
         # We export the complete mapping (rather than the minimal mapping),
         # since that can be more convenient for certain analyses.
