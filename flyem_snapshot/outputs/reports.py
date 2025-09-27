@@ -528,16 +528,19 @@ def _export_downstream_capture_histogram(cfg, snapshot_tag, roiset, name, partne
 
     # We're only interested in the downstream capture of
     # upstream bodies which are themselves in the capture set.
+    partner_df = partner_df.loc[partner_df['captured_pre'].astype(bool)]
     df = (
         partner_df
-        .query('captured_pre')
-        .groupby('body_pre')['captured_post'].value_counts()
+        [['body_pre', 'captured_post']].value_counts()
         .unstack()
         .fillna(0.0)
         .astype(np.int32)
     )
     df = df.rename(columns={True: 'captured', False: 'not_captured'})
     df.columns.name = None
+
+    df['downstream'] = df['captured'] + df['not_captured']
+    df['presyn'] = partner_df.groupby('body_pre')['pre_id'].nunique()
 
     df['capture_frac'] = (df['captured'] / (df['captured'] + df['not_captured'])).astype(np.float32)
 

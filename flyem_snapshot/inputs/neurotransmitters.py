@@ -387,6 +387,10 @@ def _compute_body_neurotransmitters(cfg, tbar_df, ann):
         gt_df = None
     else:
         gt_df = pd.read_csv(cfg['ground-truth'])
+
+        # If working with the male cns, the column might be different.
+        gt_df = gt_df.rename(columns={'mcns_type': 'cell_type'})
+
         if not {*gt_df.columns} >= {'cell_type', 'ground_truth'}:
             raise RuntimeError("Neurotransmitter ground-truth table does not supply the necessary columns.")
         if 'split' not in tbar_df:
@@ -498,6 +502,15 @@ def _confusion_matrix(tbar_df, gt_df, all_nts, training_indicators):
     if gt_df is None:
         return None
 
+    n_split_categories = tbar_df.groupby('body')['split'].nunique(dropna=True)
+    if n_split_categories.max() > 1:
+        n_split_categories[n_split_categories > 1].to_csv('nt_multi_split_bodies.csv')
+        logger.warning("Some bodies have tbars in multiple train/test split categories. See nt_multi_split_bodies.csv")
+
+    # If a body had ANY tbars in the training set, we exclude all of its tbars
+    # from the confusion calculation, even if some of its tbars weren't used in training.
+    training_bodies = tbar_df.query('split in @training_indicators')['body'].unique()
+
     # Generate 'ground_truth' column using cell_type and GT table
     gt_mapping = gt_df.set_index('cell_type')['ground_truth']
     tbar_gt = tbar_df['cell_type'].map(gt_mapping)
@@ -506,7 +519,7 @@ def _confusion_matrix(tbar_df, gt_df, all_nts, training_indicators):
     confusion_df = (
         tbar_df
         .assign(ground_truth=tbar_gt)
-        .query('split not in @training_indicators and ground_truth.notnull()')
+        .query('body not in @training_bodies and ground_truth.notnull()')
         .groupby(['ground_truth', 'pred1'])
         .size()
         .unstack(-1, 0.0)
@@ -723,6 +736,10 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
 
     # Overwrite cases where experimental groundtruth is available.
     exp_df = pd.read_csv(path)
+    
+    # mcns might have special column name in the groundtruth table.
+    exp_df = exp_df.rename(columns={'mcns_type': 'cell_type'})
+
     exp_df = exp_df.rename(columns={'type': 'cell_type', 'ground_truth': 'consensus_nt'})
     exp_df = exp_df.rename(columns={c: camelcase_to_snakecase(c) for c in exp_df.columns})
     exp_df = exp_df.set_index('cell_type')

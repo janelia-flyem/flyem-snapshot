@@ -77,19 +77,13 @@ AnnotationsSchema = {
             "description":
                 "Point annotation datasets to use for populating properties on the :Neuron nodes.\n"
                 "Each item should look something like this:\n"
-                "- instance: <dvid-instance-name>\n"
-                "  column-name: <name>\n",
+                "- instance: nuclei-centroids\n"
+                "  column-name: soma_position\n"
+                "  extract-properties:\n"
+                "    radius: nucleus_radius\n",
             "type": "array",
             "items": PointAnnotationSchema,
-            "default": [
-                {
-                    "instance": "nuclei-centroids",
-                    "column-name": "soma_position",
-                    "extract-properties": {
-                        "radius": "nucleus_radius"
-                    }
-                }
-            ]
+            "default": []
         },
         "replace-values": {
             "description":

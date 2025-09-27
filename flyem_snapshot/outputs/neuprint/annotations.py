@@ -73,6 +73,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 
     'Anchor':                   'Anchor',       # noqa
     'Cleaved Anchor':           'Anchor',       # noqa
+    'Will be merged':           'Anchor',       # noqa
     'Sensory Anchor':           'Anchor',       # noqa
     'Cervical Anchor':          'Anchor',       # noqa
     'Soma Anchor':              'Anchor',       # noqa
@@ -81,6 +82,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 
     'Leaves':                   'Traced',       # noqa
     'PRT Orphan':               'Traced',       # noqa
+    'Reviewed':                 'Traced',       # noqa
     'Prelim Roughly traced':    'Traced',       # noqa
     'RT Hard to trace':         'Traced',       # noqa
     'RT Orphan':                'Traced',       # noqa
@@ -91,7 +93,7 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
 }
 
 
-def neuprint_segment_annotations(cfg, ann):
+def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True):
     """
     Translate input body annotations (e.g. clio annotations)
     to neuprint terminology and values.
@@ -112,7 +114,7 @@ def neuprint_segment_annotations(cfg, ann):
         if 'Position' in c
     })
     renames.update(CLIO_TO_NEUPRINT_PROPERTIES)
-    renames.update(cfg['annotation-property-names'])
+    renames.update(cfg.get('annotation-property-names', {}))
 
     # Drop the columns that map to "", and rename the rest.
     renames = {k:v for k,v in renames.items() if (k in ann) and v}
@@ -136,6 +138,10 @@ def neuprint_segment_annotations(cfg, ann):
     # Drop categorical dtype for this column before using replace()
     ann['statusLabel'] = ann['statusLabel'].astype('string')
 
+    # Neuprint uses 'simplified' status choices,
+    # referring to the original (dvid) status as 'statusLabel'.
+    ann['status'] = ann['statusLabel'].replace(NEUPRINT_STATUSLABEL_TO_STATUS)
+
     # Erase any values which are just "".
     # Better to leave them null.
     ann = ann.replace(["", pd.NA], [None, None])
@@ -147,9 +153,8 @@ def neuprint_segment_annotations(cfg, ann):
         logger.info(f"Deleting empty annotation columns: {empty_cols.tolist()}")
         ann = ann.drop(columns=empty_cols)
 
-    # Neuprint uses 'simplified' status choices,
-    # referring to the original (dvid) status as 'statusLabel'.
-    ann['status'] = ann['statusLabel'].replace(NEUPRINT_STATUSLABEL_TO_STATUS)
+    if not convert_points_to_neo4j_spatial:
+        return ann
 
     # Points must be converted to neo4j spatial points.
     # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?

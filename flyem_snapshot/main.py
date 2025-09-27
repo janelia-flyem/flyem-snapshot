@@ -6,6 +6,8 @@ import pickle
 import logging.config
 from collections.abc import Mapping
 
+import pandas as pd
+
 from confiddler import dump_default_config, load_config, dump_config
 from neuclease import PrefixFilter
 from neuclease.util import Timer, switch_cwd, dump_json
@@ -21,12 +23,13 @@ from .inputs.rois import RoisSchema, load_point_rois, merge_partner_rois
 from .inputs.sizes import BodySizesSchema, load_body_sizes
 from .inputs.neurotransmitters import NeurotransmittersSchema, load_neurotransmitters
 
-from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
 from .outputs.neurotransmitters import NeurotransmitterExportSchema, export_neurotransmitters
+from .outputs.flat import FlatConnectomeSchema, export_flat_connectome
+from .outputs.skeletons import SkeletonsSchema, export_skeletons
+from .outputs.meshes import MeshesSchema, export_meshes
 from .outputs.neuprint import NeuprintSchema, export_neuprint
 from .outputs.neuprint.meta import NeuprintMetaSchema
 from .outputs.reports import ReportsSchema, export_reports
-from .outputs.skeletons import SkeletonSchema, export_skeletons
 
 from .caches import cached, SerializerBase
 from .util.lsf import log_lsf_details
@@ -70,9 +73,10 @@ ConfigSchema = {
                 # TODO: BigQuery exports
                 "neurotransmitters": NeurotransmitterExportSchema,
                 "flat-connectome": FlatConnectomeSchema,
+                "skeletons": SkeletonsSchema,
+                "meshes": MeshesSchema,
                 "neuprint": NeuprintSchema,
                 "connectivity-reports": ReportsSchema,
-                "skeletons": SkeletonSchema,
             }
         },
         "job-settings": {
@@ -229,10 +233,12 @@ def main_impl(cfg):
         min_conf = cfg['inputs']['synapses']['min-confidence']
         export_neurotransmitters(cfg['outputs']['neurotransmitters'], tbar_nt, body_nt, nt_confusion, point_df)
         export_flat_connectome(cfg['outputs']['flat-connectome'], point_df, partner_df, ann, snapshot_tag, min_conf)
+        export_skeletons(cfg['outputs']['skeletons'], snapshot_tag, ann, pointlabeler)
+        export_meshes(cfg['outputs']['meshes'], snapshot_tag, ann, pointlabeler)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
         export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
-        export_skeletons(cfg['outputs']['skeletons'], ann)
+
 
 class SynapsesWithRoiSerializer(SerializerBase):
 
@@ -455,6 +461,7 @@ def standardize_config(cfg, config_dir):
     neuprintcfg = cfg['outputs']['neuprint']
     output_ntcfg = cfg['outputs']['neurotransmitters']
     skeletoncfg = cfg['outputs']['skeletons']
+    meshcfg = cfg['outputs']['meshes']
 
     uuid, snapshot_tag, output_dir = determine_snapshot_tag(cfg, config_dir)
     jobcfg['snapshot-tag'] = snapshot_tag
@@ -478,10 +485,35 @@ def standardize_config(cfg, config_dir):
         output_ntcfg['dvid']['uuid'] = output_ntcfg['dvid']['uuid'] or uuid
         output_ntcfg['dvid']['neuronjson_instance'] = output_ntcfg['dvid']['neuronjson_instance'] or f"{dvidcfg['instance']}_annotations"
 
-        # By default, the skeleton dvid backport goes to the main dvid server/uuid.
-        skeletoncfg['dvid']['server'] = skeletoncfg['dvid']['server'] or dvidcfg['server']
-        skeletoncfg['dvid']['uuid'] = skeletoncfg['dvid']['uuid'] or uuid
-        skeletoncfg['dvid']['instance'] = skeletoncfg['dvid']['instance'] or f"{dvidcfg['instance']}_skeletons"
+        # By default, the skeletons come from the main dvid server/uuid.
+        skel_instances = []
+        for name, skel_instance_cfg in skeletoncfg.items():
+            if name == 'processes':
+                continue
+            skel_dvid_cfg = skel_instance_cfg['dvid']
+            skel_dvid_cfg['server'] = skel_dvid_cfg['server'] or dvidcfg['server']
+            skel_dvid_cfg['uuid'] = skel_dvid_cfg['uuid'] or uuid
+            skel_dvid_cfg['instance'] = skel_dvid_cfg['instance'] or f"{dvidcfg['instance']}_skeletons"
+            skel_instances.append((name, skel_dvid_cfg['server'], skel_dvid_cfg['uuid'], skel_dvid_cfg['instance']))
+        
+        skel_instances = pd.DataFrame(skel_instances, columns=['name', 'server', 'uuid', 'instance'])
+        if len(dupes := skel_instances.loc[skel_instances.duplicated()]):
+            raise RuntimeError(f"Config has duplicate skeleton instances (including the default instance): {dupes}")
+
+        # By default, the meshes come from the main dvid server/uuid.
+        mesh_instances = []
+        for name, mesh_instance_cfg in meshcfg.items():
+            if name == 'processes':
+                continue
+            mesh_dvid_cfg = mesh_instance_cfg['dvid']
+            mesh_dvid_cfg['server'] = mesh_dvid_cfg['server'] or dvidcfg['server']
+            mesh_dvid_cfg['uuid'] = mesh_dvid_cfg['uuid'] or uuid
+            mesh_dvid_cfg['instance'] = mesh_dvid_cfg['instance'] or f"{dvidcfg['instance']}_meshes"
+            mesh_instances.append((name, mesh_dvid_cfg['server'], mesh_dvid_cfg['uuid'], mesh_dvid_cfg['instance']))
+        
+        mesh_instances = pd.DataFrame(mesh_instances, columns=['name', 'server', 'uuid', 'instance'])
+        if len(dupes := mesh_instances.loc[mesh_instances.duplicated()]):
+            raise RuntimeError(f"Config has duplicate mesh instances (including the default instance): {dupes}")
 
     # Some portions of the pipeline have their own setting for process count,
     # but they all default to the top-level config setting if the user didn't specify.

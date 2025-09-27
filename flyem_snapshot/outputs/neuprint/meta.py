@@ -156,6 +156,10 @@ NeuronColumnSchema = {
         #     "type": "boolean",
         #     "default": False
         # },
+        "searchable": {
+            "type": "boolean",
+            "default": True
+        },
         "choices": {
             "description":
                 "Auto-complete choices for this property.\n"
@@ -668,10 +672,11 @@ def _load_neuron_columns(metacfg, neuron_df):
             logger.error(f"Meta config lists column '{col}' which is not present in the data.")
             continue
         if item['choices'] == 'auto':
+            item['choices'] = sorted(neuron_df[col].dropna().unique())
             # Note:
             #   Empty strings were already removed when the annotations
             #   were prepped for neuprint, so none of these choices will be "".
-            item['choices'] = sorted(neuron_df[col].dropna().unique())
+            assert "" not in item['choices'], f"Empty string in choices for column '{col}'"
     return neuron_columns
 
 

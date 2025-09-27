@@ -1,4 +1,5 @@
 import os
+import string
 import copy
 import inspect
 import logging
@@ -28,8 +29,29 @@ def cached(serializer, cache_dir='cache'):
                 f"{type(serializer)}.get_cache_key(...) does not match {f.__name__}(...)"
             )
 
+        parsed_fmt = string.Formatter().parse(serializer.name_template)
+        fmt_fields = {p[1] for p in parsed_fmt if p[1] is not None}
+        serializer_name_has_format_fields = bool(fmt_fields)
+        if serializer_name_has_format_fields:
+            named_fields = {f for f in fmt_fields if f}
+            sig = inspect.signature(f)
+            if (unknown_fields := named_fields - set(sig.parameters)):
+                msg = (
+                    f"Can't use the @cached() decorator for function '{f.__name__}' "
+                    f"with serializer '{serializer.name_template}' because that name contains format field(s) which "
+                    f"aren't named in the function signature: {unknown_fields}"
+                )
+                raise RuntimeError(msg)
+
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
+            if serializer_name_has_format_fields:
+                # Overwrite the serializer name with the formatted
+                # version using the caller's arguments
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                serializer.name = serializer.name_template.format(**bound.arguments)
+
             os.makedirs(cache_dir, exist_ok=True)
             key = serializer.get_cache_key(*args, **kwargs)
             result_path = f'{cache_dir}/{key}'
@@ -51,13 +73,22 @@ def cached(serializer, cache_dir='cache'):
 
 class SerializerBase:
 
-    def __init__(self, name, enforce_matching_signature=True):
+    def __init__(self, name_template, enforce_matching_signature=True):
         """
-        If enforce_matching_signature is True, then the @cached decorator will assert
-        that the signature of the serializer's get_cache_key() method matches the
-        signature of the function it decorates.
+        Args:
+            name_template:
+                The name of the serializer. It can contain format fields using
+                the argument names of the decorated function, e.g. 'foo-{name}',
+                in which case they will be replaced with the arguments of the function
+                it decorates when the serializer is used.
+
+            enforce_matching_signature:
+                If True, then the @cached decorator will assert that the signature
+                of the serializer's get_cache_key() method matches the signature
+                of the function it decorates.
         """
-        self.name = name
+        self.name_template = name_template
+        self.name = name_template
         self.enforce_matching_signature = enforce_matching_signature
 
     # @abstractmethod

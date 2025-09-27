@@ -440,6 +440,8 @@ def _assign_segment_label(cfg, neuron_df):
     is_neuron |= neuron_df[[*crit_props]].notnull().any(axis=1)
     is_neuron |= neuron_df['status'].isin(crit['status'])
 
+    is_neuron &= ~neuron_df['status'].isin(crit['excluded-status'])
+
     neuron_df[':LABEL'] = f'Segment;{dataset}_Segment'
     neuron_df.loc[is_neuron, ':LABEL'] = f'Segment;{dataset}_Segment;Neuron;{dataset}_Neuron'
 
