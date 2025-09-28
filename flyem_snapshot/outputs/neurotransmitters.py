@@ -87,7 +87,7 @@ def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
 @timed("Exporting flat neurotransmitter tables")
 def _write_flat_tables(cfg, tbar_nt, body_nt, nt_confusion, point_df):
     with Timer("Constructing tbar neurotransmitter table", logger):
-        tbar_nt = tbar_nt[[c for c in tbar_nt.columns if c.startswith('nt')]]
+        tbar_nt = tbar_nt[[c for c in tbar_nt.columns if c.startswith('nt') or c == 'split']]
         tbar_df = point_df.query('kind == "PreSyn"')
     tbar_cols = [*'xyz', 'conf', 'sv', 'body', *cfg['roi-sets']]
     tbar_cols = [c for c in tbar_cols if c in tbar_df.columns]
