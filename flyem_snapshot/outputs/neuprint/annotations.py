@@ -136,6 +136,7 @@ def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True)
     logger.info(f"Annotation columns after renaming: {ann.columns.tolist()}")
 
     # Drop categorical dtype for this column before using replace()
+    statusLabel_dtype = ann['statusLabel'].dtype
     ann['statusLabel'] = ann['statusLabel'].astype('string')
 
     # Neuprint uses 'simplified' status choices,
@@ -145,6 +146,7 @@ def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True)
     # Erase any values which are just "".
     # Better to leave them null.
     ann = ann.replace(["", pd.NA], [None, None])
+    ann['statusLabel'] = ann['statusLabel'].astype(statusLabel_dtype)
 
     # If any columns are completely empty (other than statusLabel), remove them.
     allnull = ann.drop(columns=['statusLabel']).isnull().all(axis=0)
