@@ -17,6 +17,7 @@ from .neuprint.annotations import neuprint_segment_annotations
 logger = logging.getLogger(__name__)
 
 MIN_SIGNIFICANT_STATUS = "Sensory Anchor"
+MIN_TRACED_STATUS = "Leaves"
 
 FlatConnectomeSchema = {
     "type": "object",
@@ -85,8 +86,16 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     partner_export_df = _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag)
     _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag)
 
-    significant_partner_export_df = _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag)
-    _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag)
+    if ann['status'].dtype != 'category':
+        logger.info("Status column is not a category. Skipping significant/traced filtered exports.")
+    else:
+        # 'significant' bodies
+        significant_partner_export_df = _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag, MIN_SIGNIFICANT_STATUS, "significant")
+        _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag, MIN_SIGNIFICANT_STATUS, "significant")
+
+        # 'traced' bodies
+        significant_partner_export_df = _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag, MIN_TRACED_STATUS, "traced")
+        _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag, MIN_TRACED_STATUS, "traced")
 
     _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag)
     _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag)
@@ -184,19 +193,20 @@ def _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag):
         upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
 
 
-def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag):
-    with Timer("Constructing significant-only synapse partner export", logger):
-        significant_bodies = ann.query(f'status >= "{MIN_SIGNIFICANT_STATUS}"').index
-        logger.info(f"There are {len(significant_bodies)} with status '{MIN_SIGNIFICANT_STATUS}' or better.")
+def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag, min_status, description):
+    with Timer(f"Constructing {description}-only synapse partner export", logger):
+        assert ann.index.name == 'body'
+        significant_bodies = ann.query(f'status >= "{min_status}"').index
+        logger.info(f"There are {len(significant_bodies)} with status '{min_status}' or better.")
         significant_partner_export_df = (
             partner_export_df
             .query('body_pre in @significant_bodies and body_post in @significant_bodies')
             .reset_index(drop=True)
         )
 
-    msg = f"Writing significant-only synapse partner export (with only {MIN_SIGNIFICANT_STATUS} or better)"
+    msg = f"Writing {description}-only synapse partner export (with only {min_status} or better)"
     with Timer(msg, logger):
-        fname = f'flat-connectome/syn-partners-{file_tag}-significant-only.feather'
+        fname = f'flat-connectome/syn-partners-{file_tag}-{description}-only.feather'
         feather.write_feather(
             significant_partner_export_df,
             fname
@@ -205,8 +215,8 @@ def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_t
     return significant_partner_export_df
 
 
-def _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag):
-    msg = f"Constructing significant-only weighted connectome (with only {MIN_SIGNIFICANT_STATUS} or better)"
+def _export_significant_weighted_connectome(cfg, ann, significant_partner_export_df, snapshot_tag, file_tag, min_status, description):
+    msg = f"Constructing {description}-only weighted connectome (with only {min_status} or better)"
     with Timer(msg, logger):
         significant_connectome = (
             significant_partner_export_df[['body_pre', 'body_post']]
@@ -230,8 +240,8 @@ def _export_significant_weighted_connectome(cfg, ann, significant_partner_export
                 )
             )
 
-    with Timer("Writing significant-only weighted connectome", logger):
-        fname = f'flat-connectome/connectome-weights-{file_tag}-significant-only.feather'
+    with Timer(f"Writing {description}-only weighted connectome", logger):
+        fname = f'flat-connectome/connectome-weights-{file_tag}-{description}-only.feather'
         feather.write_feather(
             significant_connectome,
             fname
@@ -245,10 +255,13 @@ def _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag):
     and column names that we use when exporting to neuprint.
     """
     neuprint_ann = neuprint_segment_annotations({}, ann, convert_points_to_neo4j_spatial=False)
+    assert 'bodyId' in neuprint_ann.columns
+    neuprint_ann = neuprint_ann.reset_index(drop=True)
+
     with Timer("Writing body annotation table", logger):
         fname = f'flat-connectome/body-annotations-{file_tag}.feather'
         feather.write_feather(
-            neuprint_ann.reset_index(),
+            neuprint_ann,
             fname
         )
         upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
@@ -268,6 +281,7 @@ def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file
             'SynWeight': 'synweight'
         })
 
+    syn_counts_df = syn_counts_df.rename(columns={'status': 'status_fine'})
     with Timer("Writing ranked body stats table", logger):
         fname = f'flat-connectome/body-stats-{file_tag}.feather'
         feather.write_feather(
