@@ -124,7 +124,18 @@ AnnotationsSchema = {
             "additionalProperties": {
                 "type": "string"
             },
-            "default": {},
+            # We want to exclude neurotransmitter columns obtained from DVID/Clio
+            # to make sure they aren't exported in the flat connectome tables.
+            # They'll be recomputed from scratch later.
+            "default": {
+                "predicted_nt": "",
+                "predicted_nt_confidence": "",
+                "total_nt_predictions": "",
+                "celltype_predicted_nt": "",
+                "celltype_predicted_nt_confidence": "",
+                "celltype_total_nt_predictions": "",
+                "consensus_nt": "",
+            }
         },
         "processes": {
             "description":
