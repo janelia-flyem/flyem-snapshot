@@ -75,9 +75,9 @@ NeurotransmitterExportSchema = {
 
 @PrefixFilter.with_context('neurotransmitters')
 @cached(SentinelSerializer('neurotransmitter-export'))
-def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
+def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df, snapshot_tag):
     if cfg['export-neurotransmitters']:
-        _write_flat_tables(cfg, tbar_nt, body_nt, nt_confusion, point_df)
+        _write_flat_tables(cfg, tbar_nt, body_nt, nt_confusion, point_df, snapshot_tag)
 
     if cfg['dvid']['perform-backport']:
         _backport_to_dvid(cfg, body_nt)
@@ -85,7 +85,7 @@ def export_neurotransmitters(cfg, tbar_nt, body_nt, nt_confusion, point_df):
 
 @PrefixFilter.with_context('flat')
 @timed("Exporting flat neurotransmitter tables")
-def _write_flat_tables(cfg, tbar_nt, body_nt, nt_confusion, point_df):
+def _write_flat_tables(cfg, tbar_nt, body_nt, nt_confusion, point_df, snapshot_tag):
     with Timer("Constructing tbar neurotransmitter table", logger):
         tbar_nt = tbar_nt[[c for c in tbar_nt.columns if c.startswith('nt') or c == 'split']]
         tbar_df = point_df.query('kind == "PreSyn"')
@@ -103,10 +103,10 @@ def _write_flat_tables(cfg, tbar_nt, body_nt, nt_confusion, point_df):
     with Timer("Writing flat neurotransmitter tables", logger):
         os.makedirs('nt', exist_ok=True)
         assert tbar_df.index.name == 'point_id'
-        feather.write_feather(tbar_df.reset_index(), 'nt/tbar-neurotransmitters.feather')
+        feather.write_feather(tbar_df.reset_index(), f'nt/tbar-neurotransmitters-{snapshot_tag}.feather')
 
         assert body_nt.index.name == 'body'
-        feather.write_feather(body_nt.reset_index(), 'nt/body-neurotransmitters.feather')
+        feather.write_feather(body_nt.reset_index(), f'nt/body-neurotransmitters-{snapshot_tag}.feather')
 
         if nt_confusion is not None:
             nt_confusion.to_csv('nt/neurotransmitter-confusion.csv', index=True, header=True)
