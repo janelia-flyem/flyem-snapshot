@@ -256,6 +256,11 @@ NeuprintMetaSchema = {
             # This is just the generic FlyEM logo.
             "default": "https://www.janelia.org/sites/default/files/styles/epsa_580x580/public/flyEM-logo_580x580.jpg",
         },
+        "description": {
+            "description": "A description of the dataset, shown in neuprint explorer.",
+            "type": "string",
+            "default": ""
+        },
         "postHighAccuracyThreshold": {
             "description":
                 "Which confidence threshold to use when calculating each connection's standard 'weight'.\n"
@@ -524,7 +529,7 @@ def construct_neuprint_roi_hierarchy(rh):
 META_PROPERTIES = [
     'dataset', 'tag', 'hideDataSet',
     'voxelSize', 'voxelUnits',
-    'info', 'logo', 'meshHost',
+    'info', 'logo', 'description', 'meshHost',
     'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
     'totalPreCount', 'totalPostCount',
     'superLevelRois',
@@ -553,7 +558,7 @@ def export_neuprint_meta(cfg, last_mutation, ann_timestamp, neuron_df, dataset_t
     verbatim_keys = (
         'dataset', 'tag', 'hideDataSet',
         'voxelSize', 'voxelUnits',
-        'info', 'logo',
+        'info', 'logo', 'description',
         'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
         # 'totalPreCount', 'totalPostCount',
         # 'superLevelRois',
