@@ -145,7 +145,8 @@ echo "[$(date)] (There may be a LONG pause after the next line of output.)"
 # (Error: Argument list too long)
 # Luckily, we can supply the arguments via a file!
 # https://github.com/neo4j/neo4j/issues/7333#issuecomment-1746238765
-/var/lib/neo4j/bin/neo4j-admin import @ingestion-args.txt > >(tee /logs/import.out.log) 2> >(tee /logs/import.err.log)
+# Note more note: Our 'meta' node includes multiline fields, hence the option used here.
+/var/lib/neo4j/bin/neo4j-admin import --multiline-fields=true @ingestion-args.txt > >(tee /logs/import.out.log) 2> >(tee /logs/import.err.log)
 end=$(date +%s)
 
 if grep -i 'import failed' /logs/import.*.log > /dev/null;

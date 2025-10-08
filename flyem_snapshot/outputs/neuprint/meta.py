@@ -9,6 +9,7 @@ the generated CSV file will have only one row.
 """
 import re
 import copy
+import csv
 import json
 import logging
 from textwrap import dedent
@@ -723,5 +724,5 @@ def _export_meta_as_csv(meta):
         for prop, dtype in NEUPRINT_META_LIST_PROPERTIES.items()
     })
     meta_df = append_neo4j_type_suffixes(meta_df)
-    meta_df.to_csv('neuprint/Neuprint_Meta.csv', index=False, header=True)
+    meta_df.to_csv('neuprint/Neuprint_Meta.csv', index=False, header=True, quoting=csv.QUOTE_NONNUMERIC)
     logger.info("Wrote Neuprint_Meta.csv")
