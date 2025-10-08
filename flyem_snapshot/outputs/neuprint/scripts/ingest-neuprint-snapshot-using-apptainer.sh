@@ -104,5 +104,9 @@ else
     # Now copy the database files from /scratch to the snapshot directory
     echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
     cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Removing temporary workspace directory"
+    rm -r ${WORKSPACE_DIR}
+
     echo "$(date '+%Y-%m-%d %H:%M:%S') DONE"
 fi
