@@ -126,7 +126,10 @@ NeurotransmittersSchema = {
                 "This column can be used to override the celltype prediction immediately before the 'consensus' column is produced.\n"
                 "So, the celltype prediction column (property) will NOT be overridden in the end result, but the 'consensus'\n"
                 "column will only use the override value, if at all.\n"
-                "Example: octomamine: unclear",
+                "Example:\n"
+                "  override-celltype-before-consensus:\n"
+                "    octomamine: unclear"
+                "    serotonin: unclear",
             "type": "object",
             "default": {},
             "additionalProperties": {
