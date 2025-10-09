@@ -9,6 +9,7 @@ the generated CSV file will have only one row.
 """
 import re
 import copy
+import csv
 import json
 import logging
 from textwrap import dedent
@@ -255,6 +256,11 @@ NeuprintMetaSchema = {
 
             # This is just the generic FlyEM logo.
             "default": "https://www.janelia.org/sites/default/files/styles/epsa_580x580/public/flyEM-logo_580x580.jpg",
+        },
+        "description": {
+            "description": "A description of the dataset, shown in neuprint explorer.",
+            "type": "string",
+            "default": ""
         },
         "postHighAccuracyThreshold": {
             "description":
@@ -524,7 +530,7 @@ def construct_neuprint_roi_hierarchy(rh):
 META_PROPERTIES = [
     'dataset', 'tag', 'hideDataSet',
     'voxelSize', 'voxelUnits',
-    'info', 'logo', 'meshHost',
+    'info', 'logo', 'description', 'meshHost',
     'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
     'totalPreCount', 'totalPostCount',
     'superLevelRois',
@@ -541,7 +547,7 @@ META_PROPERTIES = [
 ]
 
 
-def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_totals, roisets):
+def export_neuprint_meta(cfg, last_mutation, ann_timestamp, neuron_df, dataset_totals, roi_totals, roisets):
     """
     """
     metacfg = cfg['meta']
@@ -553,7 +559,7 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
     verbatim_keys = (
         'dataset', 'tag', 'hideDataSet',
         'voxelSize', 'voxelUnits',
-        'info', 'logo',
+        'info', 'logo', 'description',
         'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
         # 'totalPreCount', 'totalPostCount',
         # 'superLevelRois',
@@ -585,7 +591,10 @@ def export_neuprint_meta(cfg, last_mutation, neuron_df, dataset_totals, roi_tota
         if not metacfg['latestMutationId']:
             meta['latestMutationId'] = last_mutation['mutid']
         if not metacfg['lastDatabaseEdit']:
-            meta['lastDatabaseEdit'] = str(last_mutation['timestamp'])
+            timestamp = str(last_mutation['timestamp'])
+            if ann_timestamp is not None:
+                timestamp = f'{timestamp} / {ann_timestamp} (segment property update)'
+            meta['lastDatabaseEdit'] = timestamp
     else:
         # These must not be empty strings or neuprintHTTP will crash.
         if not metacfg['uuid']:
@@ -715,5 +724,5 @@ def _export_meta_as_csv(meta):
         for prop, dtype in NEUPRINT_META_LIST_PROPERTIES.items()
     })
     meta_df = append_neo4j_type_suffixes(meta_df)
-    meta_df.to_csv('neuprint/Neuprint_Meta.csv', index=False, header=True)
+    meta_df.to_csv('neuprint/Neuprint_Meta.csv', index=False, header=True, quoting=csv.QUOTE_NONNUMERIC)
     logger.info("Wrote Neuprint_Meta.csv")
