@@ -1,12 +1,13 @@
 #!/bin/bash
 
-# This next eight lines are all that need to be changed to run for a different instance.
-INSTANCE="fish2"
-PROJECT="fishemf"
-CONFIG_DIR="/groups/flyem/data/snapshots/snapshot-configs/${INSTANCE}/master"
-MAX_RUNTIME='6:00'
-SENDTO="neuprint-updates-fish-aaaaqvjm2vabn3onhdnntzuory@hhmi.org.slack.com"
-DEVELOPER="svirskasr@hhmi.org"
+# These next nine lines are all that need to be changed to run for a different instance.
+INSTANCE=<<SERVER>> e.g. "fish2"
+PROJECT=<<CLUSTER PROJECT>> e.g. "fishemf"
+CONFIG_DIR=<<CONFIGURATION DIR>> e.g. "/groups/flyem/data/snapshots/snapshot-configs/${INSTANCE}/master"
+MAX_RUNTIME=<<MAX RUNTIME ON CLUSTER>> e.g. '6:00'
+SENDTO=<<SLACK EMAIL>> e.g. "neuprint-updates-fish-aaaaqvjm2vabn3onhdnntzuory@hhmi.org.slack.com"
+DEVELOPER=<<DEVELOPER EMAIL>> e.g. "svirskasr@hhmi.org"
+CHANGE_HEALTH=<<PROGRAM TO CHANGE SERVER LIST>> e.g. "/groups/flyem/data/snapshots/change_server_list.sh"
 source /groups/flyem/proj/cluster/miniforge/bin/activate flyem-312
 export DVID_ADMIN_TOKEN=<<ENTER TOKEN HERE>>
 
@@ -76,7 +77,9 @@ trap cleanup SIGINT SIGTERM
 
 # Create snapshot
 echo "flyem-snapshot --config ${CONFIG_PATH}"
-JOB_ID=$(bsub -P ${PROJECT} -n ${SLOTS} -J ${JOB_NAME} -o logs/lsf-snapshot-output.log -W ${MAX_RUNTIME} flyem-snapshot --config ${CONFIG_PATH} | awk '{print $2}' | tr -d '<>')
+cp /dev/null logs/lsf-snapshot-output.log
+cp /dev/null logs/lsf-snapshot-error.log
+JOB_ID=$(bsub -P ${PROJECT} -n ${SLOTS} -J ${JOB_NAME} -o logs/lsf-snapshot-output.log -e logs/lsf-snapshot-error.log -W ${MAX_RUNTIME} flyem-snapshot --config ${CONFIG_PATH} | awk '{print $2}' | tr -d '<>')
 echo "Submitted snapshot job ${JOB_ID}"
 bwait -w "ended($JOB_ID)"
 wait_for_completion
@@ -86,12 +89,15 @@ sleep 2
 TEST_DIR="${OUTPUT_DIR}/neuprint"
 if [ ! -e "$TEST_DIR" ]; then
   echo "${TEST_DIR} does not exist - snapshot job failed"
-  exit
+  echo "Check log error file at ${WORK_DIR}/logs/lsf-snapshot-error.log"
+  exit -1
 fi
 
 # Ingestion
 echo "ingest-neuprint-snapshot-using-apptainer ${OUTPUT_DIR}"
-JOB_ID=$(bsub -P ${PROJECT} -n ${SLOTS} -J ${JOB_NAME} -o logs/lsf-ingest-output.log -W ${MAX_RUNTIME} ingest-neuprint-snapshot-using-apptainer ${OUTPUT_DIR} | awk '{print $2}' | tr -d '<>')
+cp /dev/null logs/lsf-ingest-output.log
+cp /dev/null logs/lsf-ingest-error.log
+JOB_ID=$(bsub -P ${PROJECT} -n ${SLOTS} -J ${JOB_NAME} -o logs/lsf-ingest-output.log -e logs/lsf-ingest-error.log -W ${MAX_RUNTIME} ingest-neuprint-snapshot-using-apptainer ${OUTPUT_DIR} | awk '{print $2}' | tr -d '<>')
 echo "Submitted ingestion job ${JOB_ID}"
 bwait -w "ended($JOB_ID)"
 wait_for_completion
@@ -99,6 +105,9 @@ sleep 2
 
 # Disable the trap since the script is completing normally
 trap - SIGINT SIGTERM
+
+# Remove from health checks
+${CHANGE_HEALTH} delete ${INSTANCE}
 
 # Copy database to emdata5
 echo "Copying database to ${DESTINATION}"
@@ -113,6 +122,9 @@ if [ $ret -ne 0 ]; then
   echo "${INSTANCE} did not restart (${ret})"| mailx -s "${INSTANCE} did not restart" ${DEVELOPER}
   exit
 fi
+
+# Restore to health checks
+${CHANGE_HEALTH} add ${INSTANCE}
 
 # Send an email
 echo "neuprint-${INSTANCE} has been updated to the latest snapshot (${TODAY})" | mailx -s "neuprint-${INSTANCE} updated" ${SENDTO}
