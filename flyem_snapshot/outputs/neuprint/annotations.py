@@ -112,10 +112,11 @@ def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True)
             raise ValueError("Body annotations table must have a 'body' column or index.")
 
     ann = ann.query('body != 0')
-    if 'bodyid' not in ann.columns:
-        ann['bodyid'] = ann.index
 
-    assert (ann['bodyid'] == ann.index).all()
+    # Note that dvid/clio neuronjson annotations come with the bodyid column,
+    # but annotations loaded from CSV or from dvid point annotations don't
+    # have it until we set it here.
+    ann['bodyid'] = ann.index
 
     renames = {c: snakecase_to_camelcase(c.replace(' ', '_'), False) for c in ann.columns}
     renames.update({
