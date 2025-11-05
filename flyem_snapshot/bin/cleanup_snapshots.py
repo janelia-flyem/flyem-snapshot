@@ -63,6 +63,8 @@ def cleanup_single_instance(instance):
                 continue
     if not old_dirs:
         return
+    # Save at least one full directory
+    _ = old_dirs.pop()
     for target in old_dirs:
         for entry in os.listdir(target):
             if entry in EXCLUDE:
@@ -103,7 +105,7 @@ if __name__ == "__main__":
     PARSER = argparse.ArgumentParser(
         description="Perform health checks on a NeuPrint server")
     PARSER.add_argument('--days', dest='DAYS', action='store',
-                        default=4, help='Minimum days old')
+                        default=4, type=int, help='Minimum days old')
     PARSER.add_argument('--write', dest='WRITE', action='store_true',
                         default=False, help='Write to filesystem')
     PARSER.add_argument('--verbose', dest='VERBOSE', action='store_true',
