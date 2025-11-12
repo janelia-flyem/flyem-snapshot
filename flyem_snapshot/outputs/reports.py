@@ -536,7 +536,9 @@ def _export_downstream_capture_histogram(cfg, snapshot_tag, roiset, name, partne
         .fillna(0.0)
         .astype(np.int32)
     )
+    # Rename columns and make sure both 'captured' and 'not_captured' are present.
     df = df.rename(columns={True: 'captured', False: 'not_captured'})
+    df = df.reindex(['captured', 'not_captured'], axis=1, fill_value=0)
     df.columns.name = None
 
     df['downstream'] = df['captured'] + df['not_captured']
