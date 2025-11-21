@@ -14,7 +14,6 @@ for item in "${server_list[@]}"; do
   echo "$item"
 done
 
-#for SERVER in "" cns fabg
 for SERVER in "${server_list[@]}"
 do
   if [[ $SERVER =~ ^#.* || $SERVER =~ ^\s*$ ]] ;
