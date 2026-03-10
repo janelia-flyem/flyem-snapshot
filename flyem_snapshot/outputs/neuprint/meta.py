@@ -180,7 +180,17 @@ NeuronColumnSchema = {
                     "enum": ["auto"]
                 }
             ]
-        }
+        },
+        "description": {
+            "description": "Human-readable description of the property.",
+            "type": "string",
+            "default": "",
+        },
+        # "enabled": {
+        #     "description": "Whether this column should be enabled at all in neuprintExplorer.",
+        #     "type": "boolean",
+        #     "default": True
+        # }
     }
 }
 
@@ -309,7 +319,8 @@ NeuprintMetaSchema = {
             "default": ""
         },
 
-        "neuronColumns": NeuronColumnsSchema,
+        # Note: Old name was "neuronColumns"
+        "neuronColumnsOrdered": NeuronColumnsSchema,
 
         "neuronColumnsVisible": {
             # Discussion here:
@@ -538,7 +549,7 @@ META_PROPERTIES = [
     'overviewRois', 'overviewOrder',
     'roiInfo', 'roiHierarchy',
     'neuronProperties',
-    'neuronColumns',
+    'neuronColumnsOrdered',
     'neuronColumnsVisible',
 
     'uuid', 'latestMutationId', 'lastDatabaseEdit',
@@ -617,7 +628,7 @@ def export_neuprint_meta(cfg, last_mutation, ann_timestamp, neuron_df, dataset_t
     rh = load_roi_hierarchy(metacfg['roiHierarchy'], roisets)
     meta['roiHierarchy'] = construct_neuprint_roi_hierarchy(rh)
     meta['roiInfo'] = _load_roi_info(metacfg, roi_totals, rh)
-    meta['neuronColumns'] = _load_neuron_columns(metacfg, neuron_df)
+    meta['neuronColumnsOrdered'] = _load_neuron_columns(metacfg, neuron_df)
 
     # This is a deprecated field that is no longer used by neuprintExplorer,
     # but old deployments may balk if it isn't present.
@@ -672,7 +683,7 @@ def _load_roi_info(metacfg, roi_totals, roi_hierarchy):
 
 def _load_neuron_columns(metacfg, neuron_df):
     neuron_df = neuron_df.rename(columns={c: c.split(':')[0] for c in neuron_df.columns})
-    neuron_columns = copy.deepcopy(metacfg['neuronColumns'])
+    neuron_columns = copy.deepcopy(metacfg['neuronColumnsOrdered'])
     for item in neuron_columns:
         col = item['id']
         item['visible'] = (col in metacfg['neuronColumnsVisible'])
@@ -686,6 +697,11 @@ def _load_neuron_columns(metacfg, neuron_df):
             #   Empty strings were already removed when the annotations
             #   were prepped for neuprint, so none of these choices will be "".
             assert "" not in item['choices'], f"Empty string in choices for column '{col}'"
+        
+        # Don't even include a description key if it's empty.
+        if 'description' in item and not item['description']:
+            del item['description']
+
     return neuron_columns
 
 
@@ -708,7 +724,7 @@ def _export_meta_as_csv(meta):
             meta[key] = json.dumps(meta[key])
 
     # And these are JSON strings, too.
-    meta['neuronColumns'] = json.dumps(meta['neuronColumns'])
+    meta['neuronColumnsOrdered'] = json.dumps(meta['neuronColumnsOrdered'])
     meta['neuronColumnsVisible'] = json.dumps(meta['neuronColumnsVisible'])
 
     # We can't export as bool since neo4j requires 'true' not 'True'.
