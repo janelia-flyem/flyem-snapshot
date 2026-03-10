@@ -8,6 +8,7 @@ import logging
 import pandas as pd
 
 from neuclease.util import snakecase_to_camelcase
+from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +75,12 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
     'Anchor':                   'Anchor',       # noqa
     'Cleaved Anchor':           'Anchor',       # noqa
     'Will be merged':           'Anchor',       # noqa
+    'Partially traced':         'Anchor',       # noqa
     'Sensory Anchor':           'Anchor',       # noqa
     'Cervical Anchor':          'Anchor',       # noqa
     'Soma Anchor':              'Anchor',       # noqa
+    'Examined Soma Anchor':     'Anchor',       # noqa
     'Primary Anchor':           'Anchor',       # noqa
-    'Partially traced':         'Anchor',       # noqa
 
     'Leaves':                   'Traced',       # noqa
     'PRT Orphan':               'Traced',       # noqa
@@ -91,6 +93,10 @@ NEUPRINT_STATUSLABEL_TO_STATUS = {
     'Traced':                   'Traced',       # noqa
     'Finalized':                'Traced',       # noqa
 }
+
+# We need to make sure we're handling all status labels that we use in DVID,
+# which is generally tracked in the neuclease DEFAULT_BODY_STATUS_CATEGORIES.
+assert list(NEUPRINT_STATUSLABEL_TO_STATUS.keys()) == DEFAULT_BODY_STATUS_CATEGORIES
 
 
 def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True):
