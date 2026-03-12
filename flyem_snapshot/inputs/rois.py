@@ -389,6 +389,11 @@ def _load_roi_unions(roiset_name, src_roiset_name, src_lists, point_df):
     new_dtype = pd.CategoricalDtype(new_rois)
     union_mapping = {subroi: roi for roi, subrois in src_lists.items() for subroi in subrois}
 
+    src_dtype = point_df[src_roiset_name].dtype
+    missing_from_source = set(union_mapping.keys()) - set(src_dtype.categories)
+    if missing_from_source:
+        raise RuntimeError(f"These subrois in your union config are not valid categories in '{src_roiset_name}': {missing_from_source}")
+
     # Convert to Series with appropriate categorical dtypes
     union_mapping = pd.Series(union_mapping, dtype=new_dtype)
     union_mapping.index = union_mapping.index.astype(point_df[src_roiset_name].dtype)
