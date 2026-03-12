@@ -373,7 +373,7 @@ def _load_roi_unions(roiset_name, src_roiset_name, src_lists, point_df):
         raise RuntimeError(
             f"Can't load roiset '{roiset_name}' from union-source-roiset '{src_roiset_name}' "
             "because the source roiset doesn't exist in the point_df (yet?).  "
-            "(Did you make sure the source roiset is listed higher in the config?)"
+            "(Did you make sure the source roiset is listed higher in the 'roi-set-names' list in your 'synapses' config section?)"
         )
     assert point_df[src_roiset_name].dtype == 'category'
     assert '<unspecified>' not in src_lists.keys(), \
@@ -388,6 +388,11 @@ def _load_roi_unions(roiset_name, src_roiset_name, src_lists, point_df):
     new_rois = ['<unspecified>'] + sorted(src_lists.keys())
     new_dtype = pd.CategoricalDtype(new_rois)
     union_mapping = {subroi: roi for roi, subrois in src_lists.items() for subroi in subrois}
+
+    src_dtype = point_df[src_roiset_name].dtype
+    missing_from_source = set(union_mapping.keys()) - set(src_dtype.categories)
+    if missing_from_source:
+        raise RuntimeError(f"These subrois in your union config are not valid categories in '{src_roiset_name}': {missing_from_source}")
 
     # Convert to Series with appropriate categorical dtypes
     union_mapping = pd.Series(union_mapping, dtype=new_dtype)

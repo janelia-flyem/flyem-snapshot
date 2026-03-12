@@ -30,7 +30,7 @@ The implementation below was developed in part to meet the specification shown b
            50 synapse per-cell threshold so there is no conflict between cell and cell type level for these cells.
 
         5. experimental data: transmitter information from high confidence experimental data, for the initial
-           release this will be the ground truth data and new FISH data + Dm3a/b (accidentally left out of grown
+           release this will be the ground truth data and new FISH data + Dm3a/b (accidentally left out of ground
            truth data). We have a table with source that will go in the paper. Jan suggested that data source
            should also go into neuprint. In which case the sources will be: "Nern et al. 2024" or "Davis et al. 2020"
            and to future proof this we should expect that more than one source could go into this string,
@@ -162,7 +162,7 @@ NeurotransmittersSchema = {
         "experimental-groundtruth": {
             "description":
                 "Optional. Table of high-confidence experimental groundtruth, used to override type-level\n"
-                "predictions in the 'consensus' preduction column.\n"
+                "predictions in the 'consensus' prediction column.\n"
                 "The expected columns match the columns in our final output (but we also accept their camelCase equivalents).\n"
                 "type, consensusNt, ntReference, otherNt, otherNtReference\n"
                 "We also accept the same column names used in the groud-truth table: cell_type,ground_truth",
@@ -741,6 +741,8 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
     exp_df = pd.read_csv(path)
     
     # mcns might have special column name in the groundtruth table.
+    # Ultimately we want 'cell_type' (also called 'mcns_type' or 'type' in some CSVs)
+    # and 'consensus_nt' (also called 'ground_truth' in some CSVs).
     exp_df = exp_df.rename(columns={'mcns_type': 'cell_type'})
 
     exp_df = exp_df.rename(columns={'type': 'cell_type', 'ground_truth': 'consensus_nt'})

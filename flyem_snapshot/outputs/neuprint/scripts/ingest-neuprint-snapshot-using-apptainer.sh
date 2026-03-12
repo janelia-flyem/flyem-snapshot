@@ -106,7 +106,7 @@ else
     cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') Removing temporary workspace directory"
-    rm -r ${WORKSPACE_DIR}
+    rm -rf ${WORKSPACE_DIR}
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') DONE"
 fi

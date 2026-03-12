@@ -562,10 +562,13 @@ def standardize_config(cfg, config_dir):
             if isinstance(rs['rois'], str) and rs['rois'].endswith('.json'):
                 make_abspath(rs, 'rois')
 
+    used_roi_sets = set()
+
     # If the user didn't specify an explicit subset of roi-sets
     # to insert into to the synapse table, insert them all.
     if not syncfg['roi-set-names']:
         syncfg['roi-set-names'] = list(roicfg['roi-sets'].keys())
+    used_roi_sets.update(syncfg['roi-set-names'])
 
     # Same for all generic Element sets.
     for elm_name, c in elmcfg.items():
@@ -573,11 +576,18 @@ def standardize_config(cfg, config_dir):
             continue
         if not c['roi-set-names']:
             c['roi-set-names'] = list(roicfg['roi-sets'].keys())
+        used_roi_sets.update(c['roi-set-names'])
 
-    # If the user didn't specify an explicit subset
-    # of roi-sets to include in neuprint, include them all.
+    # If the user didn't specify an explicit subset of roi-sets to
+    # include in neuprint, include all those used in the synapse table.
     if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['roi-set-names']:
         neuprintcfg['roi-set-names'] = syncfg['roi-set-names']
+
+    if unused_roi_sets := set(roicfg['roi-sets'].keys()) - used_roi_sets:
+        logger.warning(
+            "The following ROI sets were provided in the config, but never "
+            f"used in the synapse config or elements config: {unused_roi_sets}"
+        )
 
     # If any report is un-named, auto-name it
     # according to the zone and/or ROI list.
