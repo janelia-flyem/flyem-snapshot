@@ -109,6 +109,13 @@ def _make_comparison_plot(combined_df, include_labels=True, legend_position='fir
     datasets = combined_df.index.get_level_values(0).unique()
     colors = px.colors.qualitative.Plotly[:len(datasets)]
     
+    hovertemplate = (
+        '%{y}<br>'
+        'Mean: %{x:.1f}<br>'
+        'L,R: ±%{error_x.array:.1f}'
+        '<extra></extra>'
+    )
+
     # Add traces for first subplot
     for i, dataset in enumerate(datasets):
         if dataset in first_half_df.index.get_level_values(0):
@@ -123,7 +130,8 @@ def _make_comparison_plot(combined_df, include_labels=True, legend_position='fir
                     orientation='h',
                     marker_color=colors[i],
                     showlegend=True,
-                    legendgroup=dataset
+                    legendgroup=dataset,
+                    hovertemplate=hovertemplate
                 ),
                 row=1, col=1
             )
@@ -142,7 +150,8 @@ def _make_comparison_plot(combined_df, include_labels=True, legend_position='fir
                     orientation='h',
                     marker_color=colors[i],
                     showlegend=False,  # Don't show legend for second subplot traces
-                    legendgroup=dataset
+                    legendgroup=dataset,
+                    hovertemplate=hovertemplate
                 ),
                 row=1, col=2
             )
