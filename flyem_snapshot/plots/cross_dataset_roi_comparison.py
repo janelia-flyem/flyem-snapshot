@@ -56,6 +56,7 @@ def _make_paired_df(df):
     ROIs with no L/R suffix).
     """
     assert set(df.columns) >= {'neuropil', 'completeness'}
+    df = df.copy()
 
     # Replace (L) -> _L, (R) -> _R
     df['neuropil'] = df['neuropil'].str.replace(r'\((L|R)\)', r'_\1', regex=True)
@@ -71,15 +72,16 @@ def _make_paired_df(df):
         .unstack()
     )
 
+    maxes = paired_df.max(axis=1)
     paired_df['mean'] = paired_df.mean(axis=1)
-    paired_df['residual'] = paired_df[['L', 'R', 'central']].max(axis=1) - paired_df['mean']
+    paired_df['residual'] = maxes - paired_df['mean']
     paired_df = paired_df.loc[paired_df.index != "None"]
 
     paired_df['min_side'] = np.where(paired_df.eval('R < L'), 'R', 'L')
     paired_df['max_side'] = np.where(paired_df.eval('R > L'), 'R', 'L')
 
-    paired_df.loc[paired_df['L'].isnull(), 'min_side'] = ''
-    paired_df.loc[paired_df['L'].isnull(), 'max_side'] = ''
+    paired_df.loc[paired_df['L'].isnull() | paired_df['R'].isnull(), 'min_side'] = ''
+    paired_df.loc[paired_df['L'].isnull() | paired_df['R'].isnull(), 'max_side'] = ''
 
     return paired_df
 
