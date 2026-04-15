@@ -251,6 +251,10 @@ def _fetch_comparison_dataframes(dvid_details, client):
     clio_df = clio_df.drop(columns=nt_cols)
     neuprint_df = neuprint_df.drop(columns=nt_cols)
 
+    # Convert this column from categorical to string (object),
+    # or else its NaN values can't be replaced with None.
+    clio_df['statusLabel'] = clio_df['statusLabel'].astype(object)
+
     # Standardize on None as the null value (instead of NaN or "").
     # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
     clio_df = clio_df.replace(["", np.nan, pd.NaT, pd.NA], [None, None, None, None])
