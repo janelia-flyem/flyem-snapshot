@@ -51,6 +51,20 @@ IndexesSettingsSchema = {
                     }
                 }
             }
+        },
+        "find-neurons-fulltext-index-properties": {
+            "description": "Properties to include in the fulltext index, used in the FindNeurons autocomplete query.",
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [
+                "type",
+                "instance",
+                "synonyms",
+            ]
+            # "default": [
+            #     "type", "instance", "hemibrainType", "flywireType", "systematicType",
+            #     "itoLeeHl", "trumanHl", "synonyms", "class", "entryNerve", "exitNerve"
+            # ]
         }
     }
 }
@@ -94,7 +108,8 @@ def export_neuprint_indexes_script(cfg, neuron_columns, all_rois, synapse_roiset
         cfg['meta']['dataset'],
         neuron_prop_names,
         segment_rois,
-        element_rois_to_index
+        element_rois_to_index,
+        cfg['indexes']['find-neurons-fulltext-index-properties'],
     )
 
 
@@ -152,7 +167,7 @@ def _neuron_properties_to_index(cfg, neuron_columns):
     return neuron_prop_names
 
 
-def _render_indexing_script(dataset_name, neuron_prop_names, segment_rois, element_rois_to_index):
+def _render_indexing_script(dataset_name, neuron_prop_names, segment_rois, element_rois_to_index, find_neurons_fulltext_index_properties):
     env = Environment(loader=PackageLoader('flyem_snapshot.outputs.neuprint'))
     template = env.get_template('create-indexes.cypher')
     rendered = template.render({
@@ -160,6 +175,7 @@ def _render_indexing_script(dataset_name, neuron_prop_names, segment_rois, eleme
         'segment_rois': segment_rois,
         'dataset': dataset_name,
         'element_rois_to_index': element_rois_to_index,
+        'find_neurons_fulltext_index_properties': find_neurons_fulltext_index_properties,
     })
 
     logger.info("Writing neuprint/create-indexes.cypher")

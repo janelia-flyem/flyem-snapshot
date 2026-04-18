@@ -77,6 +77,17 @@ CREATE INDEX ON :`{{dataset}}_Neuron`(`{{roi}}`);
 RETURN datetime() as time, ":Segment/:Neuron ROI property {{loop.index}}/{{segment_rois|count}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 
+// 
+// Fulltext index for FindNeurons autocomplete query
+// These properties can be quickly searched for substrings.
+//
+CREATE FULLTEXT INDEX find_neurons_fulltext_properties_index FOR (n:`{{dataset}}_Neuron`)
+ON EACH [
+    {% for prop in find_neurons_fulltext_index_properties %}
+    n.{{prop}}{{ ", " if not loop.last else "" }}
+    {% endfor %}
+]
+
 // Indexing is performed in the background,
 // but we don't want to exit until the indexes are all online.
 RETURN datetime() as time, "Waiting for indexes to come online..." as message;
