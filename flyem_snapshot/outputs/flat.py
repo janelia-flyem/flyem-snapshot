@@ -7,8 +7,6 @@ from neuclease import PrefixFilter
 from neuclease.util import Timer, decode_coords_from_uint64
 from neuclease.misc.completeness import ranked_synapse_counts
 
-from google.cloud import storage
-
 from ..caches import cached, SentinelSerializer
 from ..util.util import restrict_synapses_to_roi, upload_file_to_gcs
 
@@ -45,15 +43,18 @@ FlatConnectomeSchema = {
             "type": "string",
             "default": ""
         },
-        "gc-project": {
-            "description":
-                "Google Cloud project.\n",
-            "type": "string",
-            "default": "FlyEM-Private"
+        "gcp-project": {
+            "description": "Google Cloud project.",
+            "oneOf": [
+                {"type": "string"},
+                {"type": "null"}
+            ],
+            "default": ""
         },
-        "gcs-bucket": {
+        "gcs-bucket-dir": {
             "description":
-                "Google Cloud Storage bucket to export the flat-connectome to.\n",
+                "Google Cloud Storage bucket and directory to export the\n"
+                "flat-connectome to, e.g. 'gs://my-bucket/my-dir'\n",
             "type": "string",
             "default": ""
         },
@@ -72,13 +73,6 @@ def export_flat_connectome(cfg, point_df, partner_df, ann, snapshot_tag, min_con
     """
     if not cfg['export-connectome']:
         return
-    # Initialize Google cloud client and select project
-    client = storage.Client()
-    if cfg['gc-project'] and cfg['gcs-bucket']:
-        client.project = cfg['gc-project']
-    else:
-        cfg['gcs-bucket'] = ""
-
     os.makedirs('flat-connectome', exist_ok=True)
 
     point_df, partner_df, file_tag = _filter_synapses(cfg, point_df, partner_df, snapshot_tag, min_conf)
@@ -163,14 +157,14 @@ def _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag):
             partner_export_df,
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
     with Timer("Writing synapse point export", logger):
         fname = f'flat-connectome/syn-points-{file_tag}.feather'
         feather.write_feather(
             point_df,
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
     return partner_export_df
 
@@ -190,7 +184,7 @@ def _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag):
             connectome,
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
 
 def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag, min_status, description):
@@ -211,7 +205,7 @@ def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_t
             significant_partner_export_df,
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
     return significant_partner_export_df
 
 
@@ -246,7 +240,7 @@ def _export_significant_weighted_connectome(cfg, ann, significant_partner_export
             significant_connectome,
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
 
 def _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag):
@@ -264,7 +258,7 @@ def _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag):
             neuprint_ann,
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
 
 def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag):
@@ -288,6 +282,4 @@ def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file
             syn_counts_df.reset_index(),
             fname
         )
-        upload_file_to_gcs(cfg['gcs-bucket'], fname, f"{snapshot_tag}/{fname}")
-
-
+        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])

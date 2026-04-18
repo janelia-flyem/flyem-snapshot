@@ -1,4 +1,5 @@
-from google.cloud import storage
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -65,18 +66,30 @@ def restrict_synapses_to_roi(roiset, roi, point_df, partner_df):
     return point_df, partner_df
 
 
-def upload_file_to_gcs(bucket_name, source, destination):
-    """ Upload a file to Google Cloud Storage
-        Keyword arguments:
-          bucket_name: name of the GCS bucket
-          source: local path to the file to upload
-          destination: GCS destination
-        Returns:
-            None
+def upload_file_to_gcs(bucket_dir, input_path, project=None):
     """
-    if not bucket_name:
+    Upload a file to Google Cloud Storage.
+
+    Args:
+        bucket_dir:
+            Destination bucket name with directory, e.g. 'gs://my-bucket/my-dir'
+            If not provided, this function exits without uploading.
+        input_path:
+            Local path to the file to upload
+    """
+    # This is the only place where we actually import any google.cloud,
+    # so I'm using a lazy import in case we want to make this an optional dependency.
+    import google.cloud.storage
+
+    if not bucket_dir:
         return
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
+
+    assert bucket_dir.startswith('gs://')
+    bucket_dir = bucket_dir.removeprefix('gs://')
+    bucket, *parts = Path(bucket_dir).parts
+    destination = '/'.join(parts) + '/' + Path(input_path).name
+    
+    client = google.cloud.storage.Client(project=project)
+    bucket = client.bucket(bucket)
     blob = bucket.blob(destination)
-    blob.upload_from_filename(source)
+    blob.upload_from_filename(input_path)
