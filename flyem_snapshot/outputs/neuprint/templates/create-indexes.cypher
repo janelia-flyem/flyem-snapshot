@@ -83,10 +83,10 @@ RETURN datetime() as time, ":Segment/:Neuron ROI property {{loop.index}}/{{segme
 //
 CREATE FULLTEXT INDEX find_neurons_fulltext_properties_index FOR (n:`{{dataset}}_Neuron`)
 ON EACH [
-    {% for prop in find_neurons_fulltext_index_properties %}
-    n.{{prop}}{{ ", " if not loop.last else "" }}
-    {% endfor %}
-]
+{% for prop in find_neurons_fulltext_index_properties %}
+    n.`{{prop}}`{{ ", " if not loop.last else "" }}{% endfor %}
+];
+RETURN datetime() as time, "Initiated index creation: find_neurons_fulltext_properties_index for '{{find_neurons_fulltext_index_properties|count}} properties'" as message;
 
 // Indexing is performed in the background,
 // but we don't want to exit until the indexes are all online.
