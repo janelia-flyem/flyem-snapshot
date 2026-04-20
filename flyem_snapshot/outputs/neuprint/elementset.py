@@ -11,20 +11,28 @@ logger = logging.getLogger(__name__)
 
 @PrefixFilter.with_context("ElementSet")
 @timed
-def export_neuprint_elementsets(cfg, element_tables, connectome):
-    synaptic_bodies = pd.concat(
-        (connectome['body_pre'].rename('body'),
-         connectome['body_post'].rename('body')), ignore_index=True).drop_duplicates()
+def export_neuprint_elementsets(cfg, element_tables, all_segment_ids):
     all_points = [points for points, _ in element_tables.values() if points is not None]
     if len(all_points) == 0 or sum(map(len, all_points)) == 0:
         return
 
     all_points = pd.concat(all_points)
     for elm_type, points in all_points.groupby('type'):
-        _export_elementsets(cfg, elm_type, points, synaptic_bodies)
+        _export_elementsets(cfg, elm_type, points, all_segment_ids)
 
 
-def _export_elementsets(cfg, elm_type, point_df, synaptic_bodies):
+def _export_elementsets(cfg, elm_type, point_df, all_segment_ids):
+    """
+    Export two CSV files for the given element type:
+
+    1. Neuprint_Neuron_to_ElementSet_{elm_type}.csv
+        - Defines :Segment-[:Contains]->:ElementSet edges
+    2. Neuprint_ElementSet_to_Element_{elm_type}.csv
+        - Defines :ElementSet-[:Contains]->:Element edges
+    
+    These files are used to construct the ':Contains' relationships
+    via ingest-neuprint-snapshot-within-neo4j-container.sh.    
+    """
     dataset = cfg['meta']['dataset']
     label = f"ElementSet;{dataset}_ElementSet"
 
@@ -50,16 +58,18 @@ def _export_elementsets(cfg, elm_type, point_df, synaptic_bodies):
     fname = f"Neuprint_Neuron_to_ElementSet_{elm_type}.csv"
     with Timer(f"Writing {fname}", logger):
         # Currently, neuprint does not create any :Segment nodes
-        # for non-synaptic bodies (including body 0).
-        # (We also discard all Synapses that fall on body 0.)
+        # for which have no synapses or body annotations (including body 0).
+        # (And even if they are annotated, non-synaptic bodies are only
+        # included if 'keep-non-synaptic-segments' is set in the config.)
+        # (Note that we also discard all Synapses that fall on body 0.)
         #
         # But generic Elements are intended to be versatile and serve
         # diverse use-cases, including those that don't require an
         # enclosing :Segment.
         #
         # Therefore, unlike synapses, we DO allow Elements to exist
-        # even if they come from non-synaptic bodies (including
-        # body 0).
+        # even if they come from non-synaptic,non-annotated bodies
+        # (including body 0).
         #
         # The only "catch" is that we must not create the edge
         # :Segment-[:Contains]->:ElementSet in such cases,
@@ -73,8 +83,7 @@ def _export_elementsets(cfg, elm_type, point_df, synaptic_bodies):
         #   (e.g. for Element ROI properties).
         (
             elmset_df.loc[
-                # Synaptic bodies only.
-                elmset_df['body'].isin(synaptic_bodies),
+                elmset_df['body'].isin(all_segment_ids),
                 ['body', 'elmset_id']
             ]
             .rename(columns={

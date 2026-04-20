@@ -74,7 +74,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, bod
         if (
             neuron_df[c].dtype in (bool, object)
             and len(u := neuron_df[c].dropna().unique()) <= 2  # noqa
-            and set(u) <= {True, False}                        # noqa
+            and set(u) <= {True, False}                   # noqa
         ):
             neuron_df[c] = neuron_df[c].replace([True, False], ['true', 'false'])
             neuron_df = neuron_df.rename(columns={c: f'{c}:boolean'})
