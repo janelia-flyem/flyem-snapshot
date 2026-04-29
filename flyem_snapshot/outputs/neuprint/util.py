@@ -68,6 +68,10 @@ def neo4j_type_suffix(series):
     # In most cases, the dtype determines the type suffix
     if isinstance(series.dtype, pd.CategoricalDtype):
         return 'string'
+
+    if series.dtype == 'string[python]':
+        return 'string'
+
     if series.dtype == bool:
         # https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
         msg = (
