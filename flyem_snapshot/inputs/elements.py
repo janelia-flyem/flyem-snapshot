@@ -9,7 +9,7 @@ import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease.util import Timer, encode_coords_to_uint64
-from neuclease.dvid import fetch_all_elements, fetch_labels_batched
+from neuclease.dvid import fetch_all_elements
 
 from .annotations import PointAnnotationSchema
 
