@@ -184,7 +184,8 @@ def _load_raw_synapses(cfg):
     if 'point_id' not in point_df.columns and point_df.index.name == 'point_id':
         point_df = point_df.reset_index()
 
-    point_df = point_df.astype({'point_id': np.uint64})
+    if 'point_id' in point_df.columns:
+        point_df = point_df.astype({'point_id': np.uint64})
 
     if 'point_id' not in point_df.columns and not {*'zyx'} <= {*point_df.columns}:
         raise RuntimeError("Synapse point table doesn't have coordinates or point_id")
