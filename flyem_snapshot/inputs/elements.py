@@ -84,14 +84,14 @@ def load_elements(cfg, pointlabeler):
         point_df = _load_element_points(name, table_cfg)
         distance_df = _load_element_distances(name, table_cfg)
 
-        # FIXME: This would be more convenient to mutate if it were a DataClass.
-        element_dfs[name] = (point_df, distance_df)
-
         if point_df is not None:
             # Inserts new columns for 'body' and 'sv', in-place.
             # FIXME: This assumes DVID is used. We need a config option to just trust the input body column.
             pointlabeler.update_bodies_for_points(point_df, cfg['processes'])
             point_df = point_df.astype({'body': np.int64, 'sv': np.int64})
+
+        # FIXME: This would be more convenient to mutate if it were a DataClass.
+        element_dfs[name] = (point_df, distance_df)
 
     return element_dfs
 
