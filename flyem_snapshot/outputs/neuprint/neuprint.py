@@ -273,7 +273,7 @@ class NeuprintSentinelSerializer(SentinelSerializer):
             csums = [
                 checksum(data) for data in (
                     cfg, point_df, partner_df, element_tables,
-                    ann, ann_timestamp,body_sizes, tbar_nt, body_nt,
+                    ann, ann_timestamp, body_sizes, tbar_nt, body_nt,
                     syn_roisets, element_roisets
                 )
             ]
@@ -321,7 +321,17 @@ def export_neuprint(
 
     os.makedirs('neuprint', exist_ok=True)
 
-    last_mutation = pointlabeler and pointlabeler.last_mutation
+    last_mutation = None
+    if pointlabeler is not None:
+        # Even if the last mutation was on a preceding UUID,
+        # (i.e. the snapshot UUID has no segmentation edits),
+        # we want neuprint to report the UUID that was given in the config.
+        # One reason for this is that there may have been annotation edits in config UUID,
+        # and some clients use that UUID to figure out where to pull annotations from Clio.
+        # Another reason is that our neuroglancer state template may use DVID_UUID for both
+        # the segmentation voxel source and annotation sources.
+        last_mutation = pointlabeler.last_mutation
+        last_mutation['uuid'] = pointlabeler.dvidseg.uuid
 
     # Drop body 0 entirely.
     point_df = point_df.loc[point_df['body'] != 0]
