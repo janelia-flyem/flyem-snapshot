@@ -384,7 +384,7 @@ def export_neuprint(
     connectome = export_neuprint_segment_connections(cfg, partner_df)
 
     # TODO: It would be good to verify that there are no duplicated Element IDs (including Synapses)
-    export_neuprint_elementsets(cfg, element_tables, neuron_df.index)
+    export_neuprint_elementsets(cfg, element_tables, neuron_df[':ID(Body-ID)'].values)
     export_neuprint_elements(cfg, element_tables, element_roisets)
     export_neuprint_elements_closeto(element_tables)
 
