@@ -9,7 +9,8 @@ import pandas as pd
 from neuclease import PrefixFilter
 from neuclease.util import timed, compute_parallel
 
-from .util import neo4j_column_names, append_neo4j_type_suffixes
+from ...util.util import replace_object_nan_with_none
+from .util import neo4j_column_names, append_neo4j_type_suffixes, convert_point_cols_to_neo4j_spatial
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,13 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
     logger.info(f"Non-ROI properties: {prop_cols}")
     logger.info(f"ROI properties from the following roi-sets: {roisets}")
     point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
+
+    replace_object_nan_with_none(point_df)
+
+    # Convert properties such as 'closestLandmarkLocation' from values like "[123, 456, 789]"
+    # to the string format required for neo4j spatial points in CSV files,
+    # e.g. "{x: 123, y: 456, z: 789}"
+    convert_point_cols_to_neo4j_spatial(point_df)
 
     export_subdir = f'neuprint/Neuprint_Elements/{config_name}'
     os.makedirs(export_subdir, exist_ok=True)

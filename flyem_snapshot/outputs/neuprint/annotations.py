@@ -10,6 +10,8 @@ import pandas as pd
 from neuclease.util import snakecase_to_camelcase
 from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES
 
+from .util import convert_point_cols_to_neo4j_spatial
+
 logger = logging.getLogger(__name__)
 
 # For most fields, we formulaically convert from snake_case to camelCase,
@@ -172,94 +174,9 @@ def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True)
         logger.info(f"Deleting empty annotation columns: {empty_cols.tolist()}")
         ann = ann.drop(columns=empty_cols)
 
-    if not convert_points_to_neo4j_spatial:
-        return ann
-
-    # Points must be converted to neo4j spatial points.
-    # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
-    for col in ann.columns:
-        if not re.search('position|location', col.lower()):
-            continue
-
-        # FIXME: Is there a better way to catch positionType instead of hard-coding this?
-        if col in ('positionType', 'locationType'):
-            continue
-
-        count = ann[col].notnull().sum()
-        ann[col] = ann[col].map(_convert_point)
-        newcount = ann[col].notnull().sum()
-        if newcount != count:
-            logger.warning(
-                f"Point annotation column {col} has {count - newcount}"
-                " values which could not be processed as points."
-            )
-
-        valid = ann[col].notnull()
-        ann.loc[~valid, col] = None
-        ann.loc[valid, col] = [
-            f"{{x:{x}, y:{y}, z:{z}}}"
-            for (x,y,z) in ann.loc[valid, col].values
-        ]
+    if convert_points_to_neo4j_spatial:
+        # Convert '.*location.*' and '.*position.*' columns to neo4j spatial points.
+        # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
+        convert_point_cols_to_neo4j_spatial(ann)
 
     return ann
-
-
-def _convert_point(p):
-    """
-    Convert the given entity from various possible forms of point data into to a standard form.
-
-    The input may be one of the following:
-
-    - A string like '123, 456, 789'
-    - A string like '[123, 456, 789]'
-    - A string like '{x: 123, y: 456, z: 789}'
-    - A list or array of three ints or floats
-    - a neo4j spatial coordinate like this:
-        {
-            'coordinates': [24481, 36044, 67070],
-            'crs': {'name': 'cartesian-3d',
-            'properties': {'href': 'http://spatialreference.org/ref/sr-org/9157/ogcwkt/',
-            'type': 'ogcwkt'},
-            'srid': 9157,
-            'type': 'link'},
-            'type': 'Point'
-        }
-
-    The output form is just a list: [x, y, z].
-    If the input is None or cannot be interpreted as a point, then None is returned.
-    """
-    match p:
-        case None:
-            return None
-
-        case {'coordinates': coords} if len(coords) == 3:
-            return coords
-
-        case {'x': x, 'y': y, 'z': z}:
-            return [x, y, z]
-
-        case [x, y, z] if all(isinstance(v, int) for v in (x, y, z)):
-            return [x, y, z]
-
-        case [x, y, z]:
-            try:
-                return [float(x), float(y), float(z)]
-            except (ValueError, TypeError):
-                return None
-
-        case str() as s:
-            s = s.strip('[]{} ')
-
-            try:
-                pattern = (
-                    r'(?:x:\s*)?(-?\d+\.?\d*)\s*,\s*'
-                    r'(?:y:\s*)?(-?\d+\.?\d*)\s*,\s*'
-                    r'(?:z:\s*)?(-?\d+\.?\d*)\s*$'
-                )
-                if match := re.match(pattern, s):
-                    return [eval(x) for x in match.groups()]
-            except (ValueError, TypeError):
-                return None
-
-        case _:
-            return None

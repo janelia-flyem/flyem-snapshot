@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+
 # For certain types, we need to ensure that 'long' is used in neo4j, not int.
 # Also, in some cases (e.g. 'group'), the column in our pandas DataFrame is
 # stored with float dtype because pandas uses NaN for missing values.
@@ -23,6 +24,10 @@ NEUPRINT_TYPE_OVERRIDES = {
     # 'halfbrainBody': 'long',
     'positionType': 'string',
     'locationType': 'string',
+
+    # fish2 :Soma properties
+    'somaId': 'long',
+    'zapbenchId': 'long',
 }
 
 
@@ -140,3 +145,103 @@ def neo4j_type_suffix(series):
         f"Column {series.name} contains lists with unsupported "
         f"list entries (e.g. {valid.iloc[0][0]})"
     )
+
+
+def convert_point_cols_to_neo4j_spatial(df):
+    """
+    Convert any columns whose name contains 'location' or 'position'
+    to the string format required for neo4j spatial points in CSV files,
+
+    e.g. "{x: 123, y: 456, z: 789}"
+
+    Works in-place.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Points must be converted to neo4j spatial points.
+    # FIXME: What about point-annotations which DON'T contain 'location' or 'position' in the name?
+    for col in df.columns:
+        if not re.search('position|location', col.lower()):
+            continue
+
+        # FIXME: Is there a better way to catch positionType instead of hard-coding this?
+        if col in ('positionType', 'locationType'):
+            continue
+
+        df[col] = df[col].astype(object).where(df[col].notnull(), None)
+        count = df[col].notnull().sum()
+        df[col] = df[col].map(_convert_point)
+        newcount = df[col].notnull().sum()
+        if newcount != count:
+            logger.warning(
+                f"Point annotation column {col} has {count - newcount}"
+                " values which could not be processed as points."
+            )
+
+        valid = df[col].notnull()
+        df.loc[~valid, col] = None
+        df.loc[valid, col] = [
+            f"{{x:{x}, y:{y}, z:{z}}}"
+            for (x,y,z) in df.loc[valid, col].values
+        ]
+
+
+def _convert_point(p):
+    """
+    Convert the given entity from various possible forms of point data into to a standard form.
+
+    The input may be one of the following:
+
+    - A string like '123, 456, 789'
+    - A string like '[123, 456, 789]'
+    - A string like '{x: 123, y: 456, z: 789}'
+    - A list or array of three ints or floats
+    - a neo4j spatial coordinate like this:
+        {
+            'coordinates': [24481, 36044, 67070],
+            'crs': {'name': 'cartesian-3d',
+            'properties': {'href': 'http://spatialreference.org/ref/sr-org/9157/ogcwkt/',
+            'type': 'ogcwkt'},
+            'srid': 9157,
+            'type': 'link'},
+            'type': 'Point'
+        }
+
+    The output form is just a list: [x, y, z].
+    If the input is None or cannot be interpreted as a point, then None is returned.
+    """
+    match p:
+        case None:
+            return None
+
+        case {'coordinates': coords} if len(coords) == 3:
+            return coords
+
+        case {'x': x, 'y': y, 'z': z}:
+            return [x, y, z]
+
+        case [x, y, z] if all(isinstance(v, int) for v in (x, y, z)):
+            return [x, y, z]
+
+        case [x, y, z]:
+            try:
+                return [float(x), float(y), float(z)]
+            except (ValueError, TypeError):
+                return None
+
+        case str() as s:
+            s = s.strip('[]{} ')
+
+            try:
+                pattern = (
+                    r'(?:x:\s*)?(-?\d+\.?\d*)\s*,\s*'
+                    r'(?:y:\s*)?(-?\d+\.?\d*)\s*,\s*'
+                    r'(?:z:\s*)?(-?\d+\.?\d*)\s*$'
+                )
+                if match := re.match(pattern, s):
+                    return [eval(x) for x in match.groups()]
+            except (ValueError, TypeError):
+                return None
+
+        case _:
+            return None
