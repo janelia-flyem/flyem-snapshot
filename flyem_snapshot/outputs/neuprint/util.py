@@ -147,6 +147,61 @@ def neo4j_type_suffix(series):
     )
 
 
+def prepare_int_cols_for_export(df):
+    """
+    Works in-place.
+
+    Some columns might have the wrong dtype due to the way
+    pandas expresses missing values with NaN.
+    To ensure that the non-missing values will be written
+    correctly in the CSV, we first convert to the correct dtype
+    (if the dataframe contains no missing entries) or to 'object'
+    dtype (if necessary) and cast the available values to the
+    correct type.
+
+    Args:
+        DataFrame in which the column names already have neo4j
+        type suffixes (e.g. 'foo:long').
+        Any columns without a suffix are left unchanged.
+    """
+    neo4j_to_numpy = {
+        'long': np.int64,
+        'int': np.int32
+    }
+
+    for c, pandas_dtype in df.dtypes.items():
+        if ':' not in c:
+            continue
+
+        neo4j_type = c.split(':')[1]
+        export_type = neo4j_to_numpy.get(neo4j_type, None)
+        if not export_type or export_type == pandas_dtype:
+            continue
+
+        # For columns which should be exported as numerics,
+        # coerce incompatible values to null (but warn about them).
+        if np.issubdtype(export_type, np.number):
+            nullcount = df[c].isnull().sum()
+            df[c] = pd.to_numeric(df[c], errors='coerce')
+            if df[c].isnull().sum() > nullcount:
+                # (The current function is running in a subprocess,
+                # so we can't use the global logger variable.)
+                logging.getLogger(__name__).warning(
+                    f"Segment annotation column {c} has values which cannot be "
+                    "converted to numeric types. Setting those values to null."
+                )
+
+        if df[c].notnull().all():
+            df[c] = df[c].astype(export_type)
+        else:
+            # Convert column to dtype 'object' (instead of float)
+            # so that we can replace floats with ints while
+            # allowing for missing values.
+            df[c] = df[c].astype(object)
+            nn = df[c].notnull()
+            df.loc[nn, c] = df.loc[nn, c].astype(export_type)
+
+
 def convert_point_cols_to_neo4j_spatial(df):
     """
     Convert any columns whose name contains 'location' or 'position'
