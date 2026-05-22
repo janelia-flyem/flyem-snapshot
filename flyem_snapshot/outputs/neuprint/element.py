@@ -15,7 +15,7 @@ from .util import neo4j_column_names, append_neo4j_type_suffixes, convert_point_
 logger = logging.getLogger(__name__)
 
 
-@PrefixFilter.with_context("Synapse")
+@PrefixFilter.with_context("Element")
 def export_neuprint_elements(cfg, element_tables, element_roisets):
     """
     Export generic (non-Synapse) Element nodes and relationships.
