@@ -119,7 +119,7 @@ def neuprint_segment_annotations(cfg, ann, convert_points_to_neo4j_spatial=True)
         else:
             raise ValueError("Body annotations table must have a 'body' column or index.")
 
-    ann = ann.query('body != 0')
+    ann = ann.query('body != 0').copy()
 
     # Note that dvid/clio neuronjson annotations come with the bodyid column,
     # but annotations loaded from CSV or from dvid point annotations don't
