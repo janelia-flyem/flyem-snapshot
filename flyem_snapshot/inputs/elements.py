@@ -44,6 +44,13 @@ ElementTableSchema = {
                 "  extract-properties:\n"
                 "    radius: nucleus_radius\n",
         },
+        "permit-body-0": {
+            "description":
+                "If False, filter out any elements that reside on body 0.\n"
+                "Otherwise, leave them in, which means neuprint may include :Segment/:Neuron for body 0 and it will have elements.\n",
+            "type": "boolean",
+            "default": False,
+        },
         "type": {
             "description":
                 "Optional. Adds a column named 'type' to the table, with the given value in all rows.\n"
@@ -99,7 +106,12 @@ def load_elements(cfg, pointlabeler):
         if name == "processes":
             continue
 
-        point_df = _load_element_points(name, table_cfg, pointlabeler)
+        dvid_server = dvid_uuid = None
+        if pointlabeler:
+            dvid_server = pointlabeler.dvidseg.server
+            dvid_uuid = pointlabeler.dvidseg.uuid
+
+        point_df = _load_element_points(name, table_cfg, dvid_server, dvid_uuid)
         distance_df = _load_element_distances(name, table_cfg)
 
         if point_df is not None:
@@ -108,13 +120,16 @@ def load_elements(cfg, pointlabeler):
             pointlabeler.update_bodies_for_points(point_df, cfg['processes'])
             point_df = point_df.astype({'body': np.int64, 'sv': np.int64})
 
+        if not table_cfg['permit-body-0']:
+            point_df = point_df.loc[point_df['body'] != 0].copy()
+
         # FIXME: This would be more convenient to mutate if it were a DataClass.
         element_dfs[name] = (point_df, distance_df)
 
     return element_dfs
 
 
-def _load_element_points(name, table_cfg, pointlabeler):
+def _load_element_points(name, table_cfg, dvid_server, dvid_uuid):
     table_path = table_cfg['point-table']
     ann_instance = table_cfg['dvid-point-annotations']['instance']
 
@@ -128,7 +143,12 @@ def _load_element_points(name, table_cfg, pointlabeler):
         element_df = _load_element_points_from_table(name, table_path)
     if ann_instance:
         pa_cfg = table_cfg['dvid-point-annotations']
-        element_df = _load_element_points_from_dvid(name, pa_cfg, pointlabeler)
+        element_df = _load_element_points_from_dvid(
+            name,
+            pa_cfg,
+            dvid_server,
+            dvid_uuid
+        )
 
     if (cfg_type := table_cfg['type']):
         if 'type' in element_df.columns and (element_df['type'] != cfg_type).any():
@@ -162,11 +182,11 @@ def _load_element_points_from_table(name, table_path):
     return element_df
 
 
-def _load_element_points_from_dvid(name, pa_cfg, pointlabeler):
+def _load_element_points_from_dvid(name, pa_cfg, dvid_server, dvid_uuid):
     with Timer(f"Loading '{name}' elements from DVID instance '{pa_cfg['instance']}'", logger):
         df = fetch_all_elements(
-            pointlabeler.dvidseg.server,
-            pointlabeler.dvidseg.uuid,
+            dvid_server,
+            dvid_uuid,
             pa_cfg['instance'],
             format='pandas'
         )

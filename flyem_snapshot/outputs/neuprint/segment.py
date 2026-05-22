@@ -139,7 +139,6 @@ def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, 
     )
     body_element_stats = (
         pd.concat(tables, axis=1)
-        .query('body != 0')
         .fillna(0)
         .astype(np.int32)
     )
@@ -347,7 +346,6 @@ def _make_roi_infos(batch_df):
             456   -387462398472 '{"ME(R)": {"post": 45, "pre": 9, ...}, "LO(R)": {"post": 213, "pre": 12, ...}}'
         ...
     """
-    batch_df = batch_df.query('body != 0')
     batch_df = batch_df.set_index('roi')
     assert batch_df.columns[:2].tolist() == ['body_batch', 'body']
 
