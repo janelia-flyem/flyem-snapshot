@@ -157,14 +157,16 @@ def _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag):
             partner_export_df,
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
     with Timer("Writing synapse point export", logger):
         fname = f'flat-connectome/syn-points-{file_tag}.feather'
         feather.write_feather(
             point_df,
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
     return partner_export_df
 
@@ -184,7 +186,8 @@ def _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag):
             connectome,
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
 
 def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_tag, file_tag, min_status, description):
@@ -205,7 +208,8 @@ def _export_significant_synapse_partners(cfg, ann, partner_export_df, snapshot_t
             significant_partner_export_df,
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
     return significant_partner_export_df
 
 
@@ -240,7 +244,8 @@ def _export_significant_weighted_connectome(cfg, ann, significant_partner_export
             significant_connectome,
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
 
 def _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag):
@@ -258,7 +263,8 @@ def _export_neuprint_body_annotations(cfg, ann, snapshot_tag, file_tag):
             neuprint_ann,
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
 
 
 def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file_tag):
@@ -282,4 +288,5 @@ def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file
             syn_counts_df.reset_index(),
             fname
         )
-        upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])
+        if cfg['gcs-bucket-dir']:
+            upload_file_to_gcs(f"{cfg['gcs-bucket-dir']}/{snapshot_tag}", fname, cfg['gcp-project'])

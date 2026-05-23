@@ -300,7 +300,8 @@ def load_neurotransmitters(cfg, synpoint_df, synpartner_df, ann):
     body_df, confusion_df = _compute_body_neurotransmitters(cfg, tbar_df, ann)
 
     # It's convenient for offline analysis if we keep the split column.
-    tbar_df['split'] = tbar_df['split'].astype('category')
+    if 'split' in tbar_df.columns:
+        tbar_df['split'] = tbar_df['split'].astype('category')
 
     return tbar_df, body_df, confusion_df
 
