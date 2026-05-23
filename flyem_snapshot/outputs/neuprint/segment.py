@@ -12,7 +12,7 @@ from neuclease import PrefixFilter
 from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
 
 from ...util.checksum import checksum
-from .util import append_neo4j_type_suffixes
+from .util import append_neo4j_type_suffixes, prepare_int_cols_for_export
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, bod
         if (
             neuron_df[c].dtype in (bool, object)
             and len(u := neuron_df[c].dropna().unique()) <= 2  # noqa
-            and set(u) <= {True, False}                        # noqa
+            and set(u) <= {True, False}                   # noqa
         ):
             neuron_df[c] = neuron_df[c].replace([True, False], ['true', 'false'])
             neuron_df = neuron_df.rename(columns={c: f'{c}:boolean'})
@@ -139,7 +139,6 @@ def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, 
     )
     body_element_stats = (
         pd.concat(tables, axis=1)
-        .query('body != 0')
         .fillna(0)
         .astype(np.int32)
     )
@@ -347,7 +346,6 @@ def _make_roi_infos(batch_df):
             456   -387462398472 '{"ME(R)": {"post": 45, "pre": 9, ...}, "LO(R)": {"post": 213, "pre": 12, ...}}'
         ...
     """
-    batch_df = batch_df.query('body != 0')
     batch_df = batch_df.set_index('roi')
     assert batch_df.columns[:2].tolist() == ['body_batch', 'body']
 
@@ -522,49 +520,10 @@ def _construct_export_df_for_common_roiset(neuron_df):
     assert all(':' in c for c in neuron_df.columns), \
         f"Columns aren't all ready for neo4j export: {neuron_df.columns.tolist()}"
 
-    neo4j_to_numpy = {
-        'long': np.int64,
-        'int': np.int32
-    }
-
-    # Some columns might have the wrong dtype due to the way
-    # pandas expresses missing values with NaN.
-    # To ensure that the non-missing values will be written
-    # correctly in the CSV, first convert to the correct dtype
-    # (if this batch contains no missing entries) or to 'object'
-    # dtype (if necessary) and cast the available values to the
-    # correct type.
-    for c, pandas_dtype in neuron_df.dtypes.items():
-        neo4j_type = c.split(':')[1]
-        export_type = neo4j_to_numpy.get(neo4j_type, None)
-        if not export_type or export_type == pandas_dtype:
-            continue
-
-        # For columns which should be exported as numerics,
-        # coerce incompatible values to null (but warn about them).
-        if np.issubdtype(export_type, np.number):
-            nullcount = neuron_df[c].isnull().sum()
-            neuron_df[c] = pd.to_numeric(neuron_df[c], errors='coerce')
-            if neuron_df[c].isnull().sum() > nullcount:
-                # (The current function is running in a subprocess,
-                # so we can't use the global logger variable.)
-                logging.getLogger(__name__).warning(
-                    f"Segment annotation column {c} has values which cannot be "
-                    "converted to numeric types. Setting those values to null."
-                )
-
-        if neuron_df[c].notnull().all():
-            neuron_df[c] = neuron_df[c].astype(export_type)
-        else:
-            # Convert column to dtype 'object' (instead of float)
-            # so that we can replace floats with ints while
-            # allowing for missing values.
-            neuron_df[c] = neuron_df[c].astype(object)
-            nn = neuron_df[c].notnull()
-            neuron_df.loc[nn, c] = neuron_df.loc[nn, c].astype(export_type)
+    prepare_int_cols_for_export(neuron_df)
 
     # FIXME:
-    # Technically, its *possible* (but highly unlikely)
+    # Technically, it's *possible* (but highly unlikely)
     # that our hash has collided for multiple roi sets.
     # The only way to be 100% safe is to check them all.
     # For now, I'm ignoring that problem and just assuming

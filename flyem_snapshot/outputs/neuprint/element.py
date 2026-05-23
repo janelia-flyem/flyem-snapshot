@@ -4,15 +4,18 @@ import logging
 import warnings
 from functools import partial
 
+import pandas as pd
+
 from neuclease import PrefixFilter
 from neuclease.util import timed, compute_parallel
 
-from .util import neo4j_column_names, append_neo4j_type_suffixes
+from ...util.util import replace_object_nan_with_none
+from .util import neo4j_column_names, append_neo4j_type_suffixes, convert_point_cols_to_neo4j_spatial, prepare_int_cols_for_export
 
 logger = logging.getLogger(__name__)
 
 
-@PrefixFilter.with_context("Synapse")
+@PrefixFilter.with_context("Element")
 def export_neuprint_elements(cfg, element_tables, element_roisets):
     """
     Export generic (non-Synapse) Element nodes and relationships.
@@ -55,17 +58,48 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
 
     # All non-ROI columns from the input table are exported as :Element properties.
     roicols = (*roisets, *(f'{c}_label' for c in roisets))
-    prop_cols = set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'}
+    prop_cols = list(set(point_df.columns) - set(roicols) - {*'xyz', 'point_id'})
     roi_syn_props = {k:v for k,v in cfg['roi-synapse-properties'].items() if k in point_df.columns}
 
     point_df = point_df.rename(columns={
         'point_id': ':ID(Element-ID)'
     })
 
+    # Boolean columns require special representation for neo4j CSV
+    for c in prop_cols:
+        if (
+            point_df[c].dtype in (bool, object)
+            and len(u := point_df[c].dropna().unique()) <= 2  # noqa
+            and set(u) <= {True, False}                   # noqa
+        ):
+            point_df[c] = point_df[c].replace([True, False], ['true', 'false'])
+            point_df = point_df.rename(columns={c: f'{c}:boolean'})
+
+    # For float columns in which all non-null values are integers, convert
+    # to object or int so they'll be written to CSV without a decimal point.
+    for col in prop_cols:
+        if not pd.api.types.is_float_dtype(point_df[col]):
+            continue
+        not_null = point_df[col].notnull()
+        all_int = (point_df[col].dropna() % 1).all()
+        if not_null.all() and all_int:
+            point_df[col] = point_df[col].astype(int)
+        elif all_int:
+            point_df[col] = point_df[col].astype(object)
+            point_df.loc[not_null, col] = point_df.loc[not_null, col].astype(int)
+
     logger.info(f"Exporting {specific_label} Elements")
     logger.info(f"Non-ROI properties: {prop_cols}")
     logger.info(f"ROI properties from the following roi-sets: {roisets}")
     point_df = append_neo4j_type_suffixes(point_df, exclude=(*'xyz', *roicols))
+
+    prepare_int_cols_for_export(point_df)
+    replace_object_nan_with_none(point_df)
+
+    # Convert properties such as 'closestLandmarkLocation' from values like "[123, 456, 789]"
+    # to the string format required for neo4j spatial points in CSV files,
+    # e.g. "{x: 123, y: 456, z: 789}"
+    convert_point_cols_to_neo4j_spatial(point_df)
 
     export_subdir = f'neuprint/Neuprint_Elements/{config_name}'
     os.makedirs(export_subdir, exist_ok=True)

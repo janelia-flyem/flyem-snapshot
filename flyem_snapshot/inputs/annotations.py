@@ -22,6 +22,7 @@ _ = hvplot.pandas  # for linting
 
 logger = logging.getLogger(__name__)
 
+# Note: Also used in elements.ElementTableSchema
 PointAnnotationSchema = {
     "description": "Settings to describe a source of point annotations in DVID which should be associated with each body.",
     "type": "object",
@@ -32,6 +33,7 @@ PointAnnotationSchema = {
         "instance": {
             "description":
                 "Name of the DVID annotation instance which contains the points.\n"
+                "(The DVID server and UUID will be obtained from the main 'dvid-seg' config.)\n"
                 "Note: If more than one annotation point falls on the same body,\n"
                 "      only one will be used, and the others simply dropped.\n"
                 "Example: 'nuclei-centroids'\n",

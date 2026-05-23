@@ -91,6 +91,15 @@ SnapshotSynapsesSchema = {
             "maximum": 1.0,
             "default": 0.0,
         },
+        "permit-body-0": {
+            "description":
+                "If False, filter out any synapses that reside on body 0.\n"
+                "Otherwise, leave them in, which means neuprint may include :Segment/:Neuron for body 0 and it will have synapses.\n"
+                "Note: If your dataset also includes other 'Element' point tables (e.g. mito, soma, pin columns),\n"
+                "you can decide separately whether to permit body 0 for those.\n",
+            "type": "boolean",
+            "default": False,
+        },
         "roi-set-names": {
             "description":
                 "The list of ROI sets to include as columns in the synapse table.\n"
@@ -164,10 +173,10 @@ def load_synapses(cfg, snapshot_tag, pointlabeler):  # noqa
 
     point_df, partner_df = _filter_for_zone(point_df, partner_df, cfg['zone'])
     point_df, partner_df = _filter_for_confidence(point_df, partner_df, cfg['min-confidence'])
+    point_df, partner_df = _update_body_columns(point_df, partner_df, pointlabeler, cfg['permit-body-0'], cfg['processes'])
     point_df, partner_df = _filter_for_self_consistency(point_df, partner_df)
     logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners after filtering")
 
-    point_df, partner_df = _update_body_columns(point_df, partner_df, pointlabeler, cfg['processes'])
     return point_df, partner_df
 
 
@@ -366,7 +375,7 @@ def _filter_for_self_consistency(point_df, partner_df):
     return point_df.copy(), partner_df.copy()
 
 
-def _update_body_columns(point_df, partner_df, pointlabeler, processes):
+def _update_body_columns(point_df, partner_df, pointlabeler, permit_body_0, processes):
     if pointlabeler:
         with Timer(f"Updating supervoxels/bodies for UUID {pointlabeler.dvidseg.uuid[:6]}", logger):
             pointlabeler.update_bodies_for_points(point_df, processes=processes)
@@ -381,5 +390,11 @@ def _update_body_columns(point_df, partner_df, pointlabeler, processes):
         partner_df = partner_df.drop(columns=['body_pre', 'body_post'], errors='ignore')
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='pre_id', right_index=True)
         partner_df = partner_df.merge(point_df['body'], 'left', left_on='post_id', right_index=True, suffixes=['_pre', '_post'])
+
+    if not permit_body_0:
+        point_df = point_df.loc[point_df['body'] != 0].copy()
+        partner_df = partner_df.loc[
+            (partner_df['body_pre'] != 0) & (partner_df['body_post'] != 0)
+        ].copy()
 
     return point_df, partner_df

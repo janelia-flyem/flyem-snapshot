@@ -15,7 +15,7 @@ def replace_object_nan_with_none(df):
     for col, dtype in df.dtypes.items():
         if dtype != object:
             continue
-        df[col] = df[col].replace([np.nan], [None])
+        df[col] = df[col].where(df[col].notnull(), None)
 
 
 def restrict_synapses_to_roi(roiset, roi, point_df, partner_df):
