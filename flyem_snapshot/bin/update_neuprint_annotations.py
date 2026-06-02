@@ -50,6 +50,10 @@ def main():
         help="If given, generate the output files (including cypher commands) for the update, but don't "
              "actually execute the transaction to update neuprint."
     )
+    parser.add_argument('--exclude-properties', '-e',
+        help='Comma-separated list of neuprint properties to exclude from the update. '
+        '(NT properties are always excluded.)'
+    )
     parser.add_argument('dvid_server')
     parser.add_argument('dvid_uuid')
     parser.add_argument('dvid_instance')
@@ -72,8 +76,13 @@ def main():
         args.neuprint_dataset
     )
 
+    if args.exclude_properties:
+        exclude_properties = re.split(r'[, ]+', args.exclude_properties)
+    else:
+        exclude_properties = []
+
     try:
-        update_neuprint_annotations(dvid_details, args.dry_run, args.output_directory, args.default_transaction_size, neuprint_client)
+        update_neuprint_annotations(dvid_details, exclude_properties, args.dry_run, args.output_directory, args.default_transaction_size, neuprint_client)
     except BaseException:
         if d := args.output_directory:
             os.makedirs(d, exist_ok=True)
@@ -84,7 +93,7 @@ def main():
     logger.info("DONE")
 
 
-def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, default_transaction_size=100, client=None):
+def update_neuprint_annotations(dvid_details, exclude_properties, dry_run=False, log_dir=None, default_transaction_size=100, client=None):
     """
     Compare neuronjson annotations from DVID/Clio with the Neuron/Segment
     properties from Neuprint, and update the Neuprint properties to match
@@ -121,7 +130,7 @@ def update_neuprint_annotations(dvid_details, dry_run=False, log_dir=None, defau
     if client is None:
         client = default_client()
 
-    clio_df, neuprint_df, clio_segments, timestamp = _fetch_comparison_dataframes(dvid_details, client)
+    clio_df, neuprint_df, clio_segments, timestamp = _fetch_comparison_dataframes(dvid_details, exclude_properties, client)
     changemask = _compute_changemask(clio_df, neuprint_df)
     commands = _generate_commands(clio_df, changemask, clio_segments)
     _dump_summary_files(clio_df, neuprint_df, changemask, commands, log_dir)
@@ -168,7 +177,7 @@ def _apply_neuprint_annotation_updates(clio_df, neuprint_df, changemask, command
     return clio_df, neuprint_df, changemask, commands
 
 
-def _fetch_comparison_dataframes(dvid_details, client):
+def _fetch_comparison_dataframes(dvid_details, exclude_properties, client):
     """
     Fetch all annotations from DVID/Clio and all of the corresponding Neuron (or Segment)
     properties from Neuprint.  Ensure that both DataFrames are indexed by 'body',
@@ -248,8 +257,13 @@ def _fetch_comparison_dataframes(dvid_details, client):
     ]
     nt_cols = [*map(snakecase_to_camelcase, nt_cols)]
     nt_cols = [col for col in clio_df.columns if col.startswith('nt') or col in nt_cols]
+    
     clio_df = clio_df.drop(columns=nt_cols)
     neuprint_df = neuprint_df.drop(columns=nt_cols)
+
+    # Also drop properties the user specifically excluded.
+    clio_df = clio_df.drop(columns=exclude_properties, errors='ignore')
+    neuprint_df = neuprint_df.drop(columns=exclude_properties, errors='ignore')
 
     # Convert this column from categorical to string (object),
     # or else its NaN values can't be replaced with None.
