@@ -289,7 +289,18 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
         # Attempt to convert back to float if possible,
         # otherwise leave as string.
         try:
-            df[prop.lower()] = df[prop.lower()].astype(np.float32)
+            col = prop.lower()
+            s = pd.to_numeric(df[col], errors="coerce")
+
+            nonnan = s.dropna()
+            is_integral = (nonnan % 1 == 0).all()
+
+            if is_integral and not s.isna().any():
+                df[col] = pd.to_numeric(s, downcast="integer")  # or "unsigned" if always >= 0
+            elif is_integral and nonnan.abs().le(2**24).all():
+                df[col] = s.astype(np.float32)
+            else:
+                df[col] = pd.to_numeric(s, downcast="float")
         except ValueError:
             logger.warning(f"Annotation instance {instance} contains non-numeric property '{prop}'; keeping as string.")
 
