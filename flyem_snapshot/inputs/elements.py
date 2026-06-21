@@ -27,7 +27,8 @@ ElementTableSchema = {
             "description":
                 "A feather or CSV file containing the element points, optionally with a 'body' column.\n"
                 "If an 'sv' column is also present, it can be used to much more efficiently update the body column if needed.\n"
-                "Required columns are x,y,z,type.  Other columns may be present and will be loaded in neuprint outputs.\n"
+                "Required columns are x,y,z, and 'type' if your config doesn't specify a type.\n"
+                "Other columns may be present and will be loaded in neuprint outputs.\n"
                 "(If your annotation points are stored in a DVID point annotation instance, use the point-annotations config instead of this.)\n",
             "type": "string",
             "default": ""
