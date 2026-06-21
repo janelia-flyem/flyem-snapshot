@@ -237,6 +237,12 @@ def _load_raw_annotations(cfg, pointlabeler):
         logger.info(f"Reading body annotations feather file: {table_path.name}")
         ann = feather.read_feather(table_path).set_index('body')
 
+        # It turns out we'll run into problems if some position/location values
+        # such as soma_position are stored as numpy arrays instead of plain lists.
+        # For example, DataFrame.replace() complains that "The truth value of an array with more than one element is ambiguous."
+        # Let's convert all array-valued entries to plain lists (with plain int/float values in them).
+        ann = ann.map(lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
+
     ann.index = ann.index.astype(np.int64)
     return ann, ann_timestamp
 
