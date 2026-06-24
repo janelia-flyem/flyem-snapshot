@@ -7,12 +7,11 @@
 ##
 
 ##
-## This script is meant to be run from WITHIN the neo4j:4.4 container.
-## (At the time of this writing, we use neo4j:4.4.16.)
+## This script is meant to be run from WITHIN the neo4j:5 container.
+## (At the time of this writing, we use neo4j:5.26.27.)
 ## This ingests ALL of the CSV files from a neuprint snapshot via the
 ## neo4j-admin tool in ONE STEP.
-## (In neo4j v4.4, only a full import is supported.  In newer versions of neo4j,
-## incremental import is supported, but only in the Enterprise edition.)
+## (In neo4j v5, incremental import is supported, but only in the Enterprise edition.)
 ##
 ## Note that the neo4j-admin tool constructs a neo4j database WITHOUT using neo4j itself.
 ## (The neo4j server need not be running.)
@@ -95,7 +94,7 @@ NEURON_CONTAINS_ELMSET_ARGS=$(for f in $(find . -name "Neuprint_Neuron_to_Elemen
 ELMSET_CONTAINS_ELEMENT_ARGS=$(for f in $(find . -name "Neuprint_ElementSet_to_Element_*.csv"); do printf -- "--relationships=Contains=$f "; done)
 
 
-# The v4.4 docs say this about the HEAP_SIZE variable:
+# The neo4j docs say this about the HEAP_SIZE variable:
 # "If doing imports in the order of magnitude of 100 billion entities, 20G will be an appropriate value."
 # (We have ~0.5B entities)
 export HEAP_SIZE='31G'
@@ -103,16 +102,13 @@ export HEAP_SIZE='31G'
 # TODO: Should we use this option?
 # --cache-on-heap=true
 
-# NOTE: This is a hard-coded value for --max-memory!
-# (BTW, in neo4j v5, it will be renamed to --max-off-heap-memory)
 MAX_MEMORY='150G'
 
 cat > ingestion-args.txt << EOF
 --force=true
---database=data
 --normalize-types=false
 --high-io=true
---max-memory=${MAX_MEMORY}
+--max-off-heap-memory=${MAX_MEMORY}
 --processors=${CPU_COUNT}
 ${META_ARG}
 ${NEURON_ARGS}
@@ -146,7 +142,7 @@ echo "[$(date)] (There may be a LONG pause after the next line of output.)"
 # Luckily, we can supply the arguments via a file!
 # https://github.com/neo4j/neo4j/issues/7333#issuecomment-1746238765
 # Note more note: Our 'meta' node includes multiline fields, hence the option used here.
-/var/lib/neo4j/bin/neo4j-admin import --multiline-fields=true @ingestion-args.txt > >(tee /logs/import.out.log) 2> >(tee /logs/import.err.log)
+/var/lib/neo4j/bin/neo4j-admin database import full data --multiline-fields=true @ingestion-args.txt > >(tee /logs/import.out.log) 2> >(tee /logs/import.err.log)
 end=$(date +%s)
 
 if grep -i 'import failed' /logs/import.*.log > /dev/null;
