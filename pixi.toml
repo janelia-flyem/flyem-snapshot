@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Stuart Berg <bergs@janelia.hhmi.org>"]
 channels = ["flyem-forge", "conda-forge"]
 description = "Connectome reports, exports, and neuprint neo4j ETL"
@@ -18,7 +18,7 @@ confiddler = ">=0.1.5,<0.2"
 holoviews = ">=1.20.0,<2"
 hvplot = ">=0.11.1,<0.12"
 jinja2 = ">=3.1.4,<4"
-neuclease = ">=0.7.3.post0.dev11,<0.8"
+neuclease = ">=0.7.4.post0.dev1,<0.8"
 pyarrow = ">=17.0.0,<18"
 requests = ">=2.32.3,<3"
 ujson = ">=5.10.0,<6"
