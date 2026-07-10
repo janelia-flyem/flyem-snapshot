@@ -497,4 +497,15 @@ if __name__ == "__main__":
     # sys.argv.extend(['--default-transaction-size', '200'])
     # sys.argv.extend("emdata7.int.janelia.org:8700 :new-agglo segmentation_annotations neuprint-pre.janelia.org yakuba-vnc".split())
 
+    # sys.argv.extend([
+    #     '-o', '/tmp/debug',
+    #     '--dry-run',
+    #     '--exclude-properties=somaLocation',
+    #     'emdata7.int.janelia.org:8700',
+    #     ':master',
+    #     'segmentation_annotations',
+    #     'neuprint-yakuba.janelia.org',
+    #     'yakuba-vnc'
+    # ])
+
     main()
