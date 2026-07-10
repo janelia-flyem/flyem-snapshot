@@ -11,6 +11,7 @@ from ..caches import cached, SentinelSerializer
 from ..util.util import restrict_synapses_to_roi, upload_file_to_gcs
 
 from .neuprint.annotations import neuprint_segment_annotations
+from .neuprint.segment import CONNECTION_COMPARTMENT_PROPERTIES, _compartment_in_out_counts, _compartments_available
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,16 @@ FlatConnectomeSchema = {
                 "This does not specify how the synapses are filtered before export.\n",
             "type": "string",
             "default": "primary"
+        },
+        "compartment-column": {
+            "description":
+                "Name of the point_df column which classifies each synapse point into a\n"
+                "neuron compartment ('axon', 'dendrite', 'linker', 'cell-body-fiber', 'unknown').\n"
+                "If not given here, defaults to whatever is configured in inputs.synapses.compartment-column.\n"
+                "If left blank (and no default is available), no compartment-breakdown columns\n"
+                "(weightAxonDendrite, etc., axonIn/axonOut/dendriteIn/dendriteOut) are exported.",
+            "type": "string",
+            "default": ""
         },
         "restrict-connectivity-to-roiset": {
             "description":
@@ -123,8 +134,12 @@ def _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag):
             "because it isn't listed in the synapse table."
         )
 
+    # If compartments are available, carry the per-side compartment columns
+    # through to the export (and use them for the weighted-connectome breakdown).
+    compartment_cols = [c for c in ('compartment_pre', 'compartment_post') if c in partner_df.columns]
+
     with Timer("Constructing synapse partner export", logger):
-        partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', labeling_roiset]]
+        partner_export_df = partner_df[['pre_id', 'post_id', 'body_pre', 'body_post', labeling_roiset, *compartment_cols]]
 
         # Add conf_pre, conf_post
         partner_export_df = (
@@ -148,7 +163,8 @@ def _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag):
         partner_export_df = partner_export_df.rename(columns={labeling_roiset: f'{labeling_roiset}_post'})
         partner_cols = [
             'x_pre', 'y_pre', 'z_pre', 'body_pre', 'conf_pre',
-            'x_post', 'y_post', 'z_post', 'body_post', 'conf_post', f'{labeling_roiset}_post']
+            'x_post', 'y_post', 'z_post', 'body_post', 'conf_post', f'{labeling_roiset}_post',
+            *compartment_cols]
         partner_export_df = partner_export_df[partner_cols]
 
     with Timer("Writing synapse partner export", logger):
@@ -171,6 +187,54 @@ def _export_synapse_partners(cfg, point_df, partner_df, snapshot_tag, file_tag):
     return partner_export_df
 
 
+def _connection_compartment_breakdown(partner_export_df):
+    """
+    Given a partner table with 'compartment_pre'/'compartment_post' columns,
+    compute the per-body-pair breakdown of connection weights into the tracked
+    compartment combinations (weightAxonDendrite, weightAxonAxon, etc.).
+
+    Returns a DataFrame indexed by ['body_pre', 'body_post'] with exactly the
+    columns from CONNECTION_COMPARTMENT_PROPERTIES.values(), as int64.
+    Combinations involving linker/cell-body-fiber/unknown are not tracked
+    (but still contribute to the overall 'weight').
+    """
+    props = list(CONNECTION_COMPARTMENT_PROPERTIES.values())
+    pair_to_prop = {f'{a}-{b}': name for (a, b), name in CONNECTION_COMPARTMENT_PROPERTIES.items()}
+    compartment_prop = (
+        partner_export_df['compartment_pre'].astype(str) + '-' + partner_export_df['compartment_post'].astype(str)
+    ).map(pair_to_prop)
+
+    breakdown = (
+        partner_export_df[['body_pre', 'body_post']]
+        .assign(compartment_prop=compartment_prop)
+        .dropna(subset=['compartment_prop'])
+        .value_counts()
+        .unstack('compartment_prop', fill_value=0)
+    )
+    for prop in props:
+        if prop not in breakdown.columns:
+            breakdown[prop] = 0
+    return breakdown[props].astype('int64')
+
+
+def _add_compartment_weights(connectome, partner_export_df):
+    """
+    If the partner table carries compartment columns, merge the per-body-pair
+    compartment weight breakdown onto the given connectome table (in-place-ish),
+    returning the augmented connectome. Otherwise return it unchanged.
+
+    'connectome' is expected to have 'body_pre'/'body_post' columns (not index).
+    """
+    if not ({'compartment_pre', 'compartment_post'} <= set(partner_export_df.columns)):
+        return connectome
+
+    props = list(CONNECTION_COMPARTMENT_PROPERTIES.values())
+    breakdown = _connection_compartment_breakdown(partner_export_df)
+    connectome = connectome.merge(breakdown, 'left', on=['body_pre', 'body_post'])
+    connectome[props] = connectome[props].fillna(0).astype('int64')
+    return connectome
+
+
 def _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag):
     with Timer("Constructing weighted connectome", logger):
         connectome = (
@@ -179,6 +243,7 @@ def _export_weighted_connectome(cfg, partner_export_df, snapshot_tag, file_tag):
             .rename('weight')
             .reset_index()
         )
+        connectome = _add_compartment_weights(connectome, partner_export_df)
 
     with Timer("Writing weighted connectome", logger):
         fname = f'flat-connectome/connectome-weights-{file_tag}.feather'
@@ -222,6 +287,7 @@ def _export_significant_weighted_connectome(cfg, ann, significant_partner_export
             .rename('weight')
             .reset_index()
         )
+        significant_connectome = _add_compartment_weights(significant_connectome, significant_partner_export_df)
 
         if 'type' in ann.columns:
             significant_connectome = (
@@ -280,6 +346,14 @@ def _export_ranked_body_stats(cfg, ann, point_df, partner_df, snapshot_tag, file
             'PostSyn': 'post',
             'SynWeight': 'synweight'
         })
+
+        # Add per-compartment breakdown of incoming/outgoing connections, if available.
+        if _compartments_available(cfg, point_df, partner_df):
+            assert syn_counts_df.index.name == 'body'
+            compartment_counts = _compartment_in_out_counts(point_df, partner_df, cfg['compartment-column'])
+            syn_counts_df = syn_counts_df.merge(compartment_counts, 'left', on='body')
+            io_cols = ['axonIn', 'dendriteIn', 'axonOut', 'dendriteOut']
+            syn_counts_df[io_cols] = syn_counts_df[io_cols].fillna(0).astype('int64')
 
     syn_counts_df = syn_counts_df.rename(columns={'status': 'status_fine'})
     with Timer("Writing ranked body stats table", logger):

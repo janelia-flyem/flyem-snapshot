@@ -115,6 +115,16 @@ SnapshotSynapsesSchema = {
                 }
             ]
         },
+        "compartment-column": {
+            "description":
+                "Name of the point_df column (already present in the synapse-points table)\n"
+                "which classifies each synapse point into a neuron compartment, e.g.\n"
+                "'axon', 'dendrite', 'linker', 'cell-body-fiber', or 'unknown'.\n"
+                "If left blank, no compartment-based breakdown properties (e.g. weightAxonDendrite,\n"
+                "axonIn/axonOut/dendriteIn/dendriteOut) are computed anywhere downstream.",
+            "type": "string",
+            "default": ""
+        },
         "processes": {
             "description":
                 "How many processes should be used to update synapse labels?\n"
@@ -170,6 +180,7 @@ class RawSynapseSerializer(SynapseSerializerBase):
 @cached(RawSynapseSerializer('labeled-synapses'))
 def load_synapses(cfg, snapshot_tag, pointlabeler):  # noqa
     point_df, partner_df = _load_raw_synapses(cfg)
+    point_df = _fill_missing_compartments(point_df, cfg['compartment-column'])
 
     point_df, partner_df = _filter_for_zone(point_df, partner_df, cfg['zone'])
     point_df, partner_df = _filter_for_confidence(point_df, partner_df, cfg['min-confidence'])
@@ -178,6 +189,24 @@ def load_synapses(cfg, snapshot_tag, pointlabeler):  # noqa
     logger.info(f"Kept {len(point_df)} points and {len(partner_df)} partners after filtering")
 
     return point_df, partner_df
+
+
+def _fill_missing_compartments(point_df, compartment_col):
+    """
+    Fill missing 'compartment' values with 'unknown'.
+    """
+    if not compartment_col or compartment_col not in point_df.columns:
+        return point_df
+
+    if not point_df[compartment_col].isnull().any():
+        return point_df
+
+    col = point_df[compartment_col]
+    if isinstance(col.dtype, pd.CategoricalDtype) and 'unknown' not in col.dtype.categories:
+        col = col.cat.add_categories('unknown')
+    point_df[compartment_col] = col.fillna('unknown')
+
+    return point_df
 
 
 def _load_raw_synapses(cfg):
@@ -358,6 +387,38 @@ def _filter_for_confidence(point_df, partner_df, min_conf):
             (partner_df['conf_post'] >= min_conf)]
 
     return point_df.copy(), partner_df.copy()
+
+
+def merge_partner_compartments(point_df, partner_df, compartment_col):
+    """
+    If the given compartment column (e.g. 'compartment') is configured, merge
+    it onto partner_df as two new columns, 'compartment_pre' and 'compartment_post',
+    reflecting the compartment of the pre-synaptic and post-synaptic point of each
+    connection, respectively.
+
+    Unlike ROI columns (which are merged onto partner_df using only the 'post' side,
+    since neuprint defines a connection's ROI location using the 'post' side alone),
+    the axon/dendrite breakdown of connection weights genuinely needs both sides,
+    so both are merged here.
+    """
+    if not compartment_col:
+        return partner_df
+
+    if not {'compartment_pre', 'compartment_post'} <= set(partner_df.columns):
+        logger.info("Merging compartment_pre/compartment_post columns onto partner_df")
+        partner_df = partner_df.drop(columns=['compartment_pre', 'compartment_post'], errors='ignore')
+        partner_df = partner_df.merge(
+            point_df[compartment_col].rename('compartment_pre').rename_axis('pre_id'),
+            'left',
+            on='pre_id'
+        )
+        partner_df = partner_df.merge(
+            point_df[compartment_col].rename('compartment_post').rename_axis('post_id'),
+            'left',
+            on='post_id'
+        )
+
+    return partner_df
 
 
 def _filter_for_self_consistency(point_df, partner_df):
