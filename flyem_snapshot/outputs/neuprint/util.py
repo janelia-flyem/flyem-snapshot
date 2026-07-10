@@ -31,6 +31,17 @@ NEUPRINT_TYPE_OVERRIDES = {
 }
 
 
+def sanitize_roi_name(roi):
+    """
+    Replace special characters in ROI names with underscores to produce valid
+    Neo4j property names. Neo4j 5 rejects CSV headers whose property names
+    contain characters like parentheses or hyphens, and treats names that
+    normalize to the same string as duplicates (e.g. "VLNP(-AOTU)(R)" and
+    "VLNP(R)" both reduce to "VLNP_R_" — distinct after sanitization).
+    """
+    return re.sub(r'[^a-zA-Z0-9_]', '_', roi)
+
+
 def append_neo4j_type_suffixes(df, exclude=(), drop_empty=True):
     """
     Return a renamed DataFrame wholes columns now have

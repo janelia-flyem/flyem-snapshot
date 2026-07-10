@@ -12,7 +12,7 @@ from neuclease import PrefixFilter
 from neuclease.util import timed, Timer, compute_parallel, tqdm_proxy, snakecase_to_camelcase
 
 from ...util.checksum import checksum
-from .util import append_neo4j_type_suffixes, prepare_int_cols_for_export
+from .util import append_neo4j_type_suffixes, prepare_int_cols_for_export, sanitize_roi_name
 
 logger = logging.getLogger(__name__)
 
@@ -542,7 +542,7 @@ def _construct_export_df_for_common_roiset(neuron_df):
     #    https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
     flags = pd.DataFrame(
         [['true']*len(rois)],
-        columns=[f'{roi}:boolean' for roi in rois],
+        columns=[f'{sanitize_roi_name(roi)}:boolean' for roi in rois],
         index=neuron_df.index
     )
     neuron_df = pd.concat((neuron_df, flags), axis=1)
