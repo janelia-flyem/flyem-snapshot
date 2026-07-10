@@ -105,11 +105,11 @@ export HEAP_SIZE='31G'
 MAX_MEMORY='150G'
 
 cat > ingestion-args.txt << EOF
---force=true
+--overwrite-destination=true
 --normalize-types=false
---high-io=true
+--high-parallel-io=on
 --max-off-heap-memory=${MAX_MEMORY}
---processors=${CPU_COUNT}
+--threads=${CPU_COUNT}
 ${META_ARG}
 ${NEURON_ARGS}
 ${SYNAPSE_ARGS}
