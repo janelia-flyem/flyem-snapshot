@@ -130,6 +130,79 @@ def load_elements(cfg, pointlabeler):
     return element_dfs
 
 
+def body_roi_presence(element_tables, element_roisets):
+    """
+    Construct a table which indicates that a body has at least one element
+    of SOME kind within a given ROI.  It says nothing about how many elements
+    the body has there, nor which kind of element it is (beyond the name of
+    the element table it came from).
+
+    This is useful for deciding whether a body which has no SYNAPSES in some
+    subset of the dataset should nonetheless be considered "present" there,
+    e.g. because its soma resides there.
+
+    Note:
+        Synapses are deliberately NOT included here.  Callers which care about
+        synaptic presence already have point_df/partner_df to consult, and a
+        per-(body, roi) table of synaptic presence would be enormous by comparison.
+
+    Args:
+        element_tables:
+            dict of {element_name: (point_df, distance_df)}, as returned by load_elements()
+        element_roisets:
+            dict of {element_name: {roiset_name: {roi_name: roi_id}}},
+            as returned by load_point_rois() for each element table.
+
+    Returns:
+        DataFrame with columns ['body', 'roiset', 'roi', 'element'],
+        with no duplicate rows.  Elements which don't fall within any ROI of a
+        given roiset (i.e. '<unspecified>') are omitted.
+    """
+    dfs = []
+    for elm_name, (point_df, _) in element_tables.items():
+        if point_df is None:
+            continue
+        for roiset_name in element_roisets.get(elm_name, {}):
+            if roiset_name not in point_df.columns:
+                # Shouldn't happen, but don't let it be silent.
+                logger.warning(
+                    f"Element table '{elm_name}' has no column for roiset "
+                    f"'{roiset_name}'; omitting it from the body presence table."
+                )
+                continue
+            df = (
+                point_df[['body', roiset_name]]
+                .rename(columns={roiset_name: 'roi'})
+                .drop_duplicates()
+            )
+            df = df.loc[df['roi'] != '<unspecified>']
+            df['roiset'] = roiset_name
+            df['element'] = elm_name
+            dfs.append(df[['body', 'roiset', 'roi', 'element']])
+
+    if not dfs:
+        return pd.DataFrame({
+            'body': np.zeros((0,), np.int64),
+            'roiset': pd.Series([], dtype='category'),
+            'roi': pd.Series([], dtype='category'),
+            'element': pd.Series([], dtype='category'),
+        })
+
+    presence = pd.concat(dfs, ignore_index=True)
+
+    # The 'roi' categories differ from one roiset to the next,
+    # so the concatenation above will have produced an object column.
+    presence['roi'] = presence['roi'].astype('category')
+    presence['roiset'] = presence['roiset'].astype('category')
+    presence['element'] = presence['element'].astype('category')
+
+    logger.info(
+        f"Body presence table covers {presence['body'].nunique()} bodies "
+        f"across {len(element_tables)} element table(s)"
+    )
+    return presence
+
+
 def _load_element_points(name, table_cfg, dvid_server, dvid_uuid):
     table_path = table_cfg['point-table']
     ann_instance = table_cfg['dvid-point-annotations']['instance']

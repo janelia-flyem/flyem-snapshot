@@ -16,7 +16,7 @@ from neuclease.dvid.labelmap import resolve_snapshot_tag
 
 from . import __version__
 from .inputs.dvidseg import DvidSegSchema, load_dvidseg
-from .inputs.elements import ElementTablesSchema, load_elements
+from .inputs.elements import ElementTablesSchema, load_elements, body_roi_presence
 from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, RawSynapseSerializer, merge_partner_compartments
 from .inputs.annotations import AnnotationsSchema, load_annotations
 from .inputs.rois import RoisSchema, load_point_rois, merge_partner_rois
@@ -219,6 +219,12 @@ def main_impl(cfg):
         ann, ann_timestamp = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
         point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
         element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
+
+        # Indicates which ROIs each body has a presence in, according to its
+        # non-synaptic elements (soma, etc.).  Used by the reports to decide
+        # whether a body with no synapses in a given region belongs there anyway.
+        element_body_rois = body_roi_presence(element_tables, element_roisets)
+
         all_bodies = [
             ann.index.values,
             point_df['body'].values,
@@ -237,7 +243,8 @@ def main_impl(cfg):
         export_meshes(cfg['outputs']['meshes'], snapshot_tag, ann, pointlabeler)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, ann_timestamp, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
-        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann,
+                       element_body_rois, snapshot_tag)
 
 
 class SynapsesWithRoiSerializer(SerializerBase):
