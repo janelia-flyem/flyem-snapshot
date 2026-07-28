@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 CAPTURE_STATS = ['traced_presyn_frac', 'traced_postsyn_frac', 'traced_synweight_frac', 'traced_conn_frac']
 STATUS_DTYPE = pd.CategoricalDtype(DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
 
+NON_SYNAPTIC_BODY_MODES = ['element-presence', 'all', 'none']
+
 #
 # TODO
 # - emit a stacked bar graph of completeness fraction per ROI (stacked by status)
@@ -64,6 +66,14 @@ ReportSchema = {
                 "A name for the ROI grouping (e.g. 'right optic lobe')\n"
                 "If not provided, then a name will be chosen automatically from the selected ROI(s)",
             "type": "string",
+            "default": ""
+        },
+        "non-synaptic-bodies": {
+            "description":
+                "Optionally override the reportset-wide 'non-synaptic-bodies' setting for this report.\n"
+                "Leave blank to inherit the reportset setting.\n",
+            "type": "string",
+            "enum": ["", *NON_SYNAPTIC_BODY_MODES],
             "default": ""
         }
     }
@@ -107,6 +117,30 @@ ReportSetSchema = {
             "type": "number",
             "default": 1e6,
         },
+        "non-synaptic-bodies": {
+            "description":
+                "The body annotation table usually covers bodies which have no synapses within\n"
+                "a given report's ROIs (and sometimes no synapses at all).  Should such bodies\n"
+                "occupy a slot in the report's body ranking?\n"
+                "\n"
+                "  - 'element-presence': Include such a body only if it has some non-synaptic\n"
+                "    element (e.g. a soma) within the report's ROIs, according to the\n"
+                "    inputs.elements config.  For a report which performs no ROI filtering,\n"
+                "    that means an element anywhere in the dataset.  If no element tables were\n"
+                "    configured at all, this is equivalent to 'none'.\n"
+                "\n"
+                "  - 'all': Include every body in the annotation table, regardless of which ROIs\n"
+                "    it touches (or whether it has any elements at all).  Reasonable for reports\n"
+                "    which cover the whole dataset, but beware that annotation tables can\n"
+                "    (sadly) contain stale body IDs.\n"
+                "\n"
+                "  - 'none': Include only bodies which have synapses within the report's ROIs.\n"
+                "\n"
+                "This can be overridden per-report via the same setting in each report's config.\n",
+            "type": "string",
+            "enum": NON_SYNAPTIC_BODY_MODES,
+            "default": "element-presence",
+        },
         "neuroglancer-base-state": {
             "description":
                 "A json file containing neuroglancer state.\n"
@@ -142,7 +176,7 @@ ReportsSchema = {
 
 @PrefixFilter.with_context('reports')
 @cached(SentinelSerializer('reports'))
-def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
+def export_reports(cfg, point_df, partner_df, ann, element_body_rois, snapshot_tag):
     if len(cfg) == 0:
         logger.info("No reports requested.")
         return
@@ -152,11 +186,12 @@ def export_reports(cfg, point_df, partner_df, ann, snapshot_tag):
 
     for reportset_cfg in cfg:
         roiset = reportset_cfg['roiset']
-        _export_reportset(reportset_cfg, point_df, partner_df, ann, snapshot_tag, roiset=roiset)
+        _export_reportset(reportset_cfg, point_df, partner_df, ann, element_body_rois,
+                          snapshot_tag, roiset=roiset)
 
 
 @PrefixFilter.with_context('{roiset}')
-def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
+def _export_reportset(cfg, point_df, partner_df, ann, element_body_rois, snapshot_tag, *, roiset):
     os.makedirs(f"reports/{roiset}/reports", exist_ok=True)
 
     # Make sure our roiset column is named 'roi' since that's what completeness_forecast() expects.
@@ -196,6 +231,12 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
         feather.write_feather(partner_df, f"reports/{roiset}/partner_df-DEBUG.feather")
         raise
 
+    # Restrict the body presence table to this reportset's roiset.
+    # (ROI names are guaranteed unique across roisets by _check_duplicate_rois(),
+    # so this isn't strictly necessary, but it keeps the per-report lookups small.)
+    reportset_body_rois = element_body_rois.loc[element_body_rois['roiset'] == roiset]
+    _warn_if_presence_unavailable(cfg, reportset_body_rois, roiset)
+
     all_status_stats = {}
     all_syncounts = {}
     for report in cfg['reports']:
@@ -215,6 +256,14 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
             report_point_df = point_df
             report_partner_df = partner_df
 
+        report_ann = _select_report_annotations(
+            cfg,
+            report,
+            ann,
+            report_point_df,
+            reportset_body_rois
+        )
+
         syncounts, status_stats = _export_report(
             cfg,
             snapshot_tag,
@@ -222,7 +271,7 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
             name,
             report_point_df,
             report_partner_df,
-            ann,
+            report_ann,
             report['rois'],
         )
         all_syncounts[name] = syncounts
@@ -238,6 +287,65 @@ def _export_reportset(cfg, point_df, partner_df, ann, snapshot_tag, *, roiset):
             feather.write_feather(syncounts, f"reports/{roiset}/all_syncounts-{name}-DEBUG.feather")
         for name, status_stats in all_status_stats.items():
             feather.write_feather(status_stats, f"reports/{roiset}/all_status_stats-{name}-DEBUG.feather")
+
+
+def _warn_if_presence_unavailable(cfg, reportset_body_rois, roiset):
+    """
+    If any report in this reportset asks for 'element-presence' but we have no
+    presence data for this roiset, say so explicitly rather than silently
+    behaving as though no body has a non-synaptic presence anywhere.
+    """
+    effective_modes = {
+        report['non-synaptic-bodies'] or cfg['non-synaptic-bodies']
+        for report in cfg['reports']
+    }
+    if 'element-presence' not in effective_modes or len(reportset_body_rois) > 0:
+        return
+
+    logger.warning(
+        "non-synaptic-bodies is 'element-presence', but no element table provides "
+        f"ROI columns for roiset '{roiset}'.  No body will be considered present via "
+        "a non-synaptic element, so this behaves like 'none'.  If that isn't what you "
+        "want, add an inputs.elements entry (e.g. for somas) which includes this roiset "
+        "in its roi-set-names."
+    )
+
+
+def _select_report_annotations(cfg, report, ann, report_point_df, reportset_body_rois):
+    """
+    Decide which rows of the body annotation table are relevant to a single report.
+
+    The annotation table covers an arbitrary set of bodies, many of which have no
+    synapses within the report's ROIs (and some of which have no synapses at all,
+    or don't even exist in the segmentation any more).  If we pass all of them to
+    completeness_forecast(), they'll consume slots in the body ranking despite
+    contributing nothing to the report's connectivity.
+
+    Note:
+        A body which has synapses in this report ALWAYS keeps its annotations,
+        regardless of the mode.  Otherwise we'd be stripping the status off of
+        bodies that the report is definitely reporting on.
+    """
+    mode = report['non-synaptic-bodies'] or cfg['non-synaptic-bodies']
+    if mode == 'all':
+        return ann
+
+    # Bodies with synapses in this report are always included.
+    keep = ann.index.isin(report_point_df['body'].unique())
+
+    if mode == 'element-presence':
+        body_rois = reportset_body_rois
+        if report['rois']:
+            body_rois = body_rois.loc[body_rois['roi'].isin(report['rois'])]
+        keep |= ann.index.isin(body_rois['body'].unique())
+
+    if (num_dropped := (~keep).sum()):
+        # Note: We aren't in the '{name}' log context yet, so name the report explicitly.
+        logger.info(
+            f"{report['name']}: Excluding {num_dropped} annotated bodies which have "
+            f"no presence in this report (non-synaptic-bodies: '{mode}')"
+        )
+    return ann.loc[keep]
 
 
 @PrefixFilter.with_context('{name}')
@@ -433,7 +541,7 @@ def _completeness_forecast(cfg, snapshot_tag, roiset, name, point_df, partner_df
         ann = None
     else:
         # Pass status along and make sure it's categorical if possible.
-        ann = ann[['status']]
+        ann = ann[['status']].copy()
         if ann['status'].dtype != 'category' and set(ann['status'].unique()) <= {np.nan, *DEFAULT_BODY_STATUS_CATEGORIES}:
             ann['status'] = pd.Categorical(ann['status'], DEFAULT_BODY_STATUS_CATEGORIES, ordered=True)
 
@@ -460,7 +568,7 @@ def _completeness_forecast(cfg, snapshot_tag, roiset, name, point_df, partner_df
 
     with Timer("Generating completeness curve plot"):
         title = f'{name}: Cumulative connectivity by ranked body ({snapshot_tag})'
-        if 'status' in ann.columns:
+        if ann is not None and 'status' in ann.columns:
             p = plot_categorized_connectivity_forecast(
                 conn_df, 'status', max_rank=None, plotted_points=20_000, hover_cols=['presyn', 'postsyn', 'synweight'],
                 title=title, selection_link=selection_link,
