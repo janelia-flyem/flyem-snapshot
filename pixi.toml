@@ -1,10 +1,10 @@
 [workspace]
-authors = ["Stuart Berg <bergs@janelia.hhmi.org>"]
+authors = ["Stuart Berg <bergs@janelia.hhmi.org>", "Rob Svirskas <robsvi@gmail.com>"]
 channels = ["flyem-forge", "conda-forge"]
 description = "Connectome reports, exports, and neuprint neo4j ETL"
 name = "flyem-snapshot"
-platforms = ["osx-64", "linux-64"]
-# version = "0.1.10"
+platforms = ["linux-64", "osx-arm64"]
+version = "0.1.0"
 
 [tasks]
 
@@ -12,17 +12,32 @@ platforms = ["osx-64", "linux-64"]
 update-service = ["update-service"]
 
 [dependencies]
-python = ">=3.12.8,<4"
-bokeh = ">=3.6.2,<4"
+python = "3.12.*"
+# pip is required in the env so that `pixi run pip install -e .` uses this
+# environment's pip rather than falling through PATH to the system pip,
+# which builds against an old setuptools/versioneer that can't read
+# pyproject.toml's [tool.versioneer] section.
+pip = ">=24,<26"
+bokeh = ">=3.9.1,<4"
 confiddler = ">=0.1.5,<0.2"
-holoviews = ">=1.20.0,<2"
-hvplot = ">=0.11.1,<0.12"
-jinja2 = ">=3.1.4,<4"
-neuclease = ">=0.7.4.post0.dev1,<0.8"
-pyarrow = ">=17.0.0,<18"
-requests = ">=2.32.3,<3"
-ujson = ">=5.10.0,<6"
-python-cityhash = ">=0.4.7,<0.5"
+holoviews = ">=1.23.1,<2"
+hvplot = ">=0.12.2,<0.13"
+jinja2 = ">=3.1.6,<4"
+neuclease = ">=0.81.post0.dev106"
+# neuclease's misc.neuroglancer submodule imports these but doesn't
+# declare them as run dependencies of its own package.
+neuroglancer = "*"
+tensorstore = "*"
+ngsidekick = "*"
+# Pinned to the 2.x line deliberately. pandas 3.0 makes a new string dtype
+# the default (PDEP-14) and Copy-on-Write mandatory, which breaks this
+# codebase's neo4j dtype inference and in-place DataFrame mutation.
+# Migrating to pandas 3 is a separate project from the neo4j 5 upgrade.
+pandas = ">=2.2,<3"
+pyarrow = ">=17,<25"
+requests = ">=2.34.2,<3"
+ujson = ">=5.13.0,<6"
+python-cityhash = ">=0.4.10,<0.5"
 
 [target.linux-64.dependencies]
 apptainer = ">=1.3.2,<2"
