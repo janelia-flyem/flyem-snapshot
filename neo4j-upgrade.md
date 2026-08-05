@@ -1,4 +1,4 @@
-# Neo4j Upgrade: 4.4.16 → 5.26.27
+# Neo4j Upgrade: 4.4.16 → 2026.06.0
 
 ## Background
 
@@ -90,13 +90,92 @@ so `apoc-core` is sufficient.
 
 ---
 
+## What Additionally Changed for the 2026.06.0 (CalVer) Target
+
+The original target for this branch was `5.26.27`; it was later retargeted to
+`2026.06.0`.  Neo4j switched from SemVer to calendar versioning (`YYYY.MM.Patch`)
+with the `2025.01` release, which is the first release after the `5.26` LTS
+checkpoint — so all of the 5.x-era changes above still apply, plus the following.
+
+### Support lifecycle (important)
+
+`2026.06` is **not** an LTS release.  Under CalVer, each monthly release is
+supported only until the next monthly release ships.  `5.26 LTS` remains
+supported until **June 2028**.  Targeting a CalVer release therefore implies
+either a recurring upgrade cadence or running an unsupported server.
+
+### Java 21 required
+
+Neo4j `2025.01`+ requires **Java 21** (Java 17 is no longer supported); Java 25 is
+also supported from `2025.10` onward.  This is handled automatically for us
+because we run the official `neo4j` Docker image, which bundles its own JDK —
+but it matters for any non-container deployment.
+
+Consequence for our config: `-XX:-UseBiasedLocking` was **removed** from
+`neo4j.conf`.  Biased locking no longer exists in Java 21, so the flag is at
+best ignored with an "obsolete option" warning and at worst rejected as an
+unrecognized VM option, which would stop the JVM from starting.
+
+### Removed configuration settings
+
+- **`db.tx_state.memory_allocation`** — removed without replacement in
+  `2025.01`.  Deleted from `neo4j.conf`.
+- **`server.memory.off_heap.*`** — also removed in `2025.01`.  We never set
+  these in `neo4j.conf`.  Note this is unrelated to the
+  `--max-off-heap-memory` flag on `neo4j-admin database import`, which is
+  still supported.
+
+Note that we set `server.config.strict_validation.enabled=false`, which means
+removed or misspelled settings are **silently ignored** rather than causing a
+startup failure.  That makes stale config easy to miss — worth auditing rather
+than relying on the server to complain.
+
+### Cypher language versioning
+
+As of `2025.06` the Cypher language is versioned independently of the server, and
+**Cypher 25** exists alongside Cypher 5.  From `2026.02` the *distributed*
+`neo4j.conf` explicitly sets `db.query.default_language=CYPHER_25`.
+
+Because we replace `neo4j.conf` wholesale, we would otherwise silently inherit
+the built-in default (`CYPHER_5`).  We now pin `db.query.default_language=CYPHER_5`
+explicitly, so the language version can't shift underneath us on a future server
+bump.  `create-indexes.cypher` is Cypher 5 syntax.
+
+### `neo4j-admin database import` default change
+
+`2025.12` changed the default `--bad-tolerance` from `1000` to `-1` (unlimited).
+That means a malformed CSV row would be **skipped and logged instead of failing
+the import** — silent row loss in a connectome export.  The script now passes
+`--bad-tolerance` explicitly (default `1000`, matching pre-CalVer behaviour,
+overridable via the `BAD_TOLERANCE` environment variable; set `0` to fail on the
+first bad record).
+
+All other import options we rely on (`--overwrite-destination`,
+`--normalize-types`, `--high-parallel-io`, `--max-off-heap-memory`, `--threads`,
+`--multiline-fields`) are unchanged.
+
+### No store-format migration
+
+Irrelevant for this pipeline in any case: every run does a full fresh import
+from CSV into a brand-new database, so there is no existing store to migrate.
+
+### Still to re-verify
+
+The component review (`neo4j-5-component-review.md`) concluded that
+neuprint-python, neuPrintExplorer and neuPrintHTTP need no code changes — but
+that was assessed against a `5.26` server, **not** a `2026.06` server.
+neuPrintHTTP's driver/protocol compatibility against a CalVer server should be
+re-checked before deployment.
+
+---
+
 ## What Was Changed in This Branch
 
 ### `flyem_snapshot/outputs/neuprint/scripts/ingest-neuprint-snapshot-using-apptainer.sh`
 
-- Docker image bumped: `neo4j:4.4.16` → `neo4j:5.26.27`
-- APOC download URL updated to the 5.x core jar:
-  `neo4j/apoc` `5.26.27-core.jar` (replaces `neo4j-contrib` `4.4.0.7-all.jar`)
+- Docker image bumped: `neo4j:4.4.16` → `neo4j:2026.06.0`
+- APOC download URL updated to the CalVer core jar:
+  `neo4j/apoc` `2026.06.0-core.jar` (replaces `neo4j-contrib` `4.4.0.7-all.jar`)
 
 ### `flyem_snapshot/outputs/neuprint/scripts/ingest-neuprint-snapshot-within-neo4j-container.sh`
 
@@ -108,7 +187,7 @@ so `apoc-core` is sufficient.
 
 ### `flyem_snapshot/outputs/neuprint/scripts/inspect-neuprint-snapshot.sh`
 
-- Docker image bumped: `neo4j:4.4.16` → `neo4j:5.26.27`
+- Docker image bumped: `neo4j:4.4.16` → `neo4j:2026.06.0`
 
 ### `flyem_snapshot/outputs/neuprint/scripts/neo4j.conf`
 
@@ -239,8 +318,64 @@ Check that neuprinthttp can connect to the resulting database and serve queries.
   `logs/create-indexes.err.log`. The script checks for `database is unavailable`
   and an empty output log.
 - **APOC jar**: if APOC procedures are needed (e.g. during a debug session),
-  verify the jar is present at `$NEO4J_HOME/plugins/apoc-5.26.27-core.jar` inside
+  verify the jar is present at `$NEO4J_HOME/plugins/apoc-2026.06.0-core.jar` inside
   the container.
+
+---
+
+## Current Status / Blocker (as of 2026-07-23)
+
+**BLOCKER — neuclease version mismatch (needs developer resolution).**
+
+The committed `pixi.toml` (as of commit `e48793c`) pins
+`neuclease = ">=0.7.4.post0.dev1,<0.8"`, but the `flyem_snapshot` code requires
+a newer neuclease. At least three things are broken with that pin:
+
+1. `IncompleteLabelNamesError` missing from `neuclease.util`
+2. `DEFAULT_BODY_STATUS_CATEGORIES` in `neuclease.dvid.keyvalue` doesn't match
+   the keys used in `annotations.py`
+3. `neuroglancer` module missing (required by newer neuclease)
+
+Bumping to neuclease 0.8+ introduces dependency conflicts (protobuf, numpy,
+dvidutils) that prevent `pixi` from solving the environment. No workaround is
+in place — `rois.py` is unchanged.
+
+**Note:** there is currently an *uncommitted* local edit to `pixi.toml` that
+bumps `neuclease` to `>=0.81.post0.dev106` (along with bokeh, holoviews,
+hvplot, jinja2, pyarrow, requests, ujson, python-cityhash) — this looks like
+an in-progress attempt to resolve the blocker above, but it has **not been
+tested or committed**, and it also drops `platforms` down to `osx-arm64` only
+(removing `osx-64`/`linux-64`, which would break the cluster build). Verify
+and fix the platforms list before committing any neuclease bump.
+
+### Testing status (as of 2026-07-20)
+
+Phase 1 cannot be run until the neuclease blocker is resolved.
+
+Phase 2 was attempted on cluster nodes `h07u01`/`h07u06` against the wasp v0.8
+snapshot at `/groups/flyem/data/snapshots/wasp2/2026-05-12-32c9ac`. All
+script/config issues were fixed. The remaining blocker there is that the
+existing snapshot CSVs have unsanitized ROI column names — Phase 1 must be
+re-run first (see `sanitize_roi_name()` in `util.py`, used by `segment.py` and
+`element.py`).
+
+### Next steps
+
+1. Resolve the neuclease pin in `pixi.toml` (verify the uncommitted local edit
+   above, fix the `platforms` regression, and confirm the pixi solve succeeds).
+2. Re-run Phase 1 to regenerate CSVs with sanitized ROI column names.
+3. Re-attempt Phase 2 ingestion on the cluster.
+
+### Related component findings
+
+See `neo4j-5-component-review.md` in this directory for the full writeup.
+Summary:
+
+- **neuprint-python** — no changes needed (HTTP only, no direct Neo4j/Bolt connection)
+- **neuPrintExplorer** — no changes needed (React frontend, HTTP only)
+- **neuPrintHTTP** — no code changes needed; **one config change required**:
+  `"database": "neo4j"` → `"database": "data"` in the deployment config
+  (e.g. `bolt-config.json`), to match the database name used during ingestion.
 
 ---
 

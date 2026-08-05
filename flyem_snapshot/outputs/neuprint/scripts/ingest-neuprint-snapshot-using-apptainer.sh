@@ -49,6 +49,16 @@ fi
 
 export APPTAINER_BIND="${SNAPSHOT_DIR}/neuprint:/snapshot"
 
+# Forward the ingestion tuning knobs into the container explicitly.
+# (The defaults live in the within-container script and are sized for a
+# large cluster node; override these when running somewhere smaller.)
+for v in HEAP_SIZE MAX_MEMORY BAD_TOLERANCE LSB_MAX_NUM_PROCESSORS
+do
+    if [[ -n "${!v}" ]]; then
+        export APPTAINERENV_${v}="${!v}"
+    fi
+done
+
 # Create these directories in our workspace and
 # mount them into the container.
 mount_dirs=(data logs scripts conf plugins)
@@ -68,7 +78,7 @@ touch ${WORKSPACE_DIR}/logs/neo4j.log
 
 # Note: The plugins still need to be installed into ${NEO4J_HOME}/plugins once the container is launched.
 # cp /groups/flyem/data/neo4j-plugins/apoc-4.4.0.7-all.jar ${WORKSPACE_DIR}/plugins/
-APOC_PLUGINS_URL=https://github.com/neo4j/apoc/releases/download/5.26.27/apoc-5.26.27-core.jar
+APOC_PLUGINS_URL=https://github.com/neo4j/apoc/releases/download/2026.06.0/apoc-2026.06.0-core.jar
 wget -q ${APOC_PLUGINS_URL} -P ${WORKSPACE_DIR}/plugins/
 
 cp ${SCRIPTS_DIR}/* ${WORKSPACE_DIR}/scripts/
@@ -84,10 +94,10 @@ cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 
 if [[ ! -z "${DEBUG_SHELL}" ]]
 then
-    apptainer exec --writable-tmpfs docker://neo4j:5.26.27 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
+    apptainer exec --writable-tmpfs docker://neo4j:2026.06.0 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
     exit $?
 else
-    apptainer exec --writable-tmpfs docker://neo4j:5.26.27 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
+    apptainer exec --writable-tmpfs docker://neo4j:2026.06.0 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
     if [[ "$?" != "0" ]]
     then
         exit $?

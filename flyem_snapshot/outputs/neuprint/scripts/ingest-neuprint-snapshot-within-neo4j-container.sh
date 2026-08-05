@@ -7,8 +7,8 @@
 ##
 
 ##
-## This script is meant to be run from WITHIN the neo4j:5 container.
-## (At the time of this writing, we use neo4j:5.26.27.)
+## This script is meant to be run from WITHIN the neo4j container.
+## (At the time of this writing, we use neo4j:2026.06.0.)
 ## This ingests ALL of the CSV files from a neuprint snapshot via the
 ## neo4j-admin tool in ONE STEP.
 ## (In neo4j v5, incremental import is supported, but only in the Enterprise edition.)
@@ -76,7 +76,12 @@ fi
 
 if [[ -z "${LSB_MAX_NUM_PROCESSORS}" ]]
 then
-    CPU_COUNT=$(python -c 'import multiprocessing; print(multiprocessing.cpu_count()//2)')
+    # Note: The neo4j container image doesn't ship python, so we can't
+    # use multiprocessing.cpu_count() here as we did with neo4j:4.4.
+    TOTAL_CPUS=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
+    CPU_COUNT=$((TOTAL_CPUS / 2))
+    # --threads=0 is invalid, so don't go below 1 on a single-core machine.
+    [[ ${CPU_COUNT} -lt 1 ]] && CPU_COUNT=1
 else
     CPU_COUNT=${LSB_MAX_NUM_PROCESSORS}
 fi
@@ -97,17 +102,48 @@ ELMSET_CONTAINS_ELEMENT_ARGS=$(for f in $(find . -name "Neuprint_ElementSet_to_E
 # The neo4j docs say this about the HEAP_SIZE variable:
 # "If doing imports in the order of magnitude of 100 billion entities, 20G will be an appropriate value."
 # (We have ~0.5B entities)
-export HEAP_SIZE='31G'
+#
+# The defaults here are sized for a large cluster node. On a smaller machine
+# (e.g. a VM), the JVM will fail to start or be OOM-killed, so both values can
+# be overridden from the calling environment, e.g.
+#
+#   HEAP_SIZE=4G MAX_MEMORY=8G ingest-neuprint-snapshot-using-apptainer <snapshot-dir>
+#
+export HEAP_SIZE=${HEAP_SIZE:-31G}
 
 # TODO: Should we use this option?
 # --cache-on-heap=true
 
-MAX_MEMORY='150G'
+MAX_MEMORY=${MAX_MEMORY:-150G}
+
+# HEAP_SIZE and MAX_MEMORY above only apply to the 'neo4j-admin import' step.
+# The neo4j SERVER we launch further below (to create indexes) takes its memory
+# settings from neo4j.conf instead, which is likewise sized for a big cluster
+# node. Keep the two in sync so that one pair of env vars sizes both phases,
+# otherwise the import succeeds and then the server fails to start.
+# (The defaults substituted here are identical to the values already in
+# neo4j.conf, so this is a no-op unless the caller overrode them.)
+sed -i \
+    -e "s|^server\.memory\.heap\.initial_size=.*|server.memory.heap.initial_size=${HEAP_SIZE}|" \
+    -e "s|^server\.memory\.heap\.max_size=.*|server.memory.heap.max_size=${HEAP_SIZE}|" \
+    -e "s|^server\.memory\.pagecache\.size=.*|server.memory.pagecache.size=${MAX_MEMORY}|" \
+    ${NEO4J_HOME}/conf/neo4j.conf
+
+echo "[$(date)] Using HEAP_SIZE=${HEAP_SIZE}, MAX_MEMORY=${MAX_MEMORY}, threads=${CPU_COUNT}"
+echo "[$(date)] Server memory settings in effect:"
+grep -E '^server\.memory\.' ${NEO4J_HOME}/conf/neo4j.conf | sed 's/^/    /'
+
+# Neo4j 2025.12 changed the default --bad-tolerance from 1000 to -1 (unlimited),
+# which means a malformed CSV row would be skipped and logged instead of failing
+# the import. For a connectome export we'd rather not silently lose rows, so pin
+# it to the pre-CalVer default. Set to 0 to fail on the very first bad record.
+BAD_TOLERANCE=${BAD_TOLERANCE:-1000}
 
 cat > ingestion-args.txt << EOF
 --overwrite-destination=true
 --normalize-types=false
 --high-parallel-io=on
+--bad-tolerance=${BAD_TOLERANCE}
 --max-off-heap-memory=${MAX_MEMORY}
 --threads=${CPU_COUNT}
 ${META_ARG}
