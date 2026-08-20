@@ -23,6 +23,17 @@ fi
 
 SNAPSHOT_NEO4J_ROOT=$1
 
+# Forward the memory tuning knobs into the container explicitly.
+# (apptainer's host-env inheritance isn't reliable enough to depend on.)
+# The snapshot's neo4j.conf is sized for a large cluster node, so on a smaller
+# machine you need e.g. HEAP_SIZE=4G MAX_MEMORY=8G or neo4j won't start.
+for v in HEAP_SIZE MAX_MEMORY
+do
+    if [[ -n "${!v}" ]]; then
+        export APPTAINERENV_${v}="${!v}"
+    fi
+done
+
 export APPTAINER_BIND="${SNAPSHOT_NEO4J_ROOT}/conf:/conf,${APPTAINER_BIND}"
 export APPTAINER_BIND="${SNAPSHOT_NEO4J_ROOT}/data:/data,${APPTAINER_BIND}"
 export APPTAINER_BIND="${SNAPSHOT_NEO4J_ROOT}/logs:/logs,${APPTAINER_BIND}"

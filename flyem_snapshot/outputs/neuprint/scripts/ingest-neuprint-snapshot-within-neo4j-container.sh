@@ -44,22 +44,31 @@ cp /conf/neo4j.conf ${NEO4J_HOME}/conf/neo4j.conf
 # Install them by copying into NEO4J_HOME.
 ls /plugins/* > /dev/null 2>&1 && cp /plugins/* ${NEO4J_HOME}/plugins/
 
-cd /snapshot
+# The snapshot's CSV files are bind-mounted here by the calling script.
+SNAPSHOT_DIR=/snapshot
+
+cd ${SNAPSHOT_DIR}
 
 ##
 ## Import CSVs for nodes/relationships
 ##
 
+# Note: every path handed to neo4j-admin below MUST include a directory
+# component. A bare filename (e.g. 'Neuprint_Meta.csv') makes neo4j-admin fail
+# with "Unable to find the parent of the path", because a single-component
+# relative path has no parent for it to resolve. We therefore anchor every
+# path on the absolute ${SNAPSHOT_DIR} rather than relying on the cwd.
+
 # Node arguments.
 # There may be hundreds of thousands of node CSV files, which is why we supply
 # these arguments to neo4j-admin via a special arguments file.  (See below.)
-META_ARG=--nodes=Neuprint_Meta.csv
-SYNSET_ARG=--nodes=Neuprint_SynapseSet.csv
-NEURON_ARGS=$(for f in $(find Neuprint_Neurons/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-SYNAPSE_ARGS=$(for f in $(find Neuprint_Synapses/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-if [[ -d Neuprint_Elements ]]; then
-    ELEMENT_ARGS=$(for f in $(find Neuprint_Elements/ -name "*.csv"); do printf -- "--nodes=$f "; done)
-    ELMSET_ARGS=$(for f in $(find Neuprint_ElementSets/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+META_ARG=--nodes=${SNAPSHOT_DIR}/Neuprint_Meta.csv
+SYNSET_ARG=--nodes=${SNAPSHOT_DIR}/Neuprint_SynapseSet.csv
+NEURON_ARGS=$(for f in $(find ${SNAPSHOT_DIR}/Neuprint_Neurons/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+SYNAPSE_ARGS=$(for f in $(find ${SNAPSHOT_DIR}/Neuprint_Synapses/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+if [[ -d ${SNAPSHOT_DIR}/Neuprint_Elements ]]; then
+    ELEMENT_ARGS=$(for f in $(find ${SNAPSHOT_DIR}/Neuprint_Elements/ -name "*.csv"); do printf -- "--nodes=$f "; done)
+    ELMSET_ARGS=$(for f in $(find ${SNAPSHOT_DIR}/Neuprint_ElementSets/ -name "*.csv"); do printf -- "--nodes=$f "; done)
 fi
 
 if [[ -z "${NEURON_ARGS}" ]]
@@ -87,16 +96,17 @@ else
 fi
 
 # Relationship arguments.
-NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_Neuron_Connections.csv
-SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=Neuprint_Synapse_Connections.csv
-ELEMENT_CLOSETO_ARGS=$(for f in $(find . -name "Neuprint_Elements_CloseTo_*.csv"); do printf -- "--relationships=CloseTo=$f "; done)
+# (As above, these must all carry a directory component.)
+NEURON_CONNECTSTO_ARG=--relationships=ConnectsTo=${SNAPSHOT_DIR}/Neuprint_Neuron_Connections.csv
+SYNAPSE_SYNAPSESTO_ARG=--relationships=SynapsesTo=${SNAPSHOT_DIR}/Neuprint_Synapse_Connections.csv
+ELEMENT_CLOSETO_ARGS=$(for f in $(find ${SNAPSHOT_DIR} -name "Neuprint_Elements_CloseTo_*.csv"); do printf -- "--relationships=CloseTo=$f "; done)
 
-NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=Neuprint_Neuron_to_SynapseSet.csv
-SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=Neuprint_SynapseSet_to_Synapses.csv
-SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=Neuprint_SynapseSet_to_SynapseSet.csv
+NEURON_CONTAINS_SYNSET_ARG=--relationships=Contains=${SNAPSHOT_DIR}/Neuprint_Neuron_to_SynapseSet.csv
+SYNSET_CONTAINS_SYNAPSE_ARG=--relationships=Contains=${SNAPSHOT_DIR}/Neuprint_SynapseSet_to_Synapses.csv
+SYNSET_CONNECTSTO_ARG=--relationships=ConnectsTo=${SNAPSHOT_DIR}/Neuprint_SynapseSet_to_SynapseSet.csv
 
-NEURON_CONTAINS_ELMSET_ARGS=$(for f in $(find . -name "Neuprint_Neuron_to_ElementSet_*.csv"); do printf -- "--relationships=Contains=$f "; done)
-ELMSET_CONTAINS_ELEMENT_ARGS=$(for f in $(find . -name "Neuprint_ElementSet_to_Element_*.csv"); do printf -- "--relationships=Contains=$f "; done)
+NEURON_CONTAINS_ELMSET_ARGS=$(for f in $(find ${SNAPSHOT_DIR} -name "Neuprint_Neuron_to_ElementSet_*.csv"); do printf -- "--relationships=Contains=$f "; done)
+ELMSET_CONTAINS_ELEMENT_ARGS=$(for f in $(find ${SNAPSHOT_DIR} -name "Neuprint_ElementSet_to_Element_*.csv"); do printf -- "--relationships=Contains=$f "; done)
 
 
 # The neo4j docs say this about the HEAP_SIZE variable:
@@ -123,11 +133,24 @@ MAX_MEMORY=${MAX_MEMORY:-150G}
 # otherwise the import succeeds and then the server fails to start.
 # (The defaults substituted here are identical to the values already in
 # neo4j.conf, so this is a no-op unless the caller overrode them.)
-sed -i \
-    -e "s|^server\.memory\.heap\.initial_size=.*|server.memory.heap.initial_size=${HEAP_SIZE}|" \
-    -e "s|^server\.memory\.heap\.max_size=.*|server.memory.heap.max_size=${HEAP_SIZE}|" \
-    -e "s|^server\.memory\.pagecache\.size=.*|server.memory.pagecache.size=${MAX_MEMORY}|" \
-    ${NEO4J_HOME}/conf/neo4j.conf
+#
+# Note: we rewrite BOTH copies of neo4j.conf:
+#   - ${NEO4J_HOME}/conf/neo4j.conf is the one this container's server reads
+#   - /conf/neo4j.conf is the bind-mounted workspace copy, which gets persisted
+#     next to the database and is later read by inspect-neuprint-snapshot
+# If we only did the former, the conf shipped alongside the database would
+# still claim 31G/150G and inspect-neuprint-snapshot would fail to start on
+# any machine smaller than a cluster node.
+#
+for conf in ${NEO4J_HOME}/conf/neo4j.conf /conf/neo4j.conf
+do
+    [[ -w "${conf}" ]] || continue
+    sed -i \
+        -e "s|^server\.memory\.heap\.initial_size=.*|server.memory.heap.initial_size=${HEAP_SIZE}|" \
+        -e "s|^server\.memory\.heap\.max_size=.*|server.memory.heap.max_size=${HEAP_SIZE}|" \
+        -e "s|^server\.memory\.pagecache\.size=.*|server.memory.pagecache.size=${MAX_MEMORY}|" \
+        ${conf}
+done
 
 echo "[$(date)] Using HEAP_SIZE=${HEAP_SIZE}, MAX_MEMORY=${MAX_MEMORY}, threads=${CPU_COUNT}"
 echo "[$(date)] Server memory settings in effect:"
