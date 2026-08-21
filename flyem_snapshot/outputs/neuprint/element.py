@@ -10,7 +10,7 @@ from neuclease import PrefixFilter
 from neuclease.util import timed, compute_parallel
 
 from ...util.util import replace_object_nan_with_none
-from .util import neo4j_column_names, append_neo4j_type_suffixes, convert_point_cols_to_neo4j_spatial, prepare_int_cols_for_export, sanitize_roi_name
+from .util import neo4j_column_names, append_neo4j_type_suffixes, convert_point_cols_to_neo4j_spatial, prepare_int_cols_for_export, check_roi_name
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ def export_element_group_csv(subdir, roi_syn_props, i, group_rois, df):
     # Note that we must use 'true' here instead of True because pandas
     # doesn't write lowercase for bools, but neo4j requires lowercase.
     # https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
-    df[[f'{sanitize_roi_name(roi)}:boolean' for roi in group_rois if roi != '<unspecified>']] = 'true'
+    df[[f'{check_roi_name(roi)}:boolean' for roi in group_rois if roi != '<unspecified>']] = 'true'
 
     # Give types to the extra properties, too.
     typed_renames = neo4j_column_names(df[extra_props])

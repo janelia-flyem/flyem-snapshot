@@ -31,15 +31,42 @@ NEUPRINT_TYPE_OVERRIDES = {
 }
 
 
-def sanitize_roi_name(roi):
+# Characters which cannot appear in a CSV header's property name, because
+# they would break the 'name:type' header format itself:
+#   ',' separates fields, ':' separates the name from the type,
+#   '"' begins a quoted field, and a newline ends the header row.
+# Note that parentheses and hyphens are NOT a problem -- see check_roi_name().
+INVALID_ROI_NAME_CHARS = ',:"\r\n'
+
+
+def check_roi_name(roi):
     """
-    Replace special characters in ROI names with underscores to produce valid
-    Neo4j property names. Neo4j 5 rejects CSV headers whose property names
-    contain characters like parentheses or hyphens, and treats names that
-    normalize to the same string as duplicates (e.g. "VLNP(-AOTU)(R)" and
-    "VLNP(R)" both reduce to "VLNP_R_" — distinct after sanitization).
+    Verify that an ROI name can be used verbatim as a neo4j property name in a
+    CSV header, and return it unchanged.
+
+    We deliberately do NOT sanitize these names. Verified against
+    neo4j 2026.06.0: 'neo4j-admin database import full' accepts property names
+    containing parentheses and hyphens and stores them verbatim, keeping
+    e.g. "VLNP(-AOTU)(R)" and "VLNP(R)" as distinct properties.
+
+    Sanitizing them would be actively harmful, because the Meta node's roiInfo,
+    the indexes created by create-indexes.cypher, and therefore every client
+    query all refer to ROIs by their real names. Rewriting only the CSV headers
+    left the node properties as the odd one out: the indexes and Meta said
+    'BU(R)' while the data said 'BU_R_', so the ROI indexes matched nothing.
+
+    Only the handful of characters that would break the 'name:type' header
+    syntax are rejected, and we raise rather than silently rewriting so that a
+    new ROI name from DVID can't quietly corrupt the export.
     """
-    return re.sub(r'[^a-zA-Z0-9_]', '_', roi)
+    if (bad := set(roi) & set(INVALID_ROI_NAME_CHARS)):
+        msg = (
+            f"ROI name {roi!r} contains character(s) {sorted(bad)} which cannot be used "
+            "in a neo4j CSV header property name. Note that parentheses and hyphens are "
+            "fine; only characters which break the 'name:type' header format are rejected."
+        )
+        raise RuntimeError(msg)
+    return roi
 
 
 def append_neo4j_type_suffixes(df, exclude=(), drop_empty=True):
