@@ -15,10 +15,11 @@ import pyarrow.feather as feather
 import holoviews as hv
 import hvplot.pandas
 
+import ngsidekick as ngsk
+
 from neuclease import PrefixFilter
 from neuclease.util import Timer
 from neuclease.dvid.keyvalue import DEFAULT_BODY_STATUS_CATEGORIES
-from neuclease.misc.neuroglancer import format_nglink
 from neuclease.misc.completeness import (
     completeness_forecast,
     plot_connectivity_forecast,
@@ -613,7 +614,7 @@ def _get_neuroglancer_base_link(state_path):
     else:
         state = json.load(open(state_path, 'r'))  # noqa
 
-    return format_nglink('https://clio-ng.janelia.org', state)
+    return ngsk.encode_ngstate('https://clio-ng.janelia.org', state)
 
 
 @PrefixFilter.with_context("downstream capture")
