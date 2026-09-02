@@ -23,7 +23,7 @@
 ##                  NEO4J_DB=neo4j NEO4J_IMAGE=docker://neo4j:4.4.16 \
 ##                      check-neuprint-db.sh <dir>
 ##
-##   NEO4J_IMAGE  Container image. Default docker://neo4j:2026.06.0. Must be
+##   NEO4J_IMAGE  Container image. Default docker://neo4j:2026.07.1. Must be
 ##                able to open the store you are pointing it at -- neo4j has
 ##                no downgrade path, so an older image cannot read a newer
 ##                store.
@@ -52,7 +52,7 @@ if [[ ! -d "$1" ]]; then
 fi
 
 NEO4J_DIR=$(cd -- "$1" && pwd)
-NEO4J_IMAGE=${NEO4J_IMAGE:-docker://neo4j:2026.06.0}
+NEO4J_IMAGE=${NEO4J_IMAGE:-docker://neo4j:2026.07.1}
 NEO4J_DB=${NEO4J_DB:-data}
 
 for d in conf data logs plugins; do
@@ -92,21 +92,59 @@ if [[ -n "${MAX_MEMORY:-}" ]]; then
 fi
 
 echo "Starting neo4j..."
-neo4j start > /dev/null 2>&1
+
+# The log lives in the snapshot directory and PERSISTS between runs, so a
+# stale 'Started.' from an earlier successful run would make the check below
+# pass even when this start failed -- and then every query returns nothing,
+# which looks like a corrupt database rather than a server that never came up.
+# Truncate first so what we grep for can only have come from this run.
+: > /logs/neo4j.log
+
+START_OUT=$(neo4j start 2>&1)
 for _ in $(seq 120); do
     grep -q 'Started\.' /logs/neo4j.log 2>/dev/null && break
     sleep 1
 done
 if ! grep -q 'Started\.' /logs/neo4j.log 2>/dev/null; then
-    echo "ERROR: neo4j did not start. See /logs/neo4j.log" 1>&2
+    echo "ERROR: neo4j did not start." 1>&2
+    echo "--- neo4j start output ---" 1>&2
+    echo "${START_OUT}" | tail -30 1>&2
+    echo "--- /logs/neo4j.log (tail) ---" 1>&2
+    tail -30 /logs/neo4j.log 1>&2
     exit 1
 fi
 trap 'neo4j stop > /dev/null 2>&1' EXIT
 
+# Constrain cypher-shell's thread pools.
+#
+# The JVM and Netty both size their pools from availableProcessors(), so on a
+# many-core machine each cypher-shell invocation tries to spawn ~80 G1 GC
+# threads plus a Netty event-loop group of 2x the core count. Observed on a
+# 128-core node: every invocation died with
+#
+#   pthread_create failed (EAGAIN) ... epollEventLoopGroup-3-88
+#   java.lang.OutOfMemoryError: unable to create native thread
+#
+# and this script makes dozens of invocations. ActiveProcessorCount is a single
+# lever that shrinks everything derived from the CPU count at once. Nothing
+# cypher-shell does here is CPU-bound -- it issues a query and prints a row.
+#
+# Set AFTER the server has started, so only the client is affected.
+export JAVA_OPTS="${JAVA_OPTS:-} -XX:ActiveProcessorCount=4"
+
 CS=/var/lib/neo4j/bin/cypher-shell
 
 # Run a query, strip the header row and surrounding quotes.
-q() { ${CS} -d "${NEO4J_DB}" --format plain "$1" 2>/dev/null | tail -n +2 | tr -d '"'; }
+#
+# The grep is a safety net: if the JVM writes warnings or a stack trace to
+# stdout, they would otherwise be treated as query results and embedded into
+# the check messages, turning one failure into hundreds of lines of noise.
+# Drop JVM unified-logging lines, stack-trace frames, and log4j errors.
+q() {
+    ${CS} -d "${NEO4J_DB}" --format plain "$1" 2>/dev/null \
+        | grep -vE '^\[[0-9]+\.[0-9]+s\]\[|^[[:space:]]+at |^java\.lang\.|^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*(ERROR|WARN)|Failed to (start|submit)' \
+        | tail -n +2 | tr -d '"'
+}
 
 PASSES=0
 FAILURES=0
@@ -136,7 +174,13 @@ echo "=============================================================="
 
 DS=$(q "MATCH (m:Meta) RETURN m.dataset;" | head -1)
 if [[ -z "${DS}" ]]; then
+    # Distinguish "the database is empty/odd" from "the server or database is
+    # not actually usable", which otherwise present identically.
     echo "ERROR: could not read the dataset name from the :Meta node." 1>&2
+    echo "--- SHOW DATABASES ---" 1>&2
+    ${CS} -d system "SHOW DATABASES;" 2>&1 | tail -20 1>&2
+    echo "--- raw response to the :Meta query ---" 1>&2
+    ${CS} -d "${NEO4J_DB}" "MATCH (m:Meta) RETURN m.dataset;" 2>&1 | tail -20 1>&2
     exit 1
 fi
 info "dataset: ${DS}"
