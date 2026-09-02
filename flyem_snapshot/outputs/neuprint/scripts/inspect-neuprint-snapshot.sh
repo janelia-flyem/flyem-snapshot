@@ -54,6 +54,6 @@ export APPTAINER_BIND="/tmp/scripts:/scripts,${APPTAINER_BIND}"
 # We use --writable-tmpfs since neo4j needs a writable filesystem.
 # https://github.com/apptainer/singularity/issues/4546#issuecomment-537152617
 
-# singularity run --writable-tmpfs docker://neo4j:2026.06.0
-singularity exec --writable-tmpfs docker://neo4j:2026.06.0 /scripts/_launch_snapshot_and_bash_shell.sh
+# singularity run --writable-tmpfs docker://neo4j:2026.07.1
+singularity exec --writable-tmpfs docker://neo4j:2026.07.1 /scripts/_launch_snapshot_and_bash_shell.sh
 

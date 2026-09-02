@@ -30,7 +30,7 @@ Environment overrides, all optional:
 
     NEO4J_DB     Database to check (default 'data').  Use 'neo4j' for a
                  pre-upgrade 4.4-era database.
-    NEO4J_IMAGE  Container image (default docker://neo4j:2026.06.0).
+    NEO4J_IMAGE  Container image (default docker://neo4j:2026.07.1).
     HEAP_SIZE    Override the database's own neo4j.conf memory sizing, which
     MAX_MEMORY   is otherwise respected as-is.  Needed only when checking a
                  cluster-sized snapshot on a smaller machine.

@@ -8,7 +8,7 @@
 
 ##
 ## This script is meant to be run from WITHIN the neo4j container.
-## (At the time of this writing, we use neo4j:2026.06.0.)
+## (At the time of this writing, we use neo4j:2026.07.1.)
 ## This ingests ALL of the CSV files from a neuprint snapshot via the
 ## neo4j-admin tool in ONE STEP.
 ## (In neo4j v5, incremental import is supported, but only in the Enterprise edition.)

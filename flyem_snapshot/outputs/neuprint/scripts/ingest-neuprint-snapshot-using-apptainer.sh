@@ -78,7 +78,7 @@ touch ${WORKSPACE_DIR}/logs/neo4j.log
 
 # Note: The plugins still need to be installed into ${NEO4J_HOME}/plugins once the container is launched.
 # cp /groups/flyem/data/neo4j-plugins/apoc-4.4.0.7-all.jar ${WORKSPACE_DIR}/plugins/
-APOC_PLUGINS_URL=https://github.com/neo4j/apoc/releases/download/2026.06.0/apoc-2026.06.0-core.jar
+APOC_PLUGINS_URL=https://github.com/neo4j/apoc/releases/download/2026.07.1/apoc-2026.07.1-core.jar
 wget -q ${APOC_PLUGINS_URL} -P ${WORKSPACE_DIR}/plugins/
 
 cp ${SCRIPTS_DIR}/* ${WORKSPACE_DIR}/scripts/
@@ -94,10 +94,10 @@ cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 
 if [[ ! -z "${DEBUG_SHELL}" ]]
 then
-    apptainer exec --writable-tmpfs docker://neo4j:2026.06.0 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
+    apptainer exec --writable-tmpfs docker://neo4j:2026.07.1 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
     exit $?
 else
-    apptainer exec --writable-tmpfs docker://neo4j:2026.06.0 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
+    apptainer exec --writable-tmpfs docker://neo4j:2026.07.1 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
     if [[ "$?" != "0" ]]
     then
         exit $?

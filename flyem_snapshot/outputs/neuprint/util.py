@@ -45,7 +45,7 @@ def check_roi_name(roi):
     CSV header, and return it unchanged.
 
     We deliberately do NOT sanitize these names. Verified against
-    neo4j 2026.06.0: 'neo4j-admin database import full' accepts property names
+    neo4j 2026.07.1: 'neo4j-admin database import full' accepts property names
     containing parentheses and hyphens and stores them verbatim, keeping
     e.g. "VLNP(-AOTU)(R)" and "VLNP(R)" as distinct properties.
 
