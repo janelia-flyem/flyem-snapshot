@@ -29,6 +29,17 @@ neuclease = ">=0.81.post0.dev106"
 neuroglancer = "*"
 tensorstore = "*"
 ngsidekick = "*"
+# Needed by bokeh's export_png, used for the body-status-counts report in
+# inputs/annotations.py. Without these the export raises and the graph is
+# skipped (or, depending on which error bokeh reports first, the whole run
+# fails). geckodriver drives firefox in headless mode.
+selenium = "*"
+firefox = "*"
+geckodriver = "*"
+# Required by outputs/flat.py when a config sets 'gcs-bucket-dir'
+# (e.g. yakuba). util.py imports google.cloud.storage lazily, but the
+# dependency still has to exist in the environment.
+google-cloud-storage = "*"
 # Pinned to the 2.x line deliberately. pandas 3.0 makes a new string dtype
 # the default (PDEP-14) and Copy-on-Write mandatory, which breaks this
 # codebase's neo4j dtype inference and in-place DataFrame mutation.
