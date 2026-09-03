@@ -64,6 +64,10 @@ Environment overrides, all optional:
                  asserting on: neo4j is booted once and each term timed in
                  turn, where a term per invocation would cost minutes each.
                  Pair it with CHECK_CSV_COUNTS=0 to skip the slow checks.
+    SHOW_QUERY   Set to 1 to print the generated Cypher.  It is printed
+                 automatically when the query errors or exceeds
+                 MAX_QUERY_MS, so this is only needed to see it on a
+                 passing run.
     QUERY_BODY_ID
                  bodyId for the complex query (default: the lowest bodyId
                  carrying a type).  Pin it for reproducibility; it has

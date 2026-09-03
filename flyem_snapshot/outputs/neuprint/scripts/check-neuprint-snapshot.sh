@@ -638,6 +638,18 @@ QRY
     SLOWEST_MS=0
     SLOWEST_TERM=""
 
+    # The query runs to ~35 lines, and this suite is otherwise one line per
+    # check, so it is not printed on every run. It is printed when something
+    # went wrong -- which is when you want to paste it into cypher-shell --
+    # or on request via SHOW_QUERY=1. Printed at most once, since a sweep
+    # would otherwise repeat it per term.
+    SHOWN=0
+    show_query() {
+        echo "          ----- Cypher, term '$1' -----"
+        build_query "$1" | sed 's/^/          /'
+        echo "          ----- end -----"
+    }
+
     for TERM in "${TERMS[@]}"; do
         SLOW_QUERY=$(build_query "${TERM}")
 
@@ -658,6 +670,7 @@ QRY
         if [[ "${COLD_RC}" -ne 0 ]]; then
             bad "search query failed to execute for term '${TERM}'"
             grep -viE '^[[:space:]]*$' <<<"${COLD_OUT}" | tail -5 | sed 's/^/          /'
+            if [[ "${SHOWN}" -eq 0 ]]; then show_query "${TERM}"; SHOWN=1; fi
             QUERY_FAILED=1
             continue
         fi
@@ -696,9 +709,14 @@ QRY
             ok "slowest term '${SLOWEST_TERM}' within ${MAX_QUERY_MS} ms (${SLOWEST_MS} ms)"
         else
             bad "term '${SLOWEST_TERM}' took ${SLOWEST_MS} ms, over the ${MAX_QUERY_MS} ms threshold"
+            if [[ "${SHOWN}" -eq 0 ]]; then show_query "${SLOWEST_TERM}"; SHOWN=1; fi
         fi
     else
         info "slowest: ${SLOWEST_MS} ms (term '${SLOWEST_TERM}'); set MAX_QUERY_MS to assert"
+    fi
+
+    if [[ -n "${SHOW_QUERY:-}" && "${SHOWN}" -eq 0 && -n "${SLOWEST_TERM}" ]]; then
+        show_query "${SLOWEST_TERM}"
     fi
 fi
 
