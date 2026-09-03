@@ -27,6 +27,8 @@ What it checks:
     - node and relationship totals match what the importer reported, and
       the import skipped no bad entries
     - Segment/Synapse/SynapseSet counts match the exported CSV row counts
+    - neuPrintExplorer's search query executes, with its timing reported
+      (inputs derived deterministically, so runs are comparable)
     - the database name and pinned Cypher language version
 
 Environment overrides, all optional:
@@ -39,6 +41,33 @@ Environment overrides, all optional:
                  exported CSV row counts.  On by default; it is the
                  strongest check here, but reads every CSV, which is slow
                  on a large dataset over network storage.
+    MAX_QUERY_MS
+                 If set, the complex-query timing becomes an assertion
+                 rather than an informational line.  Left unset by default,
+                 since a threshold chosen without baselines fails for
+                 environmental reasons more often than for regressions.
+                 Milliseconds, because the whole plausible range on a
+                 snapshot-sized dataset sits well under one second.
+    QUERY_SEARCH_TERM
+                 Search term for the complex query.  This, not the bodyId,
+                 is what determines how long that query takes: every neuron
+                 is scanned and tested against eleven CONTAINS predicates,
+                 then everything matched is sorted, so cost tracks how large
+                 a fraction of the label the term matches.  A short or
+                 common term is expensive, a long one is cheap.  Defaults to
+                 the commonest letter in the dataset's type names, which is
+                 the closest thing to a worst case.
+    QUERY_SEARCH_TERMS
+                 Comma-separated list of terms to time in one run, e.g.
+                 'a,in,LC,SNxx'.  Takes precedence over QUERY_SEARCH_TERM.
+                 Use this to hunt for a term heavy enough to be worth
+                 asserting on: neo4j is booted once and each term timed in
+                 turn, where a term per invocation would cost minutes each.
+                 Pair it with CHECK_CSV_COUNTS=0 to skip the slow checks.
+    QUERY_BODY_ID
+                 bodyId for the complex query (default: the lowest bodyId
+                 carrying a type).  Pin it for reproducibility; it has
+                 almost no effect on the timing.
     HEAP_SIZE    Override the database's own neo4j.conf memory sizing, which
     MAX_MEMORY   is otherwise respected as-is.  Needed only when checking a
                  cluster-sized snapshot on a smaller machine.

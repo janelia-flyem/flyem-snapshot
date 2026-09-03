@@ -464,6 +464,246 @@ fi
 
 echo
 echo "=============================================================="
+echo " Complex query"
+echo "=============================================================="
+
+# neuPrintExplorer's search query: a full :Neuron scan with eleven
+# toLower(...) CONTAINS predicates, so no index can serve it, followed by an
+# unbounded ORDER BY over everything matched. It is the worst case a user can
+# trigger from the search box, which makes it the right thing to time.
+#
+# Two purposes:
+#  1. Smoke test -- it exercises the annotation properties the frontend expects
+#     (type, instance, hemibrainType, class, entryNerve, ...). Properties a
+#     given dataset lacks come back null, and 'null CONTAINS q' is null rather
+#     than an error, so this degrades to fewer matches instead of failing. An
+#     actual error means a real schema problem.
+#  2. Timing -- reported by default. Set MAX_QUERY_MS to turn it into an
+#     assertion once you have baselines; a threshold picked without them fails
+#     for environmental reasons more often than for real regressions.
+#
+# Be clear about what the timing measures. On wasp (50,564 neurons) the range
+# across search terms was 251 ms for a term matching 702 rows to 635 ms for
+# one matching 44,933 -- only 2.5x for 64x the rows. The floor is the label
+# scan itself, and the term adds comparatively little. So this tracks scan and
+# sort throughput far more than it tracks search selectivity, and no term will
+# make it slow on a dataset this size.
+#
+# Note this deliberately uses the unprefixed :Neuron label, exactly as the
+# frontend does, rather than ${DS}_Neuron. Each snapshot database holds a
+# single dataset, so the two are equivalent here.
+
+# Timing is measured as wall clock, minus the cost of a trivial query.
+#
+# cypher-shell prints its own figures ("ready to start consuming query after
+# 548 ms, ...") but ONLY when stdout is a terminal; captured through $(...)
+# those lines are absent, so they cannot be parsed from a script. And a raw
+# wall-clock measurement is dominated by ~1-2s of JVM startup per invocation.
+#
+# So: time a trivial query to establish the per-invocation overhead, and
+# subtract it. What remains is attributable to the query itself.
+now_ms() {
+    local t
+    t=$(date +%s%3N 2>/dev/null)
+    if [[ "${t}" =~ ^[0-9]+$ ]]; then
+        echo "${t}"
+    else
+        # date without %N support (not expected on the debian-based image)
+        echo $(( $(date +%s) * 1000 ))
+    fi
+}
+
+# Both inputs can be pinned from the environment for a reproducible
+# measurement. Otherwise they are derived deterministically from the data --
+# no rand() -- so two runs against the same snapshot are comparable.
+#
+# The bodyId is nearly free: it contributes one equality test on an indexed
+# property plus a branch in the priority CASE. The SEARCH TERM is what costs.
+# Every neuron is scanned and tested against eleven toLower(...) CONTAINS
+# predicates, and every row that matched is then sorted, so the runtime
+# tracks how large a fraction of the label the term matches.
+#
+# The default is therefore the most expensive realistic term available: the
+# two-character type prefix shared by the largest number of neurons. Set
+# QUERY_SEARCH_TERM shorter or more common to make it heavier, longer to make
+# it lighter. Anything outside [A-Za-z0-9] is stripped, since the term is
+# interpolated into the query text rather than passed as a parameter.
+# QUERY_SEARCH_TERMS (plural, comma-separated) times several terms in one
+# container start, which is the cheap way to hunt for a term heavy enough to
+# be worth asserting on. Booting the container and neo4j per term instead
+# costs minutes each and swamps what you are trying to measure.
+if [[ -n "${QUERY_SEARCH_TERMS:-}" ]]; then
+    IFS=',' read -ra RAW_TERMS <<< "${QUERY_SEARCH_TERMS}"
+    TERM_SRC="from QUERY_SEARCH_TERMS"
+elif [[ -n "${QUERY_SEARCH_TERM:-}" ]]; then
+    RAW_TERMS=("${QUERY_SEARCH_TERM}")
+    TERM_SRC="from QUERY_SEARCH_TERM"
+else
+    # The single letter appearing in the most type names. Measured on wasp, a
+    # two-character prefix matched ~1% of the label while the commonest single
+    # letter matched 89%, so this is materially closer to the worst case a
+    # user can trigger -- and typing one letter in the search box is exactly
+    # what a user does.
+    RAW_TERMS=("$(q "MATCH (n:\`${DS}_Neuron\`) WHERE n.type IS NOT NULL
+                     UNWIND range(0, size(n.type) - 1) AS i
+                     WITH n, toLower(substring(n.type, i, 1)) AS ch
+                     WHERE ch >= 'a' AND ch <= 'z'
+                     WITH ch, count(DISTINCT n) AS c
+                     RETURN ch ORDER BY c DESC, ch LIMIT 1;" | head -1)")
+    TERM_SRC="commonest letter in type names"
+fi
+
+# Anything outside [A-Za-z0-9] is dropped, since terms are interpolated into
+# the query text rather than passed as parameters.
+TERMS=()
+for _t in "${RAW_TERMS[@]}"; do
+    _t=$(printf '%s' "${_t}" | tr -cd 'A-Za-z0-9')
+    [[ -n "${_t}" ]] && TERMS+=("${_t}")
+done
+
+if [[ -n "${QUERY_BODY_ID:-}" ]]; then
+    SAMPLE_BODY=$(printf '%s' "${QUERY_BODY_ID}" | tr -cd '0-9')
+    BODY_SRC="from QUERY_BODY_ID"
+    if [[ "${SAMPLE_BODY}" != "${QUERY_BODY_ID}" ]]; then
+        bad "QUERY_BODY_ID='${QUERY_BODY_ID}' is not a plain integer"
+        SAMPLE_BODY=""
+    fi
+else
+    SAMPLE_BODY=$(q "MATCH (n:\`${DS}_Neuron\`) WHERE n.type IS NOT NULL
+                     RETURN min(n.bodyId);" | head -1 | tr -cd '0-9')
+    BODY_SRC="lowest bodyId carrying a type"
+fi
+
+# Label count store lookup, so this is cheap. Reported alongside the row
+# count to show what fraction of the label the term actually matched -- the
+# number to look at when a timing comes back suspiciously fast.
+NEURON_TOTAL=$(q "MATCH (n:\`${DS}_Neuron\`) RETURN count(n);" | head -1)
+
+if [[ -z "${SAMPLE_BODY}" || "${#TERMS[@]}" -eq 0 ]]; then
+    skip "no usable bodyId/search term -- cannot build the query"
+else
+    info "bodyId ${SAMPLE_BODY} (${BODY_SRC}), ${#TERMS[@]} search term(s) ${TERM_SRC}"
+
+    # Built per term, so a sweep can vary the term without re-booting.
+    build_query() {
+        local q="$1"
+        cat <<QRY
+WITH toLower('${q}') as q, ${SAMPLE_BODY} as user_body, '(' + toLower('${q}') as parenQ
+MATCH (n:Neuron)
+WHERE n.bodyId = user_body
+   OR any(prop IN [
+       n.type, n.instance, n.hemibrainType, n.flywireType,
+       n.systematicType, n.itoleeHl, n.trumanHl, n.synonyms,
+       n.class, n.entryNerve, n.exitNerve
+   ] WHERE toLower(prop) CONTAINS q)
+WITH n, q, parenQ, user_body,
+     [toLower(n.type), toLower(n.instance), toLower(n.hemibrainType),
+      toLower(n.flywireType), toLower(n.systematicType), toLower(n.itoleeHl),
+      toLower(n.trumanHl), toLower(n.synonyms), toLower(n.class),
+      toLower(n.entryNerve), toLower(n.exitNerve)] as props
+WITH n, q, parenQ, props, user_body,
+     CASE
+         WHEN n.bodyId = user_body AND user_body <> 0 THEN 0
+         WHEN any(p IN props WHERE p = q) THEN 1
+         WHEN any(p IN props WHERE p STARTS WITH q) THEN 2
+         WHEN any(p IN props WHERE p STARTS WITH parenQ) THEN 3
+         WHEN any(p IN props WHERE p CONTAINS q) THEN 4
+         ELSE 5
+     END as priority,
+     CASE
+         WHEN toLower(n.type) STARTS WITH q THEN 0
+         WHEN toLower(n.type) CONTAINS q THEN 1
+         ELSE 2
+     END as type_priority
+RETURN
+    toString(n.bodyId) as bodyId, n.type as type, n.instance as instance,
+    n.hemibrainType as hemibrainType, n.flywireType as flywireType,
+    n.systematicType as systematicType, n.itoleeHl as itoLeeHl,
+    n.trumanHl as trumanHl, n.synonyms as synonyms, n.class as class,
+    n.entryNerve as entryNerve, n.exitNerve as exitNerve,
+    priority, type_priority
+ORDER BY priority, type_priority, n.type, n.instance
+QRY
+    }
+
+    # Per-invocation overhead: JVM startup plus connect, measured once with a
+    # query that does no work, then subtracted from every timing below. A
+    # single cypher-shell invocation spends 1-2s here, which would otherwise
+    # swamp the query itself.
+    T0=$(now_ms); ${CS} -d "${NEO4J_DB}" --format plain "RETURN 1;" > /dev/null 2>&1; T1=$(now_ms)
+    OVERHEAD_MS=$(( T1 - T0 ))
+    info "per-invocation overhead (JVM startup + connect): ${OVERHEAD_MS} ms"
+
+    QUERY_FAILED=0
+    SLOWEST_MS=0
+    SLOWEST_TERM=""
+
+    for TERM in "${TERMS[@]}"; do
+        SLOW_QUERY=$(build_query "${TERM}")
+
+        # The first run doubles as the smoke test -- its exit status says
+        # whether the query executes, so there is no need to run it again just
+        # to find out. It also pays the page-cache misses; the second run is
+        # the number worth comparing between runs. Neither holds the result
+        # set in a variable, since a short term can match a large fraction of
+        # the label. Here stdout is discarded and only stderr kept, which is
+        # where an error would appear ('2>&1 >/dev/null' -- order matters:
+        # stderr to the pipe, then stdout away).
+        T0=$(now_ms)
+        COLD_OUT=$(${CS} -d "${NEO4J_DB}" --format plain "${SLOW_QUERY}" 2>&1 >/dev/null)
+        COLD_RC=$?
+        T1=$(now_ms)
+        COLD_MS=$(( T1 - T0 - OVERHEAD_MS )); (( COLD_MS < 0 )) && COLD_MS=0
+
+        if [[ "${COLD_RC}" -ne 0 ]]; then
+            bad "search query failed to execute for term '${TERM}'"
+            grep -viE '^[[:space:]]*$' <<<"${COLD_OUT}" | tail -5 | sed 's/^/          /'
+            QUERY_FAILED=1
+            continue
+        fi
+
+        # Rows counted as they stream past rather than buffered. The timing
+        # still covers fetching the whole result set, which is the cost a user
+        # actually waits on. --format plain emits a header plus one row each.
+        T0=$(now_ms)
+        ROWS=$(${CS} -d "${NEO4J_DB}" --format plain "${SLOW_QUERY}" 2>/dev/null | grep -c .)
+        T1=$(now_ms)
+        WARM_MS=$(( T1 - T0 - OVERHEAD_MS )); (( WARM_MS < 0 )) && WARM_MS=0
+        (( ROWS > 0 )) && ROWS=$(( ROWS - 1 ))
+
+        printf "  ....  term %-10s rows %8s / %-10s cold %7s ms   warm %7s ms\n" \
+            "'${TERM}'" "${ROWS}" "${NEURON_TOTAL}" "${COLD_MS}" "${WARM_MS}"
+
+        # First successful term always takes the slot, so the slowest term is
+        # reported even when every timing clamps to zero.
+        if [[ -z "${SLOWEST_TERM}" ]] || (( WARM_MS > SLOWEST_MS )); then
+            SLOWEST_MS="${WARM_MS}"
+            SLOWEST_TERM="${TERM}"
+        fi
+    done
+
+    if [[ "${QUERY_FAILED}" -eq 0 ]]; then
+        ok "the neuPrintExplorer search query executes (${#TERMS[@]} term(s))"
+    fi
+
+    if [[ -z "${SLOWEST_TERM}" ]]; then
+        : # every term failed; already reported above
+    elif [[ -n "${MAX_QUERY_MS:-}" ]]; then
+        # Milliseconds, not seconds: the whole plausible range on a
+        # snapshot-sized dataset sits under one second, so an integer-second
+        # threshold cannot express anything useful.
+        if [[ "${SLOWEST_MS}" -le "${MAX_QUERY_MS}" ]]; then
+            ok "slowest term '${SLOWEST_TERM}' within ${MAX_QUERY_MS} ms (${SLOWEST_MS} ms)"
+        else
+            bad "term '${SLOWEST_TERM}' took ${SLOWEST_MS} ms, over the ${MAX_QUERY_MS} ms threshold"
+        fi
+    else
+        info "slowest: ${SLOWEST_MS} ms (term '${SLOWEST_TERM}'); set MAX_QUERY_MS to assert"
+    fi
+fi
+
+echo
+echo "=============================================================="
 echo " Server configuration"
 echo "=============================================================="
 
