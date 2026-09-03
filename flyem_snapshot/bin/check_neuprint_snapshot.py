@@ -24,6 +24,9 @@ What it checks:
     - every index refers to a property that actually exists
     - every ROI in Meta.roiInfo has both a matching property and an index
     - every ROI index is usable when forced via an index hint
+    - node and relationship totals match what the importer reported, and
+      the import skipped no bad entries
+    - Segment/Synapse/SynapseSet counts match the exported CSV row counts
     - the database name and pinned Cypher language version
 
 Environment overrides, all optional:
@@ -31,6 +34,11 @@ Environment overrides, all optional:
     NEO4J_DB     Database to check (default 'data').  Use 'neo4j' for a
                  pre-upgrade 4.4-era database.
     NEO4J_IMAGE  Container image (default docker://neo4j:2026.07.1).
+    CHECK_CSV_COUNTS
+                 Set to 0 to skip reconciling label counts against the
+                 exported CSV row counts.  On by default; it is the
+                 strongest check here, but reads every CSV, which is slow
+                 on a large dataset over network storage.
     HEAP_SIZE    Override the database's own neo4j.conf memory sizing, which
     MAX_MEMORY   is otherwise respected as-is.  Needed only when checking a
                  cluster-sized snapshot on a smaller machine.

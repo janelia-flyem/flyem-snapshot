@@ -28,6 +28,12 @@
 ##                no downgrade path, so an older image cannot read a newer
 ##                store.
 ##
+##   CHECK_CSV_COUNTS
+##                Set to 0 to skip reconciling label counts against the
+##                exported CSV row counts. On by default; it is the strongest
+##                check here, but reads every CSV, which is slow on a large
+##                dataset over network storage.
+##
 ##   HEAP_SIZE    Override the database's own neo4j.conf memory sizing, which
 ##   MAX_MEMORY   is otherwise respected as-is. Needed only when checking a
 ##                cluster-sized snapshot on a smaller machine:
@@ -209,6 +215,61 @@ expect_gt "Contains relationships"   "$(q "MATCH ()-[r:Contains]->()   RETURN co
 
 expect_eq "every :Neuron is also a :Segment" \
     "$(q "MATCH (n:\`${DS}_Neuron\`) WHERE NOT n:\`${DS}_Segment\` RETURN count(n);")" "0"
+
+echo
+echo "=============================================================="
+echo " Reconciliation against the import"
+echo "=============================================================="
+
+# The count checks above only assert "> 0", which would pass a truncated
+# import as long as it was internally consistent. Reconcile against what the
+# importer itself reported instead. import.out.log is persisted next to the
+# database, so this costs nothing.
+#
+#   Imported:
+#     5278783 nodes
+#     10702773 relationships
+#     26561538 properties
+IMPORT_LOG=/logs/import.out.log
+if [[ ! -r "${IMPORT_LOG}" ]]; then
+    skip "no import.out.log next to the database -- cannot reconcile against the import"
+else
+    IMP_NODES=$(grep -A3 '^Imported:' "${IMPORT_LOG}" | grep -oE '[0-9]+ nodes'         | tail -1 | grep -oE '[0-9]+')
+    IMP_RELS=$( grep -A3 '^Imported:' "${IMPORT_LOG}" | grep -oE '[0-9]+ relationships' | tail -1 | grep -oE '[0-9]+')
+
+    if [[ -z "${IMP_NODES}" || -z "${IMP_RELS}" ]]; then
+        skip "could not parse counts out of ${IMPORT_LOG}"
+    else
+        expect_eq "node count matches the import report" "${TOTAL_NODES}" "${IMP_NODES}"
+        TOTAL_RELS=$(q "MATCH ()-[r]->() RETURN count(r);")
+        info "total relationships: ${TOTAL_RELS}"
+        expect_eq "relationship count matches the import report" "${TOTAL_RELS}" "${IMP_RELS}"
+    fi
+
+    # A tolerated bad record is silent data loss: --bad-tolerance permits some
+    # number of malformed rows to be skipped and merely logged. Match on the
+    # phrase rather than trying to parse a count out of it -- neo4j writes
+    # "There were bad entries which were skipped and logged into <file>",
+    # so a pattern expecting a leading number silently reports success.
+    if grep -qi 'bad entries' "${IMPORT_LOG}"; then
+        bad "the import skipped bad entries -- rows were silently dropped"
+        grep -i 'bad entries' "${IMPORT_LOG}" | head -3 | sed 's/^/          /'
+    else
+        ok "the import reported no bad entries"
+    fi
+fi
+
+# Opt-in: compare label counts against the exported CSV row counts, forwarded
+# in by the host when CHECK_CSV_COUNTS is set. Stronger than the import log,
+# because it notices rows the importer dropped as bad entries.
+if [[ -n "${CSV_SEGMENTS:-}" ]]; then
+    expect_eq "Segment count matches Neuprint_Neurons CSV rows" \
+        "${SEG_COUNT}" "${CSV_SEGMENTS}"
+    expect_eq "Synapse count matches Neuprint_Synapses CSV rows" \
+        "$(q "MATCH (n:\`${DS}_Synapse\`) RETURN count(n);")" "${CSV_SYNAPSES}"
+    expect_eq "SynapseSet count matches Neuprint_SynapseSet.csv rows" \
+        "$(q "MATCH (n:\`${DS}_SynapseSet\`) RETURN count(n);")" "${CSV_SYNAPSESETS}"
+fi
 
 echo
 echo "=============================================================="
@@ -455,6 +516,43 @@ done
 # Always forwarded -- the in-container half needs to know which database to
 # open, and it has its own matching default if this were ever missing.
 export APPTAINERENV_NEO4J_DB="${NEO4J_DB}"
+
+# Derive expected counts from the exported CSVs. This is the strongest check
+# in the suite: it catches rows the importer skipped as bad entries, which the
+# import-log reconciliation cannot see. neo4j-admin creates exactly one node
+# per row of a --nodes file, so a node file's row count is the expected label
+# count (verified exactly against both wasp and yakuba).
+#
+# On by default. It reads every exported CSV, which is tens of millions of
+# lines on a large dataset, so opt out when you want a quick check:
+#
+#   CHECK_CSV_COUNTS=0 check-neuprint-snapshot <dir>
+#
+# Skipped automatically, with a notice, if the snapshot's neuprint/ directory
+# is not alongside the neo4j/ directory -- e.g. a database deployed on its own.
+CHECK_CSV_COUNTS=${CHECK_CSV_COUNTS:-1}
+if [[ "${CHECK_CSV_COUNTS}" != "0" ]]; then
+    CSV_DIR="$(dirname "${NEO4J_DIR}")/neuprint"
+    if [[ ! -d "${CSV_DIR}" ]]; then
+        echo "No CSVs at ${CSV_DIR} -- skipping CSV reconciliation" 1>&2
+    else
+        # Sum (lines - 1) per file to discount each file's header row.
+        csv_rows() {
+            local total=0 f l
+            for f in "$@"; do
+                [[ -f "${f}" ]] || continue
+                l=$(wc -l < "${f}")
+                total=$(( total + l - 1 ))
+            done
+            echo "${total}"
+        }
+        echo "Counting CSV rows (reads every exported CSV; CHECK_CSV_COUNTS=0 to skip)..."
+        export APPTAINERENV_CSV_SEGMENTS=$(csv_rows "${CSV_DIR}"/Neuprint_Neurons/*.csv)
+        export APPTAINERENV_CSV_SYNAPSES=$(csv_rows "${CSV_DIR}"/Neuprint_Synapses/*.csv)
+        export APPTAINERENV_CSV_SYNAPSESETS=$(csv_rows "${CSV_DIR}"/Neuprint_SynapseSet.csv)
+        echo "  segments=${APPTAINERENV_CSV_SEGMENTS} synapses=${APPTAINERENV_CSV_SYNAPSES} synapsesets=${APPTAINERENV_CSV_SYNAPSESETS}"
+    fi
+fi
 
 echo "Checking database in: ${NEO4J_DIR}"
 echo "Database:             ${NEO4J_DB}"
