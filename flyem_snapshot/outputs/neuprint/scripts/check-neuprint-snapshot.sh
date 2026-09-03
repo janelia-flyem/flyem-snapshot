@@ -734,10 +734,17 @@ echo "  passed: ${PASSES}"
 echo "  failed: ${FAILURES}"
 echo
 
+# The verdict is written to the bind-mounted work dir as well as returned as
+# an exit status. apptainer's own exit code can be perturbed by teardown
+# problems that have nothing to do with the checks (fuse-overlayfs cleanup
+# failures are common on cluster nodes), and this is used as a pipeline gate,
+# so the host reads the verdict from here rather than trusting that code.
 if [[ "${FAILURES}" -gt 0 ]]; then
+    echo 1 > /checks/verdict
     echo "RESULT: FAILED"
     exit 1
 fi
+echo 0 > /checks/verdict
 echo "RESULT: OK"
 exit 0
 CHECKS
@@ -799,3 +806,19 @@ echo "Database:             ${NEO4J_DB}"
 echo "Using image:          ${NEO4J_IMAGE}"
 
 apptainer exec --writable-tmpfs "${NEO4J_IMAGE}" /checks/checks.sh
+APPTAINER_RC=$?
+
+# Prefer the verdict the checks themselves recorded. A missing file means the
+# container never got as far as the summary (image pull failed, neo4j never
+# started, OOM kill), which is a failure regardless of what apptainer returned.
+if [[ -f "${WORK}/verdict" ]]; then
+    VERDICT=$(tr -cd '0-9' < "${WORK}/verdict")
+    if [[ "${VERDICT}" != "${APPTAINER_RC}" ]]; then
+        echo "NOTE: checks reported ${VERDICT}, apptainer exited ${APPTAINER_RC}" \
+             "(container teardown noise); using the checks' own verdict."
+    fi
+    exit "${VERDICT:-1}"
+fi
+
+echo "ERROR: the checks did not run to completion (no verdict recorded)."
+exit 1
