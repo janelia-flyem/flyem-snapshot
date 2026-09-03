@@ -1,6 +1,6 @@
 #!/bin/bash
 ##
-## check-neuprint-db.sh <neo4j-export-dir>
+## check-neuprint-snapshot.sh <neo4j-export-dir>
 ##
 ## Launches a neuprint snapshot's neo4j database in a container and runs a
 ## series of validation checks against it, then shuts it down.
@@ -9,7 +9,7 @@
 ## post-ingestion hook.
 ##
 ## Usage:
-##   pixi run bash check-neuprint-db.sh 2026-05-12-32c9ac/neo4j
+##   pixi run bash check-neuprint-snapshot.sh 2026-05-12-32c9ac/neo4j
 ##
 ## The dataset name is read from the :Meta node, so this works on any dataset
 ## (wasp, hemibrain, fish2, ...) without configuration.
@@ -21,7 +21,7 @@
 ##                check a pre-upgrade 4.4-era database, e.g. to capture a
 ##                baseline before swapping in a new one:
 ##                  NEO4J_DB=neo4j NEO4J_IMAGE=docker://neo4j:4.4.16 \
-##                      check-neuprint-db.sh <dir>
+##                      check-neuprint-snapshot.sh <dir>
 ##
 ##   NEO4J_IMAGE  Container image. Default docker://neo4j:2026.07.1. Must be
 ##                able to open the store you are pointing it at -- neo4j has
@@ -34,10 +34,34 @@
 ##                check here, but reads every CSV, which is slow on a large
 ##                dataset over network storage.
 ##
+##   MAX_QUERY_MS Turn the complex-query timing into an assertion instead of
+##                an informational line. Milliseconds, because the whole
+##                plausible range at snapshot scale sits under one second.
+##                Unset by default: a threshold picked without baselines
+##                fails for environmental reasons more often than for real
+##                regressions.
+##
+##   QUERY_SEARCH_TERM
+##                Search term for the complex query. This, not the bodyId,
+##                determines how long that query takes. Defaults to the
+##                commonest letter in the dataset's type names.
+##
+##   QUERY_SEARCH_TERMS
+##                Comma-separated terms to time in one run ('a,in,LC'), for
+##                finding a term heavy enough to assert on. neo4j is booted
+##                once and each term timed in turn.
+##
+##   QUERY_BODY_ID
+##                bodyId for the complex query. Defaults to the lowest one
+##                carrying a type; has almost no effect on the timing.
+##
+##   SHOW_QUERY   Set to 1 to print the generated Cypher. Printed anyway
+##                when the query errors or exceeds MAX_QUERY_MS.
+##
 ##   HEAP_SIZE    Override the database's own neo4j.conf memory sizing, which
 ##   MAX_MEMORY   is otherwise respected as-is. Needed only when checking a
 ##                cluster-sized snapshot on a smaller machine:
-##                  HEAP_SIZE=4G MAX_MEMORY=8G check-neuprint-db.sh <dir>
+##                  HEAP_SIZE=4G MAX_MEMORY=8G check-neuprint-snapshot.sh <dir>
 ##
 ## Version-dependent checks (Cypher default language, default database name)
 ## downgrade to informational when they do not apply, so the suite stays
@@ -46,8 +70,15 @@
 
 set -euo pipefail
 
+# Print the header block above as help. Keeps one copy of the documentation
+# rather than a second one that drifts from it.
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    awk 'NR==1 {next} /^##/ {sub(/^## ?/, ""); print; next} {exit}' "$0"
+    exit 0
+fi
+
 if [[ $# -lt 1 ]]; then
-    echo "Usage: check-neuprint-db.sh <neo4j-export-dir>" 1>&2
+    echo "Usage: check-neuprint-snapshot.sh <neo4j-export-dir>" 1>&2
     echo "  where <neo4j-export-dir> contains: conf data logs plugins" 1>&2
     exit 2
 fi
