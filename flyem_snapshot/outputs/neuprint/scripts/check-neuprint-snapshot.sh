@@ -186,19 +186,19 @@ fi
 info "dataset: ${DS}"
 expect_eq "exactly one :Meta node" "$(q "MATCH (m:Meta) RETURN count(m);")" "1"
 
-SEG_COUNT=$(q "MATCH (n:${DS}_Segment) RETURN count(n);")
+SEG_COUNT=$(q "MATCH (n:\`${DS}_Segment\`) RETURN count(n);")
 expect_gt ":${DS}_Segment nodes"    "${SEG_COUNT}" 0
-expect_gt ":${DS}_Neuron nodes"     "$(q "MATCH (n:${DS}_Neuron)     RETURN count(n);")" 0
-expect_gt ":${DS}_Synapse nodes"    "$(q "MATCH (n:${DS}_Synapse)    RETURN count(n);")" 0
-expect_gt ":${DS}_SynapseSet nodes" "$(q "MATCH (n:${DS}_SynapseSet) RETURN count(n);")" 0
+expect_gt ":${DS}_Neuron nodes"     "$(q "MATCH (n:\`${DS}_Neuron\`)     RETURN count(n);")" 0
+expect_gt ":${DS}_Synapse nodes"    "$(q "MATCH (n:\`${DS}_Synapse\`)    RETURN count(n);")" 0
+expect_gt ":${DS}_SynapseSet nodes" "$(q "MATCH (n:\`${DS}_SynapseSet\`) RETURN count(n);")" 0
 
 # Every node should carry one of the labels we know about. Nodes with several
 # labels (a :Neuron is also a :Segment) are counted once by the single MATCH,
 # so this catches stray or mislabelled nodes without double-counting.
 TOTAL_NODES=$(q "MATCH (n) RETURN count(n);")
 ACCOUNTED=$(q "MATCH (n)
-               WHERE n:${DS}_Segment OR n:${DS}_Synapse OR n:${DS}_SynapseSet
-                  OR n:Meta OR n:${DS}_Element OR n:${DS}_ElementSet
+               WHERE n:\`${DS}_Segment\` OR n:\`${DS}_Synapse\` OR n:\`${DS}_SynapseSet\`
+                  OR n:Meta OR n:\`${DS}_Element\` OR n:\`${DS}_ElementSet\`
                RETURN count(n);")
 info "total nodes: ${TOTAL_NODES}"
 expect_eq "every node accounted for by a known label" "${ACCOUNTED}" "${TOTAL_NODES}"
@@ -208,7 +208,7 @@ expect_gt "SynapsesTo relationships" "$(q "MATCH ()-[r:SynapsesTo]->() RETURN co
 expect_gt "Contains relationships"   "$(q "MATCH ()-[r:Contains]->()   RETURN count(r);")" 0
 
 expect_eq "every :Neuron is also a :Segment" \
-    "$(q "MATCH (n:${DS}_Neuron) WHERE NOT n:${DS}_Segment RETURN count(n);")" "0"
+    "$(q "MATCH (n:\`${DS}_Neuron\`) WHERE NOT n:\`${DS}_Segment\` RETURN count(n);")" "0"
 
 echo
 echo "=============================================================="
@@ -216,10 +216,10 @@ echo " Integrity"
 echo "=============================================================="
 
 expect_eq "no duplicate Segment bodyIds" \
-    "$(q "MATCH (n:${DS}_Segment) WITH n.bodyId AS b, count(*) AS c WHERE c > 1 RETURN count(b);")" "0"
+    "$(q "MATCH (n:\`${DS}_Segment\`) WITH n.bodyId AS b, count(*) AS c WHERE c > 1 RETURN count(b);")" "0"
 
 expect_eq "no Segment with a null bodyId" \
-    "$(q "MATCH (n:${DS}_Segment) WHERE n.bodyId IS NULL RETURN count(n);")" "0"
+    "$(q "MATCH (n:\`${DS}_Segment\`) WHERE n.bodyId IS NULL RETURN count(n);")" "0"
 
 expect_gt "uniqueness constraints present" \
     "$(q "SHOW CONSTRAINTS YIELD name RETURN count(name);")" 1
@@ -241,7 +241,7 @@ info "total indexes: $(q "SHOW INDEXES YIELD name RETURN count(name);")"
 # (ROI booleans are sparse, so this must span all Segments, not a sample.
 # That means a full scan -- slow on a large dataset, hence the notice.)
 printf '  ....  scanning property keys across all %s Segments...\n' "${SEG_COUNT}"
-SEG_PROPS=$(q "MATCH (n:${DS}_Segment) UNWIND keys(n) AS k RETURN DISTINCT k;" | sort -u)
+SEG_PROPS=$(q "MATCH (n:\`${DS}_Segment\`) UNWIND keys(n) AS k RETURN DISTINCT k;" | sort -u)
 
 # Which property names do the Segment RANGE indexes claim to index?
 IDX_PROPS=$(q "SHOW INDEXES YIELD labelsOrTypes, properties, entityType, type
@@ -264,7 +264,7 @@ echo "=============================================================="
 # The Meta node's roiInfo is the contract clients rely on. Every ROI it
 # advertises should exist as a property on at least one Segment. This is the
 # regression test for the sanitize_roi_name mismatch.
-META_ROIS=$(q "MATCH (m:${DS}_Meta)
+META_ROIS=$(q "MATCH (m:\`${DS}_Meta\`)
                UNWIND keys(apoc.convert.fromJsonMap(m.roiInfo)) AS r
                RETURN DISTINCT r;" | sort -u | sed '/^$/d')
 
@@ -298,8 +298,8 @@ else
     # A scan here is not a failure -- see above.
     TRICKY=$(echo "${META_ROIS}" | grep -F '(' | head -1 || true)
     if [[ -n "${TRICKY}" ]]; then
-        TRICKY_N=$(q "MATCH (n:${DS}_Segment) WHERE n.\`${TRICKY}\` = true RETURN count(n);")
-        PLAN=$(${CS} -d "${NEO4J_DB}" "EXPLAIN MATCH (n:${DS}_Segment) WHERE n.\`${TRICKY}\` = true RETURN count(n);" 2>&1)
+        TRICKY_N=$(q "MATCH (n:\`${DS}_Segment\`) WHERE n.\`${TRICKY}\` = true RETURN count(n);")
+        PLAN=$(${CS} -d "${NEO4J_DB}" "EXPLAIN MATCH (n:\`${DS}_Segment\`) WHERE n.\`${TRICKY}\` = true RETURN count(n);" 2>&1)
         if grep -q 'NodeIndexSeek' <<<"${PLAN}"; then
             info "planner uses NodeIndexSeek for ROI '${TRICKY}' (${TRICKY_N} segments)"
         else
@@ -332,7 +332,7 @@ if [[ -n "${META_ROIS}" ]]; then
     HINT_FILE=$(mktemp)
     while IFS= read -r roi; do
         [[ -z "${roi}" ]] && continue
-        printf 'MATCH (n:%s_Segment) USING INDEX n:%s_Segment(`%s`) WHERE n.`%s` = true RETURN count(n);\n' \
+        printf 'MATCH (n:`%s_Segment`) USING INDEX n:`%s_Segment`(`%s`) WHERE n.`%s` = true RETURN count(n);\n' \
             "${DS}" "${DS}" "${roi}" "${roi}" >> "${HINT_FILE}"
         HINT_TESTED=$((HINT_TESTED+1))
     done <<< "${META_ROIS}"
@@ -355,8 +355,8 @@ if [[ -n "${META_ROIS}" ]]; then
             n=$((n+1))
             printf '\r  ....  probing %s/%s' "${n}" "${HINT_TESTED}"
             if ! ${CS} -d "${NEO4J_DB}" \
-                    "MATCH (n:${DS}_Segment)
-                     USING INDEX n:${DS}_Segment(\`${roi}\`)
+                    "MATCH (n:\`${DS}_Segment\`)
+                     USING INDEX n:\`${DS}_Segment\`(\`${roi}\`)
                      WHERE n.\`${roi}\` = true
                      RETURN count(n);" > /dev/null 2>&1; then
                 HINT_FAILED=$((HINT_FAILED+1))
