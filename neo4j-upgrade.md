@@ -502,11 +502,8 @@ entry points require `pixi run pip install -e . --no-deps` afterwards.
 
 ### Verified results
 
-> **Validated against `2026.06.0`, not yet re-run on `2026.07.1`.** The results
-> below were produced before the bump. Since Phase 1 output is independent of the
-> Neo4j version, re-validating is just Phase 2 plus `check-neuprint-snapshot` —
-> roughly six minutes — and no behavioural change is expected, since there are no
-> breaking changes between the two releases.
+The wasp figures below were produced against `2026.06.0`, before the version
+bump; yakuba and fish2 were validated against `2026.07.1` directly.
 
 Full pipeline, wasp v0.8, against `neo4j:2026.06.0`:
 
@@ -522,6 +519,61 @@ producing **identical counts in every measured dimension** — 640,170 Segment /
 50,564 Neuron / 2,336,820 Synapse / 2,301,792 SynapseSet nodes, 2,301,792
 ConnectsTo / 2,103,064 SynapsesTo / 6,297,917 Contains relationships, 232
 indexes, 97 ROIs. The pipeline is reproducible across machines.
+
+Since then the pipeline has been validated end-to-end on two further datasets
+against `neo4j:2026.07.1`, each passing with zero failures:
+
+| dataset | nodes | relationships | Neuron | indexes | ROIs | checks |
+|---|---|---|---|---|---|---|
+| wasp v0.8 | 5,278,783 | 10,702,773 | 50,564 | 232 | 97 | 28 |
+| yakuba-vnc | 137,632,747 | 261,841,354 | 87,627 | 132 | 25 | 31 |
+| fish2 | 77,830,526 | 128,491,329 | 224,391 | 697 | 210 | 32 |
+
+Every reconciliation was exact on all three: node and relationship totals match
+the importer's own report, no bad entries were skipped, and the `Segment` /
+`Synapse` / `SynapseSet` counts match the exported CSV row counts.
+
+#### Element labels are nested inside Synapse labels
+
+fish2 is the first dataset here with element tables, and it corrected an
+assumption. **`:Synapse` is a specialization of `:Element`, and `:SynapseSet` of
+`:ElementSet`** — the same nesting as `:Neuron` within `:Segment`. The labels are
+not disjoint, so the element counts are dominated by synapses:
+
+```
+Element    41,916,590  -  Synapse     41,725,816  =  190,774 non-synaptic
+ElementSet 32,382,125  -  SynapseSet  32,192,910  =  189,215 non-synaptic
+                                            total =  379,989
+```
+
+Only that 379,989 remainder is unaccounted for by `Segment + Synapse +
+SynapseSet + Meta`, and `Segment + Element + ElementSet + Meta` sums to
+77,830,526 exactly — the reported total.
+
+The non-synaptic remainder is the population that `non-synaptic-bodies:
+element-presence` selects on in a report config, which fish2 uses. If it
+silently went to zero, `element-presence` would degrade to `none` and every
+report's body ranking would change, with nothing failing. The checker therefore
+reports it explicitly rather than leaving it to be inferred by subtraction.
+
+> The commit message on `8e573c9` describes fish2 as having "379,989 Element and
+> ElementSet nodes". That is wrong — it has 74.3M, of which 379,989 are
+> non-synaptic. The check itself is correct; only the message is misleading.
+
+#### Complex-query timing is noisier than it looks
+
+Warm timings for the neuPrintExplorer search query, and the run-to-run spread:
+
+| dataset | neurons | warm | vs `MAX_QUERY_MS=1500` |
+|---|---|---|---|
+| wasp | 50,564 | 502-611 ms | ~146% headroom |
+| yakuba | 87,627 | 766-808 ms | ~86% headroom |
+| fish2 | 224,391 | 1079-1347 ms | **~11% headroom** |
+
+Two consecutive fish2 runs on an idle node differed by 25%. A single global
+threshold of 1500 ms would therefore be genuinely flaky on fish2 while being
+too loose to catch a 2x regression on wasp. **Set `MAX_QUERY_MS` per dataset**
+in the wrapper scripts — roughly 1500 for wasp and yakuba, 2500 for fish2.
 
 ### Running on the cluster (LSF)
 

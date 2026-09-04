@@ -245,6 +245,22 @@ else
     # One present without the other means a half-exported element table.
     expect_gt ":${DS}_Element nodes"    "${ELM_COUNT}" 0
     expect_gt ":${DS}_ElementSet nodes" "${ELMSET_COUNT}" 0
+
+    # :Synapse is a specialization of :Element, and :SynapseSet of
+    # :ElementSet -- the same nesting as :Neuron within :Segment -- so the
+    # counts above are dominated by synapses. The interesting population is
+    # what is left: somas and the like.
+    #
+    # That population is what 'non-synaptic-bodies: element-presence' selects
+    # on in a report config (fish2 uses it). If it silently went to zero,
+    # element-presence would degrade to 'none' and every report's body
+    # ranking would change with nothing here failing.
+    #
+    # Reported rather than asserted: a dataset whose elements are all
+    # synaptic is legitimate. Note these two are label scans, not count-store
+    # lookups, so they cost more than the counts above.
+    info "non-synaptic Element nodes: $(q "MATCH (n:\`${DS}_Element\`) WHERE NOT n:\`${DS}_Synapse\` RETURN count(n);")"
+    info "non-synaptic ElementSet nodes: $(q "MATCH (n:\`${DS}_ElementSet\`) WHERE NOT n:\`${DS}_SynapseSet\` RETURN count(n);")"
 fi
 
 # Every node should carry one of the labels we know about. Nodes with several
