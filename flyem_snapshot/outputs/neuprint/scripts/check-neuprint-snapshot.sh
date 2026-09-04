@@ -359,6 +359,55 @@ if [[ -n "${CSV_SEGMENTS:-}" ]]; then
     expect_eq "CloseTo count matches CSV rows"    "${REL_CLOSETO}"    "${CSV_CLOSETO}"
 fi
 
+# Meta.totalPreCount / totalPostCount are what neuPrintExplorer displays as the
+# dataset's synapse totals. Nothing else here looks at them, so a snapshot can
+# advertise wrong numbers in the UI and still pass every other check.
+#
+# They are NOT simply the synapse counts. meta.py sets them from
+# dataset_totals, which segment.py restricts to in-bounds ROIs when the config
+# declares any -- so they may legitimately be smaller than the number of
+# :Synapse nodes. Asserting equality would fail such a dataset for being
+# configured normally. What must always hold is that Meta cannot advertise more
+# synapses than exist; the shortfall is reported so an unexpected one is
+# visible.
+#
+# One scan of the :Synapse label with property access, so this is among the
+# more expensive checks here. Both totals come from a single pass.
+printf '  ....  scanning %s Synapses for pre/post totals...\n' "${SYN_COUNT}"
+SYN_TYPES=$(q "MATCH (n:\`${DS}_Synapse\`)
+               RETURN sum(CASE WHEN n.type = 'pre'  THEN 1 ELSE 0 END) AS pre,
+                      sum(CASE WHEN n.type = 'post' THEN 1 ELSE 0 END) AS post;")
+ACTUAL_PRE=$( awk -F, 'NR==1{gsub(/[^0-9]/,"",$1); print $1}' <<<"${SYN_TYPES}")
+ACTUAL_POST=$(awk -F, 'NR==1{gsub(/[^0-9]/,"",$2); print $2}' <<<"${SYN_TYPES}")
+META_PRE=$( q "MATCH (m:\`${DS}_Meta\`) RETURN m.totalPreCount;"  | head -1 | tr -cd '0-9')
+META_POST=$(q "MATCH (m:\`${DS}_Meta\`) RETURN m.totalPostCount;" | head -1 | tr -cd '0-9')
+
+info "synapses by type: ${ACTUAL_PRE:-?} pre, ${ACTUAL_POST:-?} post"
+info "Meta advertises: ${META_PRE:-unset} pre, ${META_POST:-unset} post"
+
+# The property name is carried explicitly rather than built with ${var^},
+# which needs bash 4 and is absent on macOS's bash 3.2.
+for _kind in pre post; do
+    if [[ "${_kind}" == "pre" ]]; then
+        _meta="${META_PRE}";  _actual="${ACTUAL_PRE}";  _prop="totalPreCount"
+    else
+        _meta="${META_POST}"; _actual="${ACTUAL_POST}"; _prop="totalPostCount"
+    fi
+
+    if [[ -z "${_meta}" ]]; then
+        bad "Meta.${_prop} is missing -- the dataset page will show no total"
+    elif [[ -z "${_actual}" ]]; then
+        bad "could not count ${_kind} synapses"
+    elif [[ "${_meta}" -gt "${_actual}" ]]; then
+        bad "Meta.${_prop} (${_meta}) exceeds the ${_kind} synapses that exist (${_actual})"
+    elif [[ "${_meta}" -eq "${_actual}" ]]; then
+        ok "Meta.${_prop} matches the ${_kind} synapse count (= ${_meta})"
+    else
+        ok "Meta.${_prop} within the ${_kind} synapse count (${_meta} of ${_actual})"
+        info "  shortfall of $(( _actual - _meta )) -- expected when the config restricts to in-bounds ROIs"
+    fi
+done
+
 echo
 echo "=============================================================="
 echo " Integrity"
@@ -850,6 +899,13 @@ fi
 
 # dbms.components() can return more than one row; take only the first.
 info "neo4j server version: $(q "CALL dbms.components() YIELD name, versions WHERE name = 'Neo4j Kernel' RETURN versions[0];" | head -1)"
+
+# The store format is what makes this upgrade one-way: neo4j has no downgrade
+# path, so a store written by a newer server cannot be read by an older one.
+# Informational, and tolerant of the column being absent on older servers --
+# there is nothing to assert it against.
+STORE_FMT=$(q "SHOW DATABASES YIELD name, store WHERE name = '${NEO4J_DB}' RETURN store;" | head -1)
+info "store format: ${STORE_FMT:-unknown (server does not report it)}"
 
 echo
 echo "=============================================================="

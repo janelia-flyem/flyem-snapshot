@@ -29,6 +29,10 @@ What it checks:
     - Segment/Synapse/SynapseSet counts match the exported CSV row counts,
       as do the ConnectsTo/SynapsesTo/Contains/CloseTo relationship counts
     - every relationship carries one of the known types
+    - Meta.totalPreCount/totalPostCount do not exceed the synapses that
+      exist (they may legitimately be smaller, when the config restricts
+      the dataset totals to in-bounds ROIs)
+    - the store format is reported, since neo4j has no downgrade path
     - neuPrintExplorer's search query executes, with its timing reported
       (inputs derived deterministically, so runs are comparable)
     - the database name and pinned Cypher language version
