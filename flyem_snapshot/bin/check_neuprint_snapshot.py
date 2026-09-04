@@ -26,7 +26,9 @@ What it checks:
     - every ROI index is usable when forced via an index hint
     - node and relationship totals match what the importer reported, and
       the import skipped no bad entries
-    - Segment/Synapse/SynapseSet counts match the exported CSV row counts
+    - Segment/Synapse/SynapseSet counts match the exported CSV row counts,
+      as do the ConnectsTo/SynapsesTo/Contains/CloseTo relationship counts
+    - every relationship carries one of the known types
     - neuPrintExplorer's search query executes, with its timing reported
       (inputs derived deterministically, so runs are comparable)
     - the database name and pinned Cypher language version

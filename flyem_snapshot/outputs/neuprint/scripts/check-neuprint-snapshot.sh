@@ -275,9 +275,16 @@ ACCOUNTED=$(q "MATCH (n)
 info "total nodes: ${TOTAL_NODES}"
 expect_eq "every node accounted for by a known label" "${ACCOUNTED}" "${TOTAL_NODES}"
 
-expect_gt "ConnectsTo relationships" "$(q "MATCH ()-[r:ConnectsTo]->() RETURN count(r);")" 0
-expect_gt "SynapsesTo relationships" "$(q "MATCH ()-[r:SynapsesTo]->() RETURN count(r);")" 0
-expect_gt "Contains relationships"   "$(q "MATCH ()-[r:Contains]->()   RETURN count(r);")" 0
+REL_CONNECTSTO=$(q "MATCH ()-[r:ConnectsTo]->() RETURN count(r);")
+REL_SYNAPSESTO=$(q "MATCH ()-[r:SynapsesTo]->() RETURN count(r);")
+REL_CONTAINS=$(  q "MATCH ()-[r:Contains]->()   RETURN count(r);")
+# CloseTo is produced from Neuprint_Elements_CloseTo_*.csv. No dataset measured
+# so far has any, so this is reported rather than asserted to be non-zero.
+REL_CLOSETO=$(   q "MATCH ()-[r:CloseTo]->()    RETURN count(r);")
+expect_gt "ConnectsTo relationships" "${REL_CONNECTSTO}" 0
+expect_gt "SynapsesTo relationships" "${REL_SYNAPSESTO}" 0
+expect_gt "Contains relationships"   "${REL_CONTAINS}" 0
+info "CloseTo relationships: ${REL_CLOSETO}"
 
 expect_eq "every :Neuron is also a :Segment" \
     "$(q "MATCH (n:\`${DS}_Neuron\`) WHERE NOT n:\`${DS}_Segment\` RETURN count(n);")" "0"
@@ -310,6 +317,13 @@ else
         TOTAL_RELS=$(q "MATCH ()-[r]->() RETURN count(r);")
         info "total relationships: ${TOTAL_RELS}"
         expect_eq "relationship count matches the import report" "${TOTAL_RELS}" "${IMP_RELS}"
+
+        # Mirror of the node-label accounting above. Without this a
+        # relationship type nobody thought to count would inflate the total
+        # silently -- which is the position CloseTo was in until now.
+        expect_eq "every relationship accounted for by a known type" \
+            "$(( REL_CONNECTSTO + REL_SYNAPSESTO + REL_CONTAINS + REL_CLOSETO ))" \
+            "${TOTAL_RELS}"
     fi
 
     # A tolerated bad record is silent data loss: --bad-tolerance permits some
@@ -335,6 +349,14 @@ if [[ -n "${CSV_SEGMENTS:-}" ]]; then
         "${SYN_COUNT}" "${CSV_SYNAPSES}"
     expect_eq "SynapseSet count matches Neuprint_SynapseSet.csv rows" \
         "${SS_COUNT}" "${CSV_SYNAPSESETS}"
+
+    # Relationships, which until now were only ever checked against the import
+    # log -- the importer's own account of its own work. These come from the
+    # exported CSVs instead, which is an independent source.
+    expect_eq "ConnectsTo count matches CSV rows" "${REL_CONNECTSTO}" "${CSV_CONNECTSTO}"
+    expect_eq "SynapsesTo count matches CSV rows" "${REL_SYNAPSESTO}" "${CSV_SYNAPSESTO}"
+    expect_eq "Contains count matches CSV rows"   "${REL_CONTAINS}"   "${CSV_CONTAINS}"
+    expect_eq "CloseTo count matches CSV rows"    "${REL_CLOSETO}"    "${CSV_CLOSETO}"
 fi
 
 echo
@@ -900,7 +922,27 @@ if [[ "${CHECK_CSV_COUNTS}" != "0" ]]; then
         export APPTAINERENV_CSV_SEGMENTS=$(csv_rows "${CSV_DIR}"/Neuprint_Neurons/*.csv)
         export APPTAINERENV_CSV_SYNAPSES=$(csv_rows "${CSV_DIR}"/Neuprint_Synapses/*.csv)
         export APPTAINERENV_CSV_SYNAPSESETS=$(csv_rows "${CSV_DIR}"/Neuprint_SynapseSet.csv)
+
+        # Relationship totals, grouped exactly as the ingest script feeds them
+        # to neo4j-admin: several CSVs can share one relationship type, so the
+        # grouping below must track --relationships=<TYPE>=<file> there.
+        # ConnectsTo comes from two files, Contains from four. csv_rows skips
+        # paths that do not exist, so a glob matching nothing contributes 0.
+        export APPTAINERENV_CSV_CONNECTSTO=$(csv_rows \
+            "${CSV_DIR}"/Neuprint_Neuron_Connections.csv \
+            "${CSV_DIR}"/Neuprint_SynapseSet_to_SynapseSet.csv)
+        export APPTAINERENV_CSV_SYNAPSESTO=$(csv_rows \
+            "${CSV_DIR}"/Neuprint_Synapse_Connections.csv)
+        export APPTAINERENV_CSV_CONTAINS=$(csv_rows \
+            "${CSV_DIR}"/Neuprint_Neuron_to_SynapseSet.csv \
+            "${CSV_DIR}"/Neuprint_SynapseSet_to_Synapses.csv \
+            "${CSV_DIR}"/Neuprint_Neuron_to_ElementSet_*.csv \
+            "${CSV_DIR}"/Neuprint_ElementSet_to_Element_*.csv)
+        export APPTAINERENV_CSV_CLOSETO=$(csv_rows \
+            "${CSV_DIR}"/Neuprint_Elements_CloseTo_*.csv)
+
         echo "  segments=${APPTAINERENV_CSV_SEGMENTS} synapses=${APPTAINERENV_CSV_SYNAPSES} synapsesets=${APPTAINERENV_CSV_SYNAPSESETS}"
+        echo "  connectsto=${APPTAINERENV_CSV_CONNECTSTO} synapsesto=${APPTAINERENV_CSV_SYNAPSESTO} contains=${APPTAINERENV_CSV_CONTAINS} closeto=${APPTAINERENV_CSV_CLOSETO}"
     fi
 fi
 
