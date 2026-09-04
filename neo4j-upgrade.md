@@ -428,7 +428,7 @@ pixi run flyem-snapshot --config /groups/flyem/data/snapshots/snapshot-configs/w
 pixi run ingest-neuprint-snapshot-using-apptainer 2026-05-12-32c9ac
 
 # Validate the result
-pixi run bash check-neuprint-db.sh 2026-05-12-32c9ac/neo4j
+pixi run check-neuprint-snapshot 2026-05-12-32c9ac/neo4j
 ```
 
 On a machine smaller than a cluster node, size the ingest explicitly — its
@@ -470,7 +470,7 @@ Check that neuprinthttp can connect to the resulting database and serve queries
 
 ---
 
-## Current Status (as of 2026-08-26)
+## Current Status (as of 2026-09-04)
 
 **The upgrade runs end-to-end and is validated on two machines.** The neuclease
 blocker recorded in earlier revisions of this document is resolved.
@@ -538,8 +538,9 @@ indexes, 97 ROIs. The pipeline is reproducible across machines.
 
 ### Validating a built database
 
-`check-neuprint-db.sh` launches a snapshot's database in a container, runs ~22
-checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It covers
+`check-neuprint-snapshot` launches a snapshot's database in a container, runs
+~30 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
+covers
 node/relationship counts, node-label accounting, `bodyId` integrity, index state
 and population, that every index refers to a property that exists, that every
 ROI in `Meta.roiInfo` has both a matching property and an index, that every ROI
@@ -553,19 +554,84 @@ Force the index with a hint instead: that either resolves or errors. And
 **`readCount` is sampled telemetry**, flushed periodically and cumulative, so it
 is reported rather than asserted on.
 
-> This script is **not yet in the repository.** It should be folded in as a
-> `check-neuprint-snapshot` entry point alongside `inspect-neuprint-snapshot`.
+It also reconciles the node and relationship totals against what the importer
+reported, fails if the import skipped bad entries, and reconciles the
+`Segment` / `Synapse` / `SynapseSet` counts against the exported CSV row counts
+(on by default; `CHECK_CSV_COUNTS=0` skips it). Finally it runs the query
+neuPrintExplorer issues from its search box and reports the timing;
+`MAX_QUERY_MS` turns that into an assertion. Run `check-neuprint-snapshot.sh
+--help` for the full list of environment overrides.
+
+Be clear about what that timing measures. On wasp the spread across search
+terms was 251 ms for a term matching 702 rows to 635 ms for one matching
+44,933 — only 2.5x for 64x the rows. The floor is the label scan, so it tracks
+scan and sort throughput far more than search selectivity, and no search term
+makes it slow at snapshot scale. It is a regression detector, not a model of
+user-visible latency.
 
 ### Remaining work
 
-1. Fold `check-neuprint-db.sh` into the package as a proper entry point.
-2. **Packaging gap:** `pyproject.toml` has no `MANIFEST.in` or `package-data`,
+1. **Packaging gap:** `pyproject.toml` has no `MANIFEST.in` or `package-data`,
    so the `.sh` / `.conf` / `.cypher` files are absent from a built wheel
    (verified — a built wheel contains zero non-`.py` files). This works today
    only because the install is editable, and it blocks deploying this branch as
    a built package.
-3. Consider deriving the ingest memory sizing from the cgroup / LSF limit rather
+2. Consider deriving the ingest memory sizing from the cgroup / LSF limit rather
    than defaulting to 31G/150G, so neither path needs environment variables.
+3. The `.sh` header and the Python wrapper's docstring are two hand-maintained
+   copies of the same documentation, which is how they drifted apart once
+   already. Have the wrapper shell out to `--help` instead.
+
+### Merged `origin/master` mid-course (2026-09-04)
+
+The branch forked from master on 2026-06-09 and had fallen 9 commits behind by
+the time fish2 was attempted. That surfaced as a config-validation failure
+rather than anything Neo4j-related:
+
+```
+jsonschema.exceptions.ValidationError: Additional properties are not allowed
+    ('non-synaptic-bodies' was unexpected)
+```
+
+The snapshot configs under `snapshot-configs/` are maintained against master,
+not against this branch. The fish2 config uses the `non-synaptic-bodies` report
+setting added upstream in `5417ef9`, which this branch did not have. Note that
+config validation stops at the *first* unknown key, so a cherry-pick of that one
+commit would only have revealed the next gap; merging closes them all at once.
+
+**Merged `origin/master` into the branch** (merge commit `7940dcc`). Two
+conflicts, both resolved in favour of this branch:
+
+- **`pixi.toml` — keep ours.** Upstream `7e37c92` ("Update pixi (use arm on mac,
+  not x64)") narrowed `platforms` to `["osx-arm64"]` and dropped the
+  `[target.linux-64.dependencies] apptainer` block with it. Taking that would
+  break every cluster run. Ours is otherwise a superset: every dependency master
+  declares is present, including `ngsidekick`, plus the `pandas <3` pin and the
+  `pip` / webdriver / `google-cloud-storage` additions. **This branch therefore
+  restores `linux-64` to master when it merges** — worth calling out in review,
+  since it reverts part of an upstream commit.
+- **`pixi.lock` — keep ours.** It matches our `pixi.toml`, and a lock file
+  cannot be meaningfully three-way merged. Ours is lock format v7; master's is
+  v6, so merging this branch also moves master to v7 (pixi >= 0.50 required).
+
+`flyem_snapshot/outputs/neuprint/segment.py` auto-merged cleanly: master added
+per-compartment (axon/dendrite) synapse breakdowns, this branch added the
+`check_roi_name` call. Both survive in the result.
+
+`.gitattributes` and `.gitignore` had uncommitted local edits adding the same
+pixi boilerplate master had already committed; master's `.gitattributes` is the
+better version, as it also marks `pixi.lock` as `-diff`.
+
+After pulling this on a machine, re-sync the environment before running:
+
+```bash
+cd /groups/flyem/home/flyem/flyem-snapshot
+git pull && pixi install && pixi run pip install -e . --no-deps
+```
+
+**fish2 has not yet been run to completion** — the merge unblocks config
+validation, but Phase 1 and Phase 2 for fish2 remain unverified. wasp and
+yakuba are both validated end-to-end.
 
 ### Related component findings
 
