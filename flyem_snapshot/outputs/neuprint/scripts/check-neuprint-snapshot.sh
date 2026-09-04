@@ -388,47 +388,35 @@ echo "=============================================================="
 echo " ROI naming consistency"
 echo "=============================================================="
 
-# roiInfo is read with apoc.convert.fromJsonMap, so APOC is load-bearing for
-# this section and for the index-usability section below. The plugin is loaded
-# from the snapshot's own plugins/ dir and its jar is version-coupled to the
-# server, so a snapshot built for one neo4j release can silently fail to load
-# it under another.
-#
-# Check it directly, because the failure was invisible. q() sends stderr to
-# /dev/null, so an APOC error is indistinguishable from an empty result: the
-# roiInfo read below returned nothing, took a skip, and skip does not count as
-# a failure. Both the ROI checks and the whole index-usability section would
-# disappear while the run still reported OK -- and those are the regression
-# test for the ROI naming bug this branch exists to fix.
-#
-# Probe the function this script actually calls rather than only counting
-# what is installed: a partial or mismatched plugin can advertise names it
-# cannot execute.
-APOC_FUNCS=$(q "SHOW FUNCTIONS YIELD name WHERE name STARTS WITH 'apoc.' RETURN count(*);")
-APOC_OK=0
-if [[ "$(q "RETURN apoc.convert.fromJsonMap('{}') IS NOT NULL;")" == "true" ]]; then
-    APOC_OK=1
-    ok "APOC usable (${APOC_FUNCS:-?} apoc functions)"
-else
-    bad "APOC is not usable -- apoc.convert.fromJsonMap did not execute"
-    info "the apoc jar in the snapshot's plugins/ dir must match the server version"
-fi
-
 # The Meta node's roiInfo is the contract clients rely on. Every ROI it
 # advertises should exist as a property on at least one Segment. This is the
 # regression test for the sanitize_roi_name mismatch.
+#
+# Reading it requires apoc.convert.fromJsonMap to execute, which makes this
+# read its own APOC check: a non-empty result is proof the plugin loaded. That
+# matters because the plugin comes from the snapshot's own plugins/ dir and its
+# jar is version-coupled to the server, so a snapshot built for one neo4j
+# release can silently fail to load it under another.
+#
+# The failure used to be invisible. q() sends stderr to /dev/null, so an APOC
+# error looked identical to an empty result, this took a skip, and skip does
+# not count as a failure -- losing every ROI assertion and the whole
+# index-usability section while the run still printed RESULT: OK.
 META_ROIS=$(q "MATCH (m:\`${DS}_Meta\`)
                UNWIND keys(apoc.convert.fromJsonMap(m.roiInfo)) AS r
                RETURN DISTINCT r;" | sort -u | sed '/^$/d')
 
 if [[ -z "${META_ROIS}" ]]; then
-    if [[ "${APOC_OK}" -eq 0 ]]; then
-        # Already reported above; do not fail twice for one cause.
-        skip "Meta.roiInfo unreadable because APOC is unusable -- ROI and index-usability checks cannot run"
+    # Two different faults with two different fixes, so say which. This query
+    # only asks whether the function is installed; it executes nothing.
+    if [[ "$(q "SHOW FUNCTIONS YIELD name WHERE name = 'apoc.convert.fromJsonMap' RETURN count(*);")" == "1" ]]; then
+        bad "Meta.roiInfo is empty or unreadable, though APOC provides fromJsonMap"
     else
-        bad "Meta.roiInfo is empty or unreadable even though APOC is usable"
+        bad "APOC is not loaded -- apoc.convert.fromJsonMap is unavailable"
+        info "the apoc jar in the snapshot's plugins/ dir must match the server version"
     fi
 else
+    ok "APOC loaded (Meta.roiInfo parsed by apoc.convert.fromJsonMap)"
     info "ROIs advertised by Meta.roiInfo: $(echo "${META_ROIS}" | wc -l | tr -d ' ')"
     MISSING=$(comm -23 <(echo "${META_ROIS}") <(echo "${SEG_PROPS}") | sed '/^$/d')
     if [[ -z "${MISSING}" ]]; then
