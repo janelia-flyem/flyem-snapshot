@@ -229,6 +229,24 @@ expect_gt ":${DS}_Neuron nodes"     "$(q "MATCH (n:\`${DS}_Neuron\`)     RETURN 
 expect_gt ":${DS}_Synapse nodes"    "$(q "MATCH (n:\`${DS}_Synapse\`)    RETURN count(n);")" 0
 expect_gt ":${DS}_SynapseSet nodes" "$(q "MATCH (n:\`${DS}_SynapseSet\`) RETURN count(n);")" 0
 
+# Elements are optional: they exist only when the config declares element
+# tables. fish2 does; wasp and yakuba do not. So report the counts either way
+# rather than asserting them unconditionally.
+#
+# When the dataset does have them, assert both are non-empty. The label
+# accounting below would otherwise be the only thing covering these nodes, and
+# it passes whether they are present or absent -- so a silently empty element
+# export would leave no trace in the output at all.
+ELM_COUNT=$(q "MATCH (n:\`${DS}_Element\`)    RETURN count(n);")
+ELMSET_COUNT=$(q "MATCH (n:\`${DS}_ElementSet\`) RETURN count(n);")
+if [[ "${ELM_COUNT}" == "0" && "${ELMSET_COUNT}" == "0" ]]; then
+    info "no :${DS}_Element / :${DS}_ElementSet nodes (dataset declares no element tables)"
+else
+    # One present without the other means a half-exported element table.
+    expect_gt ":${DS}_Element nodes"    "${ELM_COUNT}" 0
+    expect_gt ":${DS}_ElementSet nodes" "${ELMSET_COUNT}" 0
+fi
+
 # Every node should carry one of the labels we know about. Nodes with several
 # labels (a :Neuron is also a :Segment) are counted once by the single MATCH,
 # so this catches stray or mislabelled nodes without double-counting.
