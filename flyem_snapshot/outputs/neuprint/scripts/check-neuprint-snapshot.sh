@@ -388,6 +388,32 @@ echo "=============================================================="
 echo " ROI naming consistency"
 echo "=============================================================="
 
+# roiInfo is read with apoc.convert.fromJsonMap, so APOC is load-bearing for
+# this section and for the index-usability section below. The plugin is loaded
+# from the snapshot's own plugins/ dir and its jar is version-coupled to the
+# server, so a snapshot built for one neo4j release can silently fail to load
+# it under another.
+#
+# Check it directly, because the failure was invisible. q() sends stderr to
+# /dev/null, so an APOC error is indistinguishable from an empty result: the
+# roiInfo read below returned nothing, took a skip, and skip does not count as
+# a failure. Both the ROI checks and the whole index-usability section would
+# disappear while the run still reported OK -- and those are the regression
+# test for the ROI naming bug this branch exists to fix.
+#
+# Probe the function this script actually calls rather than only counting
+# what is installed: a partial or mismatched plugin can advertise names it
+# cannot execute.
+APOC_FUNCS=$(q "SHOW FUNCTIONS YIELD name WHERE name STARTS WITH 'apoc.' RETURN count(*);")
+APOC_OK=0
+if [[ "$(q "RETURN apoc.convert.fromJsonMap('{}') IS NOT NULL;")" == "true" ]]; then
+    APOC_OK=1
+    ok "APOC usable (${APOC_FUNCS:-?} apoc functions)"
+else
+    bad "APOC is not usable -- apoc.convert.fromJsonMap did not execute"
+    info "the apoc jar in the snapshot's plugins/ dir must match the server version"
+fi
+
 # The Meta node's roiInfo is the contract clients rely on. Every ROI it
 # advertises should exist as a property on at least one Segment. This is the
 # regression test for the sanitize_roi_name mismatch.
@@ -396,7 +422,12 @@ META_ROIS=$(q "MATCH (m:\`${DS}_Meta\`)
                RETURN DISTINCT r;" | sort -u | sed '/^$/d')
 
 if [[ -z "${META_ROIS}" ]]; then
-    skip "could not read Meta.roiInfo (is the APOC plugin present?)"
+    if [[ "${APOC_OK}" -eq 0 ]]; then
+        # Already reported above; do not fail twice for one cause.
+        skip "Meta.roiInfo unreadable because APOC is unusable -- ROI and index-usability checks cannot run"
+    else
+        bad "Meta.roiInfo is empty or unreadable even though APOC is usable"
+    fi
 else
     info "ROIs advertised by Meta.roiInfo: $(echo "${META_ROIS}" | wc -l | tr -d ' ')"
     MISSING=$(comm -23 <(echo "${META_ROIS}") <(echo "${SEG_PROPS}") | sed '/^$/d')
