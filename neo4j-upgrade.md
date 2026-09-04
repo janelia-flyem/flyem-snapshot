@@ -529,7 +529,7 @@ against `neo4j:2026.07.1`, each passing with zero failures:
 | yakuba-vnc | 137,632,747 | 261,841,354 | 87,627 | 132 | 25 |
 | fish2 | 77,830,526 | 128,491,329 | 224,391 | 697 | 210 |
 
-All three pass **38 of 38** at default settings. Note that the total depends on
+All three pass **40 of 40** at default settings. Note that the total depends on
 the flags: `CHECK_CSV_COUNTS=0` drops three checks and `MAX_QUERY_MS` adds one,
 so totals are only comparable between runs invoked the same way.
 
@@ -599,6 +599,28 @@ prove nothing, since it merely restates the `Synapse` count.
 > ElementSet nodes". That is wrong — it has 74.3M, of which 379,989 are
 > non-synaptic. The check itself is correct; only the message is misleading.
 
+#### Meta totals, and the store format
+
+`Meta.totalPreCount` / `totalPostCount` are what neuPrintExplorer displays as a
+dataset's synapse totals, so a snapshot can advertise wrong numbers in the UI
+while every count check passes. They are **not** simply the synapse counts:
+`meta.py` sets them from `dataset_totals`, which `segment.py` restricts to
+in-bounds ROIs when the config declares any, so they may legitimately be
+smaller than the number of `:Synapse` nodes. The check therefore asserts only
+that Meta cannot advertise *more* synapses than exist, reports any shortfall,
+and calls out an exact match as such. On wasp they match exactly — 233,766 pre
+and 2,103,054 post, which sum to the `:Synapse` count, confirming every synapse
+carries a `type` of `pre` or `post`.
+
+The store format is reported next to the server version. wasp reads
+**`record-aligned-1.1`**, not `block` — expected, since `block` is Enterprise
+only and the ingest runs against the Community image. This is the concrete
+answer to what can read a store built here: Enterprise reads record-format
+stores, so a Community-built snapshot deployed to an Enterprise production
+server is fine in that direction. The reverse is not: neo4j has no downgrade
+path, which is why the production server must be upgraded before a database
+built by this branch is swapped in.
+
 #### Complex-query timing drifts downward across repeated runs
 
 Warm timings for the neuPrintExplorer search query:
@@ -657,7 +679,7 @@ cold nodes.
 ### Validating a built database
 
 `check-neuprint-snapshot` launches a snapshot's database in a container, runs
-38 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
+40 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
 covers
 node/relationship counts, node-label accounting, `bodyId` integrity, index state
 and population, that every index refers to a property that exists, that every
