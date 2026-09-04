@@ -523,11 +523,15 @@ indexes, 97 ROIs. The pipeline is reproducible across machines.
 Since then the pipeline has been validated end-to-end on two further datasets
 against `neo4j:2026.07.1`, each passing with zero failures:
 
-| dataset | nodes | relationships | Neuron | indexes | ROIs | checks |
-|---|---|---|---|---|---|---|
-| wasp v0.8 | 5,278,783 | 10,702,773 | 50,564 | 232 | 97 | 28 |
-| yakuba-vnc | 137,632,747 | 261,841,354 | 87,627 | 132 | 25 | 31 |
-| fish2 | 77,830,526 | 128,491,329 | 224,391 | 697 | 210 | 32 |
+| dataset | nodes | relationships | Neuron | indexes | ROIs |
+|---|---|---|---|---|---|
+| wasp v0.8 | 5,278,783 | 10,702,773 | 50,564 | 232 | 97 |
+| yakuba-vnc | 137,632,747 | 261,841,354 | 87,627 | 132 | 25 |
+| fish2 | 77,830,526 | 128,491,329 | 224,391 | 697 | 210 |
+
+All three pass **33 of 33** at default settings. Note that the total depends on
+the flags: `CHECK_CSV_COUNTS=0` drops three checks and `MAX_QUERY_MS` adds one,
+so totals are only comparable between runs invoked the same way.
 
 Every reconciliation was exact on all three: node and relationship totals match
 the importer's own report, no bad entries were skipped, and the `Segment` /
@@ -638,7 +642,7 @@ cold nodes.
 ### Validating a built database
 
 `check-neuprint-snapshot` launches a snapshot's database in a container, runs
-~30 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
+33 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
 covers
 node/relationship counts, node-label accounting, `bodyId` integrity, index state
 and population, that every index refers to a property that exists, that every
@@ -646,7 +650,18 @@ ROI in `Meta.roiInfo` has both a matching property and an index, that every ROI
 index is usable when forced via an index hint, and the server's database name
 and Cypher language pin.
 
-Two lessons are baked into it. **Do not assert that a query produces a
+A third lesson: **`skip` does not count as a failure**, so anything that
+degrades to a skip can hide a whole section. `Meta.roiInfo` is parsed with
+`apoc.convert.fromJsonMap`, and `q()` sends stderr to `/dev/null`, so an APOC
+that failed to load looked exactly like an empty result — skipping every ROI
+assertion and the entire index-usability section while the run still printed
+`RESULT: OK`. Since the apoc jar ships in the snapshot's own `plugins/` dir and
+is version-coupled to the server, that is a live risk for this upgrade, not a
+hypothetical one. That path now fails. The check is derived from the real
+`roiInfo` read rather than a synthetic probe — an earlier attempt to probe APOC
+separately failed on a database where APOC plainly worked.
+
+Two further lessons are baked into it. **Do not assert that a query produces a
 `NodeIndexSeek`** — plan choice is a planner cost decision, not a correctness
 property, and a scan is legitimately cheaper for an ROI covering many Segments.
 Force the index with a hint instead: that either resolves or errors. And
