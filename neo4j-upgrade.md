@@ -560,20 +560,47 @@ reports it explicitly rather than leaving it to be inferred by subtraction.
 > ElementSet nodes". That is wrong — it has 74.3M, of which 379,989 are
 > non-synaptic. The check itself is correct; only the message is misleading.
 
-#### Complex-query timing is noisier than it looks
+#### Complex-query timing drifts downward across repeated runs
 
-Warm timings for the neuPrintExplorer search query, and the run-to-run spread:
+Warm timings for the neuPrintExplorer search query:
 
 | dataset | neurons | warm | vs `MAX_QUERY_MS=1500` |
 |---|---|---|---|
 | wasp | 50,564 | 502-611 ms | ~146% headroom |
 | yakuba | 87,627 | 766-808 ms | ~86% headroom |
-| fish2 | 224,391 | 1079-1347 ms | **~11% headroom** |
+| fish2 | 224,391 | 1000-1347 ms | **~11% headroom** |
 
-Two consecutive fish2 runs on an idle node differed by 25%. A single global
-threshold of 1500 ms would therefore be genuinely flaky on fish2 while being
-too loose to catch a 2x regression on wasp. **Set `MAX_QUERY_MS` per dataset**
-in the wrapper scripts — roughly 1500 for wasp and yakuba, 2500 for fish2.
+The fish2 spread is not random. Three consecutive runs on the same idle node
+were **monotonically decreasing in both columns**:
+
+| run | cold | warm |
+|---|---|---|
+| 1 | 1749 ms | 1347 ms |
+| 2 | 1562 ms | 1079 ms |
+| 3 | 1347 ms | 1000 ms |
+
+26% faster on warm, 23% on cold, strictly decreasing — not the signature of
+noise. The likely cause is the **host** page cache. Each run starts a fresh
+container, but the store files stay cached on the node in between, so the
+container's own "cold" run is progressively less cold on each repeat. The
+cold/warm distinction the checker reports only covers Neo4j's page cache, not
+the host's.
+
+Two consequences for calibration:
+
+1. **Calibrate on the first run on a node, not a repeat.** A number derived
+   from run 3 would be tuned to the most-cached case and would fail on exactly
+   the runs that matter — a freshly ingested database on a node that has never
+   touched those files. Expect the true worst case to be at or above run 1.
+2. **Set `MAX_QUERY_MS` per dataset**, in the wrapper scripts. A single global
+   value cannot serve both ends: 1500 ms leaves fish2 only 11% headroom over
+   its slowest observed run, while being too loose to catch a 2x regression on
+   wasp.
+
+Suggested starting points: **1500 ms for wasp and yakuba, 2000-2500 ms for
+fish2** (48% and 86% headroom respectively over fish2's slowest observed run).
+Treat these as provisional until a threshold has survived a few first-runs on
+cold nodes.
 
 ### Running on the cluster (LSF)
 
