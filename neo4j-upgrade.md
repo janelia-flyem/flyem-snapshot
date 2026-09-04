@@ -529,13 +529,28 @@ against `neo4j:2026.07.1`, each passing with zero failures:
 | yakuba-vnc | 137,632,747 | 261,841,354 | 87,627 | 132 | 25 |
 | fish2 | 77,830,526 | 128,491,329 | 224,391 | 697 | 210 |
 
-All three pass **33 of 33** at default settings. Note that the total depends on
+All three pass **38 of 38** at default settings. Note that the total depends on
 the flags: `CHECK_CSV_COUNTS=0` drops three checks and `MAX_QUERY_MS` adds one,
 so totals are only comparable between runs invoked the same way.
 
 Every reconciliation was exact on all three: node and relationship totals match
-the importer's own report, no bad entries were skipped, and the `Segment` /
-`Synapse` / `SynapseSet` counts match the exported CSV row counts.
+the importer's own report, no bad entries were skipped, and both the node
+counts (`Segment` / `Synapse` / `SynapseSet`) and the relationship counts
+(`ConnectsTo` / `SynapsesTo` / `Contains` / `CloseTo`) match the exported CSV
+row counts.
+
+The relationship grouping is taken from the `--relationships=<TYPE>=<file>`
+arguments in `ingest-neuprint-snapshot-within-neo4j-container.sh`, because it
+is not one file per type — `ConnectsTo` is built from two CSVs and `Contains`
+from four, two of them globs over element tables. **The checker is coupled to
+that script**: adding a `--relationships=` line there without updating the
+checker makes `Contains count matches CSV rows` fail.
+
+Working through that mapping also exposed a fourth relationship type,
+`CloseTo`, which the suite had never counted. No dataset measured has any, so
+the omission was invisible — the three counted types happened to sum to the
+reported total. There is now a relationship-type accounting check mirroring the
+node-label one, so an uncounted type inflates the total loudly instead.
 
 #### Element labels are nested inside Synapse labels
 
@@ -642,7 +657,7 @@ cold nodes.
 ### Validating a built database
 
 `check-neuprint-snapshot` launches a snapshot's database in a container, runs
-33 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
+38 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
 covers
 node/relationship counts, node-label accounting, `bodyId` integrity, index state
 and population, that every index refers to a property that exists, that every
