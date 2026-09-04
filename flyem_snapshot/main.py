@@ -16,8 +16,8 @@ from neuclease.dvid.labelmap import resolve_snapshot_tag
 
 from . import __version__
 from .inputs.dvidseg import DvidSegSchema, load_dvidseg
-from .inputs.elements import ElementTablesSchema, load_elements
-from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, RawSynapseSerializer
+from .inputs.elements import ElementTablesSchema, load_elements, body_roi_presence
+from .inputs.synapses import SnapshotSynapsesSchema, load_synapses, RawSynapseSerializer, merge_partner_compartments
 from .inputs.annotations import AnnotationsSchema, load_annotations
 from .inputs.rois import RoisSchema, load_point_rois, merge_partner_rois
 from .inputs.sizes import BodySizesSchema, load_body_sizes
@@ -219,6 +219,12 @@ def main_impl(cfg):
         ann, ann_timestamp = load_annotations(cfg['inputs']['annotations'], pointlabeler, snapshot_tag)
         point_df, partner_df, syn_roisets = load_synapses_and_rois(cfg, pointlabeler)
         element_tables, element_roisets = load_elements_and_rois(cfg, pointlabeler)
+
+        # Indicates which ROIs each body has a presence in, according to its
+        # non-synaptic elements (soma, etc.).  Used by the reports to decide
+        # whether a body with no synapses in a given region belongs there anyway.
+        element_body_rois = body_roi_presence(element_tables, element_roisets)
+
         all_bodies = [
             ann.index.values,
             point_df['body'].values,
@@ -237,7 +243,8 @@ def main_impl(cfg):
         export_meshes(cfg['outputs']['meshes'], snapshot_tag, ann, pointlabeler)
         export_neuprint(cfg['outputs']['neuprint'], point_df, partner_df, element_tables, ann, ann_timestamp, body_sizes,
                         tbar_nt, body_nt, syn_roisets, element_roisets, pointlabeler)
-        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann, snapshot_tag)
+        export_reports(cfg['outputs']['connectivity-reports'], point_df, partner_df, ann,
+                       element_body_rois, snapshot_tag)
 
 
 class SynapsesWithRoiSerializer(SerializerBase):
@@ -305,6 +312,12 @@ def load_synapses_and_rois(cfg, pointlabeler):
         point_df,
         partner_df,
         cfg['inputs']['synapses']['roi-set-names']
+    )
+
+    partner_df = merge_partner_compartments(
+        point_df,
+        partner_df,
+        cfg['inputs']['synapses']['compartment-column']
     )
 
     return point_df, partner_df, syn_roisets
@@ -459,6 +472,7 @@ def standardize_config(cfg, config_dir):
     syncfg = cfg['inputs']['synapses']
     roicfg = cfg['inputs']['rois']
     neuprintcfg = cfg['outputs']['neuprint']
+    flatcfg = cfg['outputs']['flat-connectome']
     output_ntcfg = cfg['outputs']['neurotransmitters']
     skeletoncfg = cfg['outputs']['skeletons']
     meshcfg = cfg['outputs']['meshes']
@@ -582,6 +596,16 @@ def standardize_config(cfg, config_dir):
     # include in neuprint, include all those used in the synapse table.
     if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['roi-set-names']:
         neuprintcfg['roi-set-names'] = syncfg['roi-set-names']
+
+    # Same for the compartment column: if the user didn't override it
+    # specifically for neuprint, fall back to the synapse input setting.
+    if neuprintcfg['export-neuprint-snapshot'] and not neuprintcfg['compartment-column']:
+        neuprintcfg['compartment-column'] = syncfg['compartment-column']
+
+    # Likewise, the flat-connectome export defaults its compartment column
+    # from the synapse input setting unless the user overrode it explicitly.
+    if flatcfg['export-connectome'] and not flatcfg['compartment-column']:
+        flatcfg['compartment-column'] = syncfg['compartment-column']
 
     if unused_roi_sets := set(roicfg['roi-sets'].keys()) - used_roi_sets:
         logger.warning(

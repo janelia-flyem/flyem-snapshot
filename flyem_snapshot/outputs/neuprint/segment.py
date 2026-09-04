@@ -16,6 +16,74 @@ from .util import append_neo4j_type_suffixes, prepare_int_cols_for_export, check
 
 logger = logging.getLogger(__name__)
 
+# Only these pre/post compartment combinations get their own :ConnectsTo weight
+# breakdown property. Combinations involving 'linker', 'cell-body-fiber', or
+# 'unknown' still contribute to the overall 'weight', but aren't tracked separately.
+CONNECTION_COMPARTMENT_PROPERTIES = {
+    ('axon', 'dendrite'): 'weightAxonDendrite',
+    ('axon', 'axon'): 'weightAxonAxon',
+    ('dendrite', 'dendrite'): 'weightDendriteDendrite',
+    ('dendrite', 'axon'): 'weightDendriteAxon',
+}
+
+
+def _compartments_available(cfg, point_df, partner_df):
+    """
+    Determine whether per-synapse compartment classifications are available,
+    i.e. whether the config names a compartment column and it (along with the
+    'compartment_pre'/'compartment_post' columns merged onto partner_df) is
+    actually present.
+    """
+    compartment_col = cfg['compartment-column']
+    return (
+        bool(compartment_col)
+        and compartment_col in point_df.columns
+        and {'compartment_pre', 'compartment_post'} <= set(partner_df.columns)
+    )
+
+
+def _compartment_in_out_counts(point_df, partner_df, compartment_col, extra_group_cols=()):
+    """
+    Compute, for each body (optionally also grouped by additional columns such
+    as 'roi'), the compartment breakdown of incoming and outgoing synaptic
+    connections:
+
+      - axonIn/dendriteIn: postsynaptic points on the body which reside in the
+        axon/dendrite compartment (i.e. a compartment-based split of 'upstream'/'post').
+      - axonOut/dendriteOut: connections (partner_df rows) whose presynaptic point
+        resides in the body's axon/dendrite compartment (i.e. a compartment-based
+        split of 'downstream'). This must come from partner_df (not a raw point count)
+        because a single presynaptic point commonly fans out to multiple postsynaptic
+        partners.
+
+    Returns a DataFrame indexed by ['body', *extra_group_cols], with exactly the
+    columns ['axonIn', 'dendriteIn', 'axonOut', 'dendriteOut'], as int32.
+    """
+    in_cols = ['body', *extra_group_cols, compartment_col]
+    in_counts = (
+        point_df.loc[point_df['kind'] == 'PostSyn', in_cols]
+        .value_counts()
+        .unstack(compartment_col, fill_value=0)
+        .rename(columns={'axon': 'axonIn', 'dendrite': 'dendriteIn'})
+    )
+    in_counts = in_counts[[c for c in ('axonIn', 'dendriteIn') if c in in_counts.columns]]
+
+    out_cols = ['body_pre', *extra_group_cols, 'compartment_pre']
+    out_counts = (
+        partner_df[out_cols]
+        .rename(columns={'body_pre': 'body'})
+        .value_counts()
+        .unstack('compartment_pre', fill_value=0)
+        .rename(columns={'axon': 'axonOut', 'dendrite': 'dendriteOut'})
+    )
+    out_counts = out_counts[[c for c in ('axonOut', 'dendriteOut') if c in out_counts.columns]]
+
+    result = pd.concat((in_counts, out_counts), axis=1)
+    for c in ('axonIn', 'dendriteIn', 'axonOut', 'dendriteOut'):
+        if c not in result.columns:
+            result[c] = 0
+    return result[['axonIn', 'dendriteIn', 'axonOut', 'dendriteOut']].fillna(0).astype(np.int32)
+
 
 @PrefixFilter.with_context("Segment")
 def export_neuprint_segments(cfg, point_df, partner_df, element_tables, ann, body_sizes, body_nt, inbounds_bodies, inbounds_rois):
@@ -131,8 +199,15 @@ def _body_elm_stats(cfg, point_df, partner_df, element_tables, inbounds_bodies, 
             body_elm_kind_dfs[elm_name] = element_points[['body', kindcol]].value_counts().unstack(fill_value=0)
             assert body_elm_kind_dfs[elm_name].index.name == 'body'
 
+    compartment_dfs = ()
+    if _compartments_available(cfg, point_df, partner_df):
+        compartment_dfs = (
+            _compartment_in_out_counts(point_df, partner_df, cfg['compartment-column']),
+        )
+
     tables = (
         *body_syn_total_dfs,
+        *compartment_dfs,
         *body_elm_total_dfs.values(),
         *body_elm_kind_dfs.values(),
         ann[[]]  # Just need the body IDs, no columns
@@ -274,6 +349,12 @@ def _roi_elm_for_roiset(cfg, point_df, partner_df, element_tables, roiset_name, 
     assert roi_syn.index.names == ['body', 'roi']
     assert roi_syn.columns.tolist() == ['post', 'pre', 'downstream', 'upstream', 'synweight']
 
+    compartment_dfs = ()
+    if _compartments_available(cfg, point_df, partner_df):
+        compartment_dfs = (
+            _compartment_in_out_counts(point_df, partner_df, cfg['compartment-column'], extra_group_cols=('roi',)),
+        )
+
     roi_counts = {}
     roi_kindcounts = {}
     for elm_name, element_points in element_point_dfs.items():
@@ -289,7 +370,7 @@ def _roi_elm_for_roiset(cfg, point_df, partner_df, element_tables, roiset_name, 
 
     roi_elm = (
         pd.concat(
-            (roi_syn, *roi_counts.values(), *roi_kindcounts.values()),
+            (roi_syn, *compartment_dfs, *roi_counts.values(), *roi_kindcounts.values()),
             axis=1
         )
         .fillna(0)
@@ -563,6 +644,20 @@ def export_neuprint_segment_connections(cfg, partner_df):
     partner_df.loc[partner_df['conf_post'] >= balanced_confidence, 'conf_cat'] = 'med'
     partner_df.loc[partner_df['conf_post'] >= hp_confidence, 'conf_cat'] = 'high'
 
+    # Unlike weightHR/weight/weightHP, we don't bother computing separate
+    # high-recall/high-precision variants of the compartment breakdown --
+    # just the one which corresponds to the standard 'weight' (i.e. balanced confidence).
+    use_compartments = (
+        bool(cfg['compartment-column'])
+        and {'compartment_pre', 'compartment_post'} <= set(partner_df.columns)
+    )
+    compartment_props = list(CONNECTION_COMPARTMENT_PROPERTIES.values()) if use_compartments else []
+    if use_compartments:
+        pair_to_prop = {f'{a}-{b}': name for (a, b), name in CONNECTION_COMPARTMENT_PROPERTIES.items()}
+        partner_df['compartment_prop'] = (
+            partner_df['compartment_pre'].astype(str) + '-' + partner_df['compartment_post'].astype(str)
+        ).map(pair_to_prop)
+
     # Connection weights by category (low/med/high)
     connectome = (
         partner_df[['body_pre', 'body_post', 'conf_cat']]
@@ -578,6 +673,19 @@ def export_neuprint_segment_connections(cfg, partner_df):
     connectome['weightHP'] = connectome['high']
     connectome = connectome.drop(columns=['low', 'med', 'high'])
 
+    if use_compartments:
+        compartment_weights = (
+            partner_df
+            .loc[partner_df['conf_post'] >= balanced_confidence]
+            .dropna(subset=['compartment_prop'])
+            [['body_pre', 'body_post', 'compartment_prop']]
+            .value_counts()
+            .unstack(fill_value=0)
+        )
+        for prop in compartment_props:
+            connectome[prop] = compartment_weights[prop] if prop in compartment_weights.columns else 0
+        connectome[compartment_props] = connectome[compartment_props].fillna(0).astype(np.int32)
+
     # Note that partner_df[roiset_name] was created using roi_post.
     # Neuprint defines the location of synapse connection
     # weights according to the 'post' side.
@@ -589,19 +697,34 @@ def export_neuprint_segment_connections(cfg, partner_df):
         if i > 0:
             # We only include '<unspecified>' once.
             # The actual unspecified count doesn't matter since
-            #  we don't store it. But we need to make sure every
+            # we don't store it. But we need to make sure every
             # connection pair is listed to ensure that they all
             # get a roiInfo (even if it's an empty roiInfo, i.e. {}).
             df = df.loc[df[roiset_name] != "<unspecified>"]
+
+        df = df.loc[df['conf_post'] >= balanced_confidence]
         roiset_conn = (
-            df.loc[
-                df['conf_post'] >= balanced_confidence,
-                ['body_pre', 'body_post', roiset_name]
-            ]
+            df[['body_pre', 'body_post', roiset_name]]
             .rename(columns={roiset_name: 'roi'})
             .value_counts()
-            .rename('weight')
+            .rename('post')
+            .to_frame()
         )
+
+        if use_compartments:
+            compartment_conn = (
+                df.dropna(subset=['compartment_prop'])
+                [['body_pre', 'body_post', roiset_name, 'compartment_prop']]
+                .rename(columns={roiset_name: 'roi'})
+                .value_counts()
+                .unstack('compartment_prop', fill_value=0)
+            )
+            for prop in compartment_props:
+                if prop not in compartment_conn.columns:
+                    compartment_conn[prop] = 0
+            roiset_conn = pd.concat((roiset_conn, compartment_conn[compartment_props]), axis=1)
+            roiset_conn[compartment_props] = roiset_conn[compartment_props].fillna(0).astype(np.int32)
+
         roiset_conns.append(roiset_conn)
 
     roi_conn = pd.concat(roiset_conns).sort_index().reset_index()
@@ -623,7 +746,7 @@ def export_neuprint_segment_connections(cfg, partner_df):
     # been created. Fill it with an empty JSON object.
     connectome['roiInfo'] = connectome['roiInfo'].fillna('{}')
 
-    cols = ['body_pre', 'body_post', 'weightHR', 'weight', 'weightHP', 'roiInfo']
+    cols = ['body_pre', 'body_post', 'weightHR', 'weight', 'weightHP', *compartment_props, 'roiInfo']
     assert connectome.columns.tolist() == cols, f"{connectome.columns}"
 
     neo4j_connectome = (
@@ -650,7 +773,9 @@ def export_neuprint_segment_connections(cfg, partner_df):
 @PrefixFilter.with_context("roiInfo")
 def _neuron_connection_roi_infos(roi_conn, processes):
     with Timer("Grouping into batches"):
-        # In the connection roiInfo, the weight is named 'post'.
+        # In the connection roiInfo, the weight is named 'post'
+        # (and, if compartments are configured, so are the per-compartment-pair
+        # weight breakdown columns, e.g. 'weightAxonDendrite').
         # In earlier neuprint databases, we also emitted 'pre',
         # which was usually -- but not always -- identical to 'post'.
         # But emitting 'pre' would be misleading for multiple reasons:
@@ -661,8 +786,8 @@ def _neuron_connection_roi_infos(roi_conn, processes):
         #    but in that case the precise ROI for the synapse is arbitrary
         #    anyway.
         # So nowadays we don't bother emitting 'pre' at all.
-        roi_conn = roi_conn.rename(columns={'weight': 'post'})
-        roi_conn = roi_conn[['pair_batch', 'body_pre', 'body_post', 'roi', 'post']]
+        value_cols = [c for c in roi_conn.columns if c not in ('pair_batch', 'body_pre', 'body_post', 'roi')]
+        roi_conn = roi_conn[['pair_batch', 'body_pre', 'body_post', 'roi', *value_cols]]
         batches = [df for (_, df) in roi_conn.groupby('pair_batch', sort=False)]
 
     roi_info_dfs = compute_parallel(
@@ -680,12 +805,12 @@ def _make_connection_roi_infos(batch_df):
     in which roiInfo is a string (JSON).
     """
     batch_df = batch_df.set_index('roi')
-    assert batch_df.columns.tolist() == ['pair_batch', 'body_pre', 'body_post', 'post']
+    assert batch_df.columns[:3].tolist() == ['pair_batch', 'body_pre', 'body_post']
 
     body_pairs = []
     roi_infos = []
     for body_pair, df in batch_df.groupby(['body_pre', 'body_post'], sort=False):
-        # Discard columns except 'post'
+        # Discard pair_batch, body_pre, body_post
         df = df.iloc[:, 3:]
 
         # Filter out non-roi weights.
@@ -696,13 +821,25 @@ def _make_connection_roi_infos(batch_df):
         # is super slow, so we construct the JSON the hard way.
         # roi_info = df.to_json(orient='index')
 
+        # This is equivalent to df.to_dict(orient='records'),
+        # but faster for simple integer data.
+        single_roi_infos = [
+            dict(zip(df.columns, row))
+            for row in df.itertuples(index=False, name=None)
+        ]
+
+        # As with :Segment roiInfo, we omit zero entries, e.g. a connection
+        # with post=5 but no axon-dendrite synapses in a given ROI will
+        # simply omit the 'weightAxonDendrite' key for that ROI.
+        single_roi_infos = [{k: v for k, v in d.items() if v} for d in single_roi_infos]
+
         # Result is like this:
         # {
-        #    'ME(R)': {'post': 10},
+        #    'ME(R)': {'post': 10, 'weightAxonDendrite': 4},
         #    'LO(R)': {'post': 18},
         #    'LOP(R)': {'post': 10}
         # }
-        roi_info = {roi: {'post': post} for roi, post in df['post'].items()}
+        roi_info = dict(zip(df.index, single_roi_infos))
         roi_info = ujson.dumps(roi_info)
 
         body_pairs.append(body_pair)

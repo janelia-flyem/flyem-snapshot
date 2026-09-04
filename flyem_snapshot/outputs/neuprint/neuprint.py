@@ -84,6 +84,17 @@ NeuprintSchema = {
                 }
             ]
         },
+        "compartment-column": {
+            "description":
+                "Name of the point_df column which classifies each synapse point into a\n"
+                "neuron compartment ('axon', 'dendrite', 'linker', 'cell-body-fiber', 'unknown').\n"
+                "If not given here, defaults to whatever is configured in inputs.synapses.compartment-column.\n"
+                "If left blank (and no default is available), no compartment-breakdown\n"
+                "properties (weightAxonDendrite, axonIn/axonOut/dendriteIn/dendriteOut, etc.)\n"
+                "are computed or exported.",
+            "type": "string",
+            "default": ""
+        },
         # This setting is applied BEFORE either of the two that follow.
         # If a point is dropped by this setting, it is definitely excluded,
         # but the two following settings can filter the set even further.
