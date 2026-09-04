@@ -535,10 +535,23 @@ the importer's own report, no bad entries were skipped, and the `Segment` /
 
 #### Element labels are nested inside Synapse labels
 
-fish2 is the first dataset here with element tables, and it corrected an
-assumption. **`:Synapse` is a specialization of `:Element`, and `:SynapseSet` of
-`:ElementSet`** — the same nesting as `:Neuron` within `:Segment`. The labels are
-not disjoint, so the element counts are dominated by synapses:
+**`:Synapse` is a specialization of `:Element`, and `:SynapseSet` of
+`:ElementSet`** — the same nesting as `:Neuron` within `:Segment`.
+
+Every dataset measured carries `:Element` on every synapse, whether or not its
+config declares element tables. wasp and yakuba both report `Element` counts
+exactly equal to their `Synapse` counts. So a dataset does not divide into
+"has elements" and "has none"; what varies is how many elements are *not*
+synapses — somas and the like. fish2 is the first dataset here with a non-zero
+count of those:
+
+| dataset | Element | Synapse | non-synaptic |
+|---|---|---|---|
+| wasp | 2,336,820 | 2,336,820 | 0 |
+| yakuba | 51,824,503 | 51,824,503 | 0 |
+| fish2 | 41,916,590 | 41,725,816 | 190,774 |
+
+The labels are not disjoint, so the element counts are dominated by synapses:
 
 ```
 Element    41,916,590  -  Synapse     41,725,816  =  190,774 non-synaptic
@@ -555,6 +568,13 @@ element-presence` selects on in a report config, which fish2 uses. If it
 silently went to zero, `element-presence` would degrade to `none` and every
 report's body ranking would change, with nothing failing. The checker therefore
 reports it explicitly rather than leaving it to be inferred by subtraction.
+
+The nesting itself is asserted, at no extra query cost. Since
+`|Element ∩ Synapse| = Element − non-synaptic`, every synapse carrying
+`:Element` is equivalent to `Element − Synapse == non-synaptic`, so the
+identity is checked from figures already collected. A synapse missing its
+`:Element` label breaks it. Asserting the raw `Element` count is `> 0` would
+prove nothing, since it merely restates the `Synapse` count.
 
 > The commit message on `8e573c9` describes fish2 as having "379,989 Element and
 > ElementSet nodes". That is wrong — it has 74.3M, of which 379,989 are

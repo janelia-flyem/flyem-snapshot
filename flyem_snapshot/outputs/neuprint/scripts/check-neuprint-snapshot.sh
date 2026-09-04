@@ -226,42 +226,43 @@ expect_eq "exactly one :Meta node" "$(q "MATCH (m:Meta) RETURN count(m);")" "1"
 SEG_COUNT=$(q "MATCH (n:\`${DS}_Segment\`) RETURN count(n);")
 expect_gt ":${DS}_Segment nodes"    "${SEG_COUNT}" 0
 expect_gt ":${DS}_Neuron nodes"     "$(q "MATCH (n:\`${DS}_Neuron\`)     RETURN count(n);")" 0
-expect_gt ":${DS}_Synapse nodes"    "$(q "MATCH (n:\`${DS}_Synapse\`)    RETURN count(n);")" 0
-expect_gt ":${DS}_SynapseSet nodes" "$(q "MATCH (n:\`${DS}_SynapseSet\`) RETURN count(n);")" 0
+SYN_COUNT=$(q "MATCH (n:\`${DS}_Synapse\`)    RETURN count(n);")
+SS_COUNT=$( q "MATCH (n:\`${DS}_SynapseSet\`) RETURN count(n);")
+expect_gt ":${DS}_Synapse nodes"    "${SYN_COUNT}" 0
+expect_gt ":${DS}_SynapseSet nodes" "${SS_COUNT}" 0
 
-# Elements are optional: they exist only when the config declares element
-# tables. fish2 does; wasp and yakuba do not. So report the counts either way
-# rather than asserting them unconditionally.
+# :Synapse is a specialization of :Element, and :SynapseSet of :ElementSet --
+# the same nesting as :Neuron within :Segment. Every dataset measured so far
+# labels every synapse as an element whether or not the config declares element
+# tables (wasp, yakuba and fish2 all do), so the raw Element count merely
+# restates the Synapse count and asserting it is > 0 proves nothing.
 #
-# When the dataset does have them, assert both are non-empty. The label
-# accounting below would otherwise be the only thing covering these nodes, and
-# it passes whether they are present or absent -- so a silently empty element
-# export would leave no trace in the output at all.
+# The informative number is the remainder: elements that are not synapses,
+# such as somas. That is the population 'non-synaptic-bodies: element-presence'
+# selects on in a report config -- fish2 uses it and has 190,774; wasp and
+# yakuba have none. Were it to reach zero on a dataset that expects it,
+# element-presence would degrade to 'none' and every report's body ranking
+# would change with nothing failing here.
+#
+# Reported rather than asserted, since zero is correct for most datasets.
+# Note these two are label scans, not count-store lookups, so they cost more
+# than the counts beside them.
 ELM_COUNT=$(q "MATCH (n:\`${DS}_Element\`)    RETURN count(n);")
 ELMSET_COUNT=$(q "MATCH (n:\`${DS}_ElementSet\`) RETURN count(n);")
-if [[ "${ELM_COUNT}" == "0" && "${ELMSET_COUNT}" == "0" ]]; then
-    info "no :${DS}_Element / :${DS}_ElementSet nodes (dataset declares no element tables)"
-else
-    # One present without the other means a half-exported element table.
-    expect_gt ":${DS}_Element nodes"    "${ELM_COUNT}" 0
-    expect_gt ":${DS}_ElementSet nodes" "${ELMSET_COUNT}" 0
+NONSYN_ELM=$(q "MATCH (n:\`${DS}_Element\`)    WHERE NOT n:\`${DS}_Synapse\`    RETURN count(n);")
+NONSYN_ELMSET=$(q "MATCH (n:\`${DS}_ElementSet\`) WHERE NOT n:\`${DS}_SynapseSet\` RETURN count(n);")
 
-    # :Synapse is a specialization of :Element, and :SynapseSet of
-    # :ElementSet -- the same nesting as :Neuron within :Segment -- so the
-    # counts above are dominated by synapses. The interesting population is
-    # what is left: somas and the like.
-    #
-    # That population is what 'non-synaptic-bodies: element-presence' selects
-    # on in a report config (fish2 uses it). If it silently went to zero,
-    # element-presence would degrade to 'none' and every report's body
-    # ranking would change with nothing here failing.
-    #
-    # Reported rather than asserted: a dataset whose elements are all
-    # synaptic is legitimate. Note these two are label scans, not count-store
-    # lookups, so they cost more than the counts above.
-    info "non-synaptic Element nodes: $(q "MATCH (n:\`${DS}_Element\`) WHERE NOT n:\`${DS}_Synapse\` RETURN count(n);")"
-    info "non-synaptic ElementSet nodes: $(q "MATCH (n:\`${DS}_ElementSet\`) WHERE NOT n:\`${DS}_SynapseSet\` RETURN count(n);")"
-fi
+info ":${DS}_Element nodes: ${ELM_COUNT} (${NONSYN_ELM} non-synaptic)"
+info ":${DS}_ElementSet nodes: ${ELMSET_COUNT} (${NONSYN_ELMSET} non-synaptic)"
+
+# The nesting itself, asserted for free from the numbers already collected.
+# |Element AND Synapse| = Element - non-synaptic. If every synapse carries
+# :Element then that equals the Synapse count, i.e. Element - Synapse ==
+# non-synaptic. A synapse missing its :Element label breaks the identity.
+expect_eq "every :${DS}_Synapse is also an :${DS}_Element" \
+    "$(( ELM_COUNT - SYN_COUNT ))" "${NONSYN_ELM}"
+expect_eq "every :${DS}_SynapseSet is also an :${DS}_ElementSet" \
+    "$(( ELMSET_COUNT - SS_COUNT ))" "${NONSYN_ELMSET}"
 
 # Every node should carry one of the labels we know about. Nodes with several
 # labels (a :Neuron is also a :Segment) are counted once by the single MATCH,
@@ -331,9 +332,9 @@ if [[ -n "${CSV_SEGMENTS:-}" ]]; then
     expect_eq "Segment count matches Neuprint_Neurons CSV rows" \
         "${SEG_COUNT}" "${CSV_SEGMENTS}"
     expect_eq "Synapse count matches Neuprint_Synapses CSV rows" \
-        "$(q "MATCH (n:\`${DS}_Synapse\`) RETURN count(n);")" "${CSV_SYNAPSES}"
+        "${SYN_COUNT}" "${CSV_SYNAPSES}"
     expect_eq "SynapseSet count matches Neuprint_SynapseSet.csv rows" \
-        "$(q "MATCH (n:\`${DS}_SynapseSet\`) RETURN count(n);")" "${CSV_SYNAPSESETS}"
+        "${SS_COUNT}" "${CSV_SYNAPSESETS}"
 fi
 
 echo
