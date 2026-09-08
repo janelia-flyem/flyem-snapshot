@@ -99,6 +99,22 @@ for d in conf data logs plugins; do
     fi
 done
 
+# Every jar in plugins/ is copied onto the server's classpath before it starts,
+# so a stale one breaks startup rather than degrading gracefully. Two apoc jars
+# is never right: the shaded "-all" builds bundle their own dependencies --
+# including ANTLR -- and an older one shadows the runtime neo4j's own Cypher
+# lexer needs, so the server aborts while registering procedures with an
+# InvalidClassException about ATN versions rather than anything mentioning
+# plugins. Catch it here, where the fix is obvious.
+APOC_JARS=$(find "${NEO4J_DIR}/plugins" -maxdepth 1 -name 'apoc-*.jar' | sort)
+APOC_JAR_COUNT=$(grep -c . <<<"${APOC_JARS}"); [[ -z "${APOC_JARS}" ]] && APOC_JAR_COUNT=0
+if [[ "${APOC_JAR_COUNT}" -gt 1 ]]; then
+    echo "Error: ${APOC_JAR_COUNT} apoc jars in ${NEO4J_DIR}/plugins -- only one may be present:" 1>&2
+    sed 's|^|  |' <<<"${APOC_JARS}" 1>&2
+    echo "Remove the ones that do not match ${NEO4J_IMAGE}, then re-run." 1>&2
+    exit 2
+fi
+
 WORK=$(mktemp -d)
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -144,6 +160,16 @@ for _ in $(seq 120); do
 done
 if ! grep -q 'Started\.' /logs/neo4j.log 2>/dev/null; then
     echo "ERROR: neo4j did not start." 1>&2
+    # A jar in plugins/ shadowing one of neo4j's own dependencies produces a
+    # classloading failure that never mentions plugins, so say so explicitly
+    # rather than leaving a 30-line stack trace to be interpreted.
+    if grep -qE 'InvalidClassException|Could not deserialize ATN|NoSuchMethodError|NoClassDefFoundError|ClassCastException' \
+            /logs/neo4j.log 2>/dev/null; then
+        echo "Likely cause: a jar in the snapshot's plugins/ dir is incompatible" 1>&2
+        echo "with this server and is shadowing one of its own dependencies." 1>&2
+        echo "Jars copied onto the classpath:" 1>&2
+        ls -1 "${NEO4J_HOME}"/plugins/ 2>/dev/null | sed 's|^|  |' 1>&2
+    fi
     echo "--- neo4j start output ---" 1>&2
     echo "${START_OUT}" | tail -30 1>&2
     echo "--- /logs/neo4j.log (tail) ---" 1>&2
