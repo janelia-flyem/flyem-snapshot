@@ -720,6 +720,43 @@ scan and sort throughput far more than search selectivity, and no search term
 makes it slow at snapshot scale. It is a regression detector, not a model of
 user-visible latency.
 
+#### Why this timing must not be compared across deployments
+
+The query's author reports it running very slowly in production, while it
+measures 0.5–1.3 s on every snapshot here. Both can be true, because the two
+are not doing the same amount of work.
+
+The query tests eleven annotation properties per neuron. `toLower(null)` is
+null and `null CONTAINS q` is null, so a property a dataset does not populate
+costs nothing — and these datasets populate very few. yakuba reports **5 of 11
+populated**, and thinly:
+
+```
+annotation properties tested: 5 of 11 populated
+  type 14%, systematicType 0%, class 24%, entryNerve 4%, exitNerve 0%
+  null throughout, so no string work: instance, hemibrainType,
+  flywireType, itoleeHl, trumanHl, synonyms
+```
+
+(the 0% entries are integer-truncated — non-zero, under half a percent)
+
+Summing the coverages, the `WHERE` clause performs roughly **0.43 real string
+comparisons per neuron**. A dataset populating all eleven at full coverage
+performs 11 — around **26x more string work**. Matched rows compound it: the
+term `'n'` matched 24% of yakuba's label, whereas on a richly annotated dataset
+a single letter matches most of it, so the `ORDER BY` sorts several times more
+rows. There is no `LIMIT`, so all of them are returned and serialized.
+
+Resist turning 26x into a correction factor. It bounds the `CONTAINS` work
+only, and says nothing about sort volume, JSON serialization through
+neuPrintHTTP, page-cache contention across co-hosted datasets, or the server
+version the comparison was made against — any of which may matter as much.
+
+The checker reports the coverage line precisely so that a timing recorded here
+carries the context needed to interpret it. To compare against another
+deployment, get three things first: **which dataset, which server version, and
+how many rows** the slow run returned.
+
 ### Remaining work
 
 1. **Packaging gap:** `pyproject.toml` has no `MANIFEST.in` or `package-data`,
