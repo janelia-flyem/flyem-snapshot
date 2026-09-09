@@ -766,6 +766,47 @@ if [[ -z "${SAMPLE_BODY}" || "${#TERMS[@]}" -eq 0 ]]; then
 else
     info "bodyId ${SAMPLE_BODY} (${BODY_SRC}), ${#TERMS[@]} search term(s) ${TERM_SRC}"
 
+    # How much work the query actually does per neuron, which is what makes a
+    # timing interpretable. It tests eleven properties, but toLower(null) is
+    # null and 'null CONTAINS q' is null, so a property absent from a dataset
+    # costs nothing. A dataset populating three of the eleven does roughly a
+    # quarter of the string work of one populating all eleven -- which is the
+    # first thing to check before comparing a timing here against a timing
+    # from another deployment.
+    #
+    # count(expr) counts non-null values. One pass over :Neuron, which is tens
+    # to hundreds of thousands of nodes, so this is cheap next to the label
+    # scans elsewhere in this suite.
+    SEARCH_PROPS="type instance hemibrainType flywireType systematicType itoleeHl trumanHl synonyms class entryNerve exitNerve"
+    PROP_COUNTS=$(q "MATCH (n:\`${DS}_Neuron\`)
+                     RETURN count(n.type), count(n.instance), count(n.hemibrainType),
+                            count(n.flywireType), count(n.systematicType), count(n.itoleeHl),
+                            count(n.trumanHl), count(n.synonyms), count(n.class),
+                            count(n.entryNerve), count(n.exitNerve);" | head -1)
+
+    PROP_POPULATED=0
+    PROP_SUMMARY=""
+    PROP_EMPTY=""
+    _i=1
+    for _p in ${SEARCH_PROPS}; do
+        _c=$(awk -F, -v i="${_i}" '{gsub(/[^0-9]/,"",$i); print $i}' <<<"${PROP_COUNTS}")
+        if [[ -n "${_c}" && "${_c}" -gt 0 ]]; then
+            PROP_POPULATED=$((PROP_POPULATED+1))
+            if [[ "${NEURON_TOTAL}" =~ ^[0-9]+$ ]] && [[ "${NEURON_TOTAL}" -gt 0 ]]; then
+                PROP_SUMMARY="${PROP_SUMMARY}${PROP_SUMMARY:+, }${_p} $(( 100 * _c / NEURON_TOTAL ))%"
+            else
+                PROP_SUMMARY="${PROP_SUMMARY}${PROP_SUMMARY:+, }${_p} ${_c}"
+            fi
+        else
+            PROP_EMPTY="${PROP_EMPTY}${PROP_EMPTY:+, }${_p}"
+        fi
+        _i=$((_i+1))
+    done
+
+    info "annotation properties tested: ${PROP_POPULATED} of 11 populated"
+    [[ -n "${PROP_SUMMARY}" ]] && info "  ${PROP_SUMMARY}"
+    [[ -n "${PROP_EMPTY}" ]] && info "  null throughout, so no string work: ${PROP_EMPTY}"
+
     # Built per term, so a sweep can vary the term without re-booting.
     build_query() {
         local q="$1"
