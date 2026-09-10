@@ -120,6 +120,25 @@ yakuba's best-populated searchable property, `class` at 24%, is not indexed.
 On both datasets the index also spends a slot on `synonyms`, which is null
 throughout.
 
+**Measured on yakuba, term `n`:**
+
+| | rows | warm |
+|---|---|---|
+| slow query (label scan) | 21,158 | 803 ms |
+| fast query (fulltext) | 12,228 | 387 ms |
+| **missing** | **8,930 — 42% of the correct result** | |
+
+So this is a correctness defect, not a tuning issue: the fast search returns
+under two-thirds of what a user should see.
+
+Note the trap in those timings. They look like a 2.07x speedup, but the fast
+query is partly faster *because* it returns 42% less data. Adjusting for the
+rows it never produces, at the ~19 us/row fitted on wasp, gives roughly 557 ms
+— about 1.44x. That constant is wasp's rather than yakuba's, so treat the
+figure as indicative; the direction is not in doubt. **Fixing the index
+coverage will shrink the apparent speedup**, and anyone benchmarking the fast
+query against a dataset with incomplete coverage will overstate its benefit.
+
 **Options.** Either set the index to all eleven properties, or set it
 per-dataset to whatever that dataset populates. All eleven is simpler and
 self-maintaining as annotation coverage changes; per-dataset keeps each index
