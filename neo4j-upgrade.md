@@ -911,11 +911,21 @@ yakuba are both validated end-to-end.
 - **neuPrintHTTP** — re-reviewed against a CalVer server. The earlier conclusion
   that no code change was needed held for `5.26` but **does not hold here**:
 
-  1. **Driver bump required.** It pins `neo4j-go-driver/v5 v5.27.0`; Neo4j
-     documents `5.28` as the forward-compatibility floor for 2025.x/2026.x.
-     Driver `v5.28.0` added Bolt Handshake Manifest v1 (ADR 30), which is how a
-     driver negotiates the newer Bolt versions a CalVer server offers — `5.27`
-     still performs the legacy fixed handshake. `v5.28.4` is a drop-in upgrade.
+  1. **Driver bump — plausible, but UNTESTED.** It pins
+     `neo4j-go-driver/v5 v5.27.0`; Neo4j documents `5.28` as the
+     forward-compatibility floor for 2025.x/2026.x. Driver `v5.28.0` added Bolt
+     Handshake Manifest v1 (ADR 30), which is how a driver negotiates the newer
+     Bolt versions a CalVer server offers — `5.27` still performs the legacy
+     fixed handshake. `v5.28.4` is a drop-in upgrade.
+
+     **But we have not verified that `5.27` actually fails against
+     `2026.07.1`.** It may negotiate a mutually supported Bolt version and work
+     unchanged. This is the one requirement here taken from documentation
+     rather than from a test, and it is the only part of the neuPrintHTTP work
+     that needs a rebuild — the rest is deployed config. Settle it by pointing
+     the current, unmodified binary at a `2026.07.1` server holding a snapshot
+     built by this branch, with the deployed config using the bolt engine
+     against `data`. If it returns data, the bump is unnecessary.
   2. **Config change**, as before: `"database": "neo4j"` → `"data"`. This fails
      *silently* if wrong — the service connects but finds no data. The field
      must be present and explicit on every store entry; omitting it falls back
