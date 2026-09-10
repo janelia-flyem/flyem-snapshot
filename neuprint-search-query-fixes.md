@@ -11,7 +11,7 @@ ones; change 3 only matters if change 2 is done a particular way.
 
 ---
 
-## 1. `buildFastQuery` does not compile on Neo4j 2026.07.1
+## 1. `buildFastQuery` does not compile on Neo4j 5.x or later
 
 | | |
 |---|---|
@@ -36,7 +36,7 @@ WITH textMatches + bodyMatches as allMatches, q, user_body
 UNWIND allMatches as n
 ```
 
-**Why.** The query fails outright on 2026.07.1:
+**Why.** The query fails outright from Neo4j 5 onward. On 2026.07.1:
 
 ```
 42I18: syntax error or access rule violation - reference to non-grouping
