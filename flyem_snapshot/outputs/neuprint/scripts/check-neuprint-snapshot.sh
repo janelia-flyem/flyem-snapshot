@@ -921,6 +921,28 @@ QRY
     # priority ordering. Transcribed from buildFastQuery, including its inlined
     # '(' + q where the slow query uses a parenQ variable, and its lack of a
     # LIMIT.
+    #
+    # ONE DELIBERATE DEVIATION from the source. buildFastQuery as written does
+    # not compile on neo4j 2026.07.1:
+    #
+    #   WITH textMatches + collect(b) as allMatches, q, user_body
+    #
+    #   42I18: reference to non-grouping sub-expression. The expression
+    #   contains a non-grouping sub-expression `textMatches`. In an
+    #   aggregating context only grouping sub-expressions and constants are
+    #   allowed.
+    #
+    # collect(b) makes that WITH aggregating, so its grouping keys are q and
+    # user_body; textMatches then appears inside the aggregating expression
+    # without being one. Split into two clauses below, so textMatches is a
+    # grouping key of the aggregating WITH and the concatenation happens in a
+    # separate non-aggregating one. Semantically identical, and the only change.
+    #
+    # The real fix belongs upstream, in neuPrintExplorer at
+    # src/js/plugins/query/shared/NeuronInputField.jsx:41. Until it lands,
+    # this measures the fast path rather than only reporting that it errors --
+    # so a timing recorded here does NOT reflect what the frontend currently
+    # runs, because the frontend's version does not run at all.
     build_fast_query() {
         local q="$1"
         cat <<QRY
@@ -936,7 +958,8 @@ CALL {
 
 // Add bodyId match if specified
 OPTIONAL MATCH (b:Neuron) WHERE user_body <> 0 AND b.bodyId = user_body
-WITH textMatches + collect(b) as allMatches, q, user_body
+WITH textMatches, q, user_body, collect(b) as bodyMatches
+WITH textMatches + bodyMatches as allMatches, q, user_body
 UNWIND allMatches as n
 
 WITH DISTINCT n, q, user_body,
