@@ -621,6 +621,89 @@ server is fine in that direction. The reverse is not: neo4j has no downgrade
 path, which is why the production server must be upgraded before a database
 built by this branch is swapped in.
 
+#### The fulltext "fast" query saves a fixed cost, not a proportional one
+
+neuPrintExplorer has two forms of the FindNeurons search, selected by a
+`useFastQuery` toggle in `NeuronInputField.jsx`: `buildSlowQuery` scans the
+`:Neuron` label, `buildFastQuery` queries the `find_neurons_fulltext_properties_index`
+fulltext index. The checker runs both with the same term and bodyId, compares
+their row counts, and reports both timings.
+
+Measured on wasp (50,564 neurons, warm):
+
+| term | rows | slow | fast | speedup |
+|---|---|---|---|---|
+| `l` | 25,278 | 572 ms | 562 ms | **1.02x** |
+| `lc` | 184 | 214 ms | 102 ms | 2.10x |
+| `lc10` | 7 | 193 ms | 103 ms | 1.87x |
+| `SNxx07` | 1 | 178 ms | 81 ms | 2.20x |
+
+Fitting a floor-plus-per-row model to the extremes gives slow ~178 ms + 15.6
+us/row and fast ~81 ms + 19.0 us/row. **The index removes a fixed ~97 ms and
+nothing else.** Everything after the match is shared between the two forms —
+the eleven `toLower()` calls building `props`, both `CASE` ladders, the
+`DISTINCT`, the `ORDER BY`, and serialising fourteen columns — so the
+per-row cost is the same and swamps the fixed saving as rows grow. Hence ~50%
+for selective terms and 2% for a single character.
+
+**This matters for the reported slowness.** An autocomplete field issues a
+short, common term on every keystroke, which is precisely the case where the
+fulltext index buys nothing. Neither query has a `LIMIT`, so both return every
+matched row — 25,278 of them for one character on wasp — and a dropdown cannot
+use them. A `LIMIT` would help where the index does not.
+
+Two caveats on this evidence:
+
+- wasp populates only 2 of 11 search properties, so the scan the index
+  replaces is unusually cheap here. On a fully annotated dataset that ~97 ms
+  floor is larger and the index looks better — but still only on the fixed
+  portion.
+- Row counts matched exactly for all four terms, from one to six characters,
+  which is good equivalence evidence but not proof. Fulltext search
+  **tokenizes** and `CONTAINS` does not: Lucene splits `AL(L)` into `al` and
+  `l`, so a term spanning a token boundary would match under `CONTAINS` and
+  not under `*term*`. The checker sanitizes terms to `[A-Za-z0-9]`, so it can
+  never generate such a term and systematically cannot detect that class of
+  divergence.
+
+#### Two defects found in the fast query and its index
+
+1. **`buildFastQuery` does not compile on 2026.07.1.**
+   `NeuronInputField.jsx:41` reads `WITH textMatches + collect(b) as
+   allMatches, q, user_body`. `collect(b)` makes that `WITH` aggregating, so
+   its grouping keys are `q` and `user_body`, and `textMatches` then appears
+   inside the aggregating expression without being one — Cypher error `42I18`.
+   Splitting it fixes it:
+
+   ```cypher
+   WITH textMatches, q, user_body, collect(b) as bodyMatches
+   WITH textMatches + bodyMatches as allMatches, q, user_body
+   ```
+
+   The checker carries that split so it can measure the fast path; the fix
+   belongs upstream. Note the query is behind the `useFastQuery` toggle, which
+   is consistent with it never having run against a CalVer server.
+
+2. **The fulltext index does not cover what the query searches.** The query
+   ranks on all eleven annotation properties, but the index's property list
+   comes from `find-neurons-fulltext-index-properties`, whose schema default in
+   `indexes.py` is only `type`, `instance`, `synonyms`. Equivalence is
+   therefore dataset-dependent — which is the trap:
+
+   | dataset | populated & indexed | populated & NOT indexed | fast query equivalent? |
+   |---|---|---|---|
+   | wasp | `type` 6%, `instance` 98% | none | yes |
+   | yakuba | `type` 14% | `class` 24%, `entryNerve` 4%, `systematicType` <1%, `exitNerve` <1% | **no** |
+
+   yakuba's best-populated searchable property, `class`, is not indexed, so the
+   fast query cannot see a neuron whose only match is there. Testing on wasp
+   alone gives a false all-clear. The checker asserts this directly and names
+   the properties it finds missing.
+
+   If the eleven-property list commented out in `indexes.py` is enabled, note
+   it spells `itoLeeHl` where the property is `itoleeHl` — as written it would
+   index a property that does not exist.
+
 #### Complex-query timing drifts downward across repeated runs
 
 Warm timings for the neuPrintExplorer search query:
