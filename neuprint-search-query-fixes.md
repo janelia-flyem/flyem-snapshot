@@ -51,10 +51,29 @@ expression without being a grouping key, which Cypher rejects. The fix makes
 `textMatches` a grouping key of the aggregating `WITH` and moves the
 concatenation into a separate non-aggregating one. Semantically identical.
 
-The query is selected by a `useFastQuery` toggle (line 213), which is
-consistent with it never having been executed against a CalVer server. It
-arrived in `a2edf26` and was extended by `5e1d77c`, so this is current work
-rather than legacy.
+**This is a Cypher 4.4 to 5 breaking change, not a 2026-specific one.**
+Verified by running `EXPLAIN` on both forms against stock containers:
+
+| server | as written | with the fix |
+|---|---|---|
+| 4.4.48 | compiles | compiles |
+| 5.26.30 | **fails** — "Aggregation column contains implicit grouping expressions ... Illegal expression(s): textMatches" | compiles |
+| 2026.07.1 | **fails** — `42I18` | compiles |
+
+Cypher 4.4 accepted implicit grouping expressions; Cypher 5 rejects them, so
+this breaks as soon as you leave 4.4 rather than only on CalVer. 5.26's error
+message prescribes the same fix: "It may be possible to rewrite the query by
+extracting these grouping/aggregation expressions into a preceding WITH
+clause."
+
+**So the fix can be made now, independently of the server upgrade.** It
+compiles on 4.4 as well as 5.x and 2026.x, so it needs no coordination with
+the rollout and cannot break the current deployment.
+
+The query is selected by a `useFastQuery` toggle (line 213). Since it works on
+4.4, it may well have been exercised there; what is certain is that it cannot
+work on any 5.x or later server. It arrived in `a2edf26` and was extended by
+`5e1d77c`, so this is current work rather than legacy.
 
 **Verify.** Any snapshot built by the `neo4j-5-upgrade` branch will exercise
 it — `check-neuprint-snapshot` runs the query and fails if it does not execute.
