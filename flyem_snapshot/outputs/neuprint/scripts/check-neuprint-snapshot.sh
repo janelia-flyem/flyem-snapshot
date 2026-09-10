@@ -828,8 +828,13 @@ else
     # all-clear for the ones that do not.
     FT_NAME=$(q "SHOW INDEXES YIELD name, type WHERE type = 'FULLTEXT' RETURN name;" | head -1)
     FT_STATE=$(q "SHOW INDEXES YIELD name, type, state WHERE type = 'FULLTEXT' RETURN state;" | head -1)
-    FT_PROPS=$(q "SHOW INDEXES YIELD type, properties WHERE type = 'FULLTEXT'
-                  UNWIND properties AS p RETURN DISTINCT p;" | sort -u | sed '/^$/d')
+    # Return the list and split it here. UNWIND after SHOW INDEXES ... YIELD
+    # is not accepted, and q() discards stderr, so that failure looked exactly
+    # like an index with no properties -- which made every populated property
+    # appear unindexed.
+    FT_PROPS=$(q "SHOW INDEXES YIELD name, type, properties WHERE type = 'FULLTEXT' RETURN properties;" \
+        | head -1 | tr -d '[]' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d' | sort -u)
+    FT_PROP_COUNT=$(grep -c . <<<"${FT_PROPS}"); [[ -z "${FT_PROPS}" ]] && FT_PROP_COUNT=0
 
     FT_OK=0
     if [[ -z "${FT_NAME}" ]]; then
@@ -839,8 +844,11 @@ else
         bad "FULLTEXT index ${FT_NAME} is ${FT_STATE:-in an unknown state}, not ONLINE"
     else
         FT_OK=1
-        ok "FULLTEXT index ${FT_NAME} is ONLINE ($(echo "${FT_PROPS}" | wc -l | tr -d ' ') properties)"
+        ok "FULLTEXT index ${FT_NAME} is ONLINE (${FT_PROP_COUNT} properties)"
         info "  indexed: $(echo ${FT_PROPS} | tr ' ' ',' | sed 's/,/, /g')"
+        if [[ "${FT_PROP_COUNT}" -eq 0 ]]; then
+            bad "could not read the FULLTEXT index's property list"
+        fi
 
         # Populated but unindexed: what the fast query would miss.
         FT_MISSING=""
