@@ -787,14 +787,22 @@ else
     PROP_POPULATED=0
     PROP_SUMMARY=""
     PROP_EMPTY=""
+    PROP_POP_PAIRS=""   # "name=pct name=pct ...", for the fulltext coverage check
     _i=1
     for _p in ${SEARCH_PROPS}; do
         _c=$(awk -F, -v i="${_i}" '{gsub(/[^0-9]/,"",$i); print $i}' <<<"${PROP_COUNTS}")
         if [[ -n "${_c}" && "${_c}" -gt 0 ]]; then
             PROP_POPULATED=$((PROP_POPULATED+1))
             if [[ "${NEURON_TOTAL}" =~ ^[0-9]+$ ]] && [[ "${NEURON_TOTAL}" -gt 0 ]]; then
-                PROP_SUMMARY="${PROP_SUMMARY}${PROP_SUMMARY:+, }${_p} $(( 100 * _c / NEURON_TOTAL ))%"
+                # Integer division truncates, and reporting "0%" for a property
+                # that is populated -- just thinly -- reads as a contradiction,
+                # especially inside a failure message.
+                _pct=$(( 100 * _c / NEURON_TOTAL ))
+                [[ "${_pct}" -eq 0 ]] && _pct="<1"
+                PROP_POP_PAIRS="${PROP_POP_PAIRS}${_p}=${_pct} "
+                PROP_SUMMARY="${PROP_SUMMARY}${PROP_SUMMARY:+, }${_p} ${_pct}%"
             else
+                PROP_POP_PAIRS="${PROP_POP_PAIRS}${_p}=? "
                 PROP_SUMMARY="${PROP_SUMMARY}${PROP_SUMMARY:+, }${_p} ${_c}"
             fi
         else
@@ -806,6 +814,57 @@ else
     info "annotation properties tested: ${PROP_POPULATED} of 11 populated"
     [[ -n "${PROP_SUMMARY}" ]] && info "  ${PROP_SUMMARY}"
     [[ -n "${PROP_EMPTY}" ]] && info "  null throughout, so no string work: ${PROP_EMPTY}"
+
+    # The fulltext index behind neuPrintExplorer's "fast" search query. Its
+    # property list comes from the 'find-neurons-fulltext-index-properties'
+    # config setting, whose schema default is only type/instance/synonyms --
+    # while the query computes its result ordering from all eleven properties.
+    #
+    # So the fast query is only equivalent to the slow one when every property
+    # a dataset actually populates is in the index. Where it is not, the fast
+    # query silently returns fewer rows: it can never see a neuron whose only
+    # match is in an unindexed property. That is dataset-dependent, which is
+    # the trap -- a dataset populating only indexed properties gives a false
+    # all-clear for the ones that do not.
+    FT_NAME=$(q "SHOW INDEXES YIELD name, type WHERE type = 'FULLTEXT' RETURN name;" | head -1)
+    FT_STATE=$(q "SHOW INDEXES YIELD name, type, state WHERE type = 'FULLTEXT' RETURN state;" | head -1)
+    FT_PROPS=$(q "SHOW INDEXES YIELD type, properties WHERE type = 'FULLTEXT'
+                  UNWIND properties AS p RETURN DISTINCT p;" | sort -u | sed '/^$/d')
+
+    FT_OK=0
+    if [[ -z "${FT_NAME}" ]]; then
+        bad "no FULLTEXT index -- neuPrintExplorer's fast search query cannot run"
+        info "expected find_neurons_fulltext_properties_index, from create-indexes.cypher"
+    elif [[ "${FT_STATE}" != "ONLINE" ]]; then
+        bad "FULLTEXT index ${FT_NAME} is ${FT_STATE:-in an unknown state}, not ONLINE"
+    else
+        FT_OK=1
+        ok "FULLTEXT index ${FT_NAME} is ONLINE ($(echo "${FT_PROPS}" | wc -l | tr -d ' ') properties)"
+        info "  indexed: $(echo ${FT_PROPS} | tr ' ' ',' | sed 's/,/, /g')"
+
+        # Populated but unindexed: what the fast query would miss.
+        FT_MISSING=""
+        for _pair in ${PROP_POP_PAIRS}; do
+            _p="${_pair%%=*}"; _pct="${_pair##*=}"
+            grep -qx -- "${_p}" <<<"${FT_PROPS}" || FT_MISSING="${FT_MISSING}${FT_MISSING:+, }${_p} (${_pct}%)"
+        done
+
+        # Indexed but empty: harmless, but it means a slot is doing nothing.
+        FT_WASTED=""
+        while IFS= read -r _p; do
+            [[ -z "${_p}" ]] && continue
+            case " ${PROP_POP_PAIRS}" in *" ${_p}="*) ;; *) FT_WASTED="${FT_WASTED}${FT_WASTED:+, }${_p}";; esac
+        done <<< "${FT_PROPS}"
+
+        if [[ -z "${FT_MISSING}" ]]; then
+            ok "every populated search property is in the FULLTEXT index"
+        else
+            bad "populated search properties missing from the FULLTEXT index: ${FT_MISSING}"
+            info "  the fast search query cannot match on these, so it returns fewer rows"
+            info "  fix by listing them in the 'find-neurons-fulltext-index-properties' config"
+        fi
+        [[ -n "${FT_WASTED}" ]] && info "  indexed but null throughout, so contributing nothing: ${FT_WASTED}"
+    fi
 
     # Built per term, so a sweep can vary the term without re-booting.
     build_query() {
@@ -830,6 +889,59 @@ WITH n, q, parenQ, props, user_body,
          WHEN any(p IN props WHERE p = q) THEN 1
          WHEN any(p IN props WHERE p STARTS WITH q) THEN 2
          WHEN any(p IN props WHERE p STARTS WITH parenQ) THEN 3
+         WHEN any(p IN props WHERE p CONTAINS q) THEN 4
+         ELSE 5
+     END as priority,
+     CASE
+         WHEN toLower(n.type) STARTS WITH q THEN 0
+         WHEN toLower(n.type) CONTAINS q THEN 1
+         ELSE 2
+     END as type_priority
+RETURN
+    toString(n.bodyId) as bodyId, n.type as type, n.instance as instance,
+    n.hemibrainType as hemibrainType, n.flywireType as flywireType,
+    n.systematicType as systematicType, n.itoleeHl as itoLeeHl,
+    n.trumanHl as trumanHl, n.synonyms as synonyms, n.class as class,
+    n.entryNerve as entryNerve, n.exitNerve as exitNerve,
+    priority, type_priority
+ORDER BY priority, type_priority, n.type, n.instance
+QRY
+    }
+
+    # neuPrintExplorer's "fast" variant of the same search. Instead of scanning
+    # the label it queries the fulltext index, then computes the identical
+    # priority ordering. Transcribed from buildFastQuery, including its inlined
+    # '(' + q where the slow query uses a parenQ variable, and its lack of a
+    # LIMIT.
+    build_fast_query() {
+        local q="$1"
+        cat <<QRY
+WITH toLower('${q}') as q, ${SAMPLE_BODY} as user_body
+
+// Full-text search wrapped in subquery to preserve pipeline when no results
+CALL {
+  WITH q
+  CALL db.index.fulltext.queryNodes('find_neurons_fulltext_properties_index', '*' + q + '*')
+  YIELD node as n
+  RETURN collect(n) as textMatches
+}
+
+// Add bodyId match if specified
+OPTIONAL MATCH (b:Neuron) WHERE user_body <> 0 AND b.bodyId = user_body
+WITH textMatches + collect(b) as allMatches, q, user_body
+UNWIND allMatches as n
+
+WITH DISTINCT n, q, user_body,
+     [toLower(n.type), toLower(n.instance), toLower(n.hemibrainType),
+      toLower(n.flywireType), toLower(n.systematicType), toLower(n.itoleeHl),
+      toLower(n.trumanHl), toLower(n.synonyms), toLower(n.class),
+      toLower(n.entryNerve), toLower(n.exitNerve)] as props
+WITH n, q, props, user_body,
+     CASE
+         WHEN n.bodyId = user_body AND user_body <> 0 THEN 0
+         WHEN any(p IN props WHERE p = q) THEN 1
+         WHEN any(p IN props WHERE p STARTS WITH q) THEN 2
+         WHEN any(p IN props WHERE p STARTS WITH '(' + q) THEN 3
          WHEN any(p IN props WHERE p CONTAINS q) THEN 4
          ELSE 5
      END as priority,
@@ -907,8 +1019,45 @@ QRY
         WARM_MS=$(( T1 - T0 - OVERHEAD_MS )); (( WARM_MS < 0 )) && WARM_MS=0
         (( ROWS > 0 )) && ROWS=$(( ROWS - 1 ))
 
-        printf "  ....  term %-10s rows %8s / %-10s cold %7s ms   warm %7s ms\n" \
+        printf "  ....  term %-10s slow: rows %8s / %-10s cold %7s ms   warm %7s ms\n" \
             "'${TERM}'" "${ROWS}" "${NEURON_TOTAL}" "${COLD_MS}" "${WARM_MS}"
+
+        # The fast variant, same term and bodyId, so the two are comparable.
+        if [[ "${FT_OK}" -eq 1 ]]; then
+            FAST_QUERY=$(build_fast_query "${TERM}")
+            T0=$(now_ms)
+            FAST_OUT=$(${CS} -d "${NEO4J_DB}" --format plain "${FAST_QUERY}" 2>&1 >/dev/null)
+            FAST_RC=$?
+            T1=$(now_ms)
+            FAST_COLD=$(( T1 - T0 - OVERHEAD_MS )); (( FAST_COLD < 0 )) && FAST_COLD=0
+
+            if [[ "${FAST_RC}" -ne 0 ]]; then
+                bad "the fast search query failed to execute for term '${TERM}'"
+                grep -viE '^[[:space:]]*$' <<<"${FAST_OUT}" | tail -5 | sed 's/^/          /'
+                QUERY_FAILED=1
+            else
+                T0=$(now_ms)
+                FAST_ROWS=$(${CS} -d "${NEO4J_DB}" --format plain "${FAST_QUERY}" 2>/dev/null | grep -c .)
+                T1=$(now_ms)
+                FAST_WARM=$(( T1 - T0 - OVERHEAD_MS )); (( FAST_WARM < 0 )) && FAST_WARM=0
+                (( FAST_ROWS > 0 )) && FAST_ROWS=$(( FAST_ROWS - 1 ))
+
+                printf "  ....  %-15s fast: rows %8s / %-10s cold %7s ms   warm %7s ms\n" \
+                    "" "${FAST_ROWS}" "${NEURON_TOTAL}" "${FAST_COLD}" "${FAST_WARM}"
+
+                # Row equality is the empirical form of the index-coverage
+                # check above. If that already reported missing properties this
+                # difference is its predicted consequence, so report rather
+                # than fail twice for one cause. With full coverage a
+                # difference is a genuine surprise and does fail.
+                if [[ -n "${FT_MISSING:-}" ]]; then
+                    info "  rows differ by $(( ROWS - FAST_ROWS )); expected, given the unindexed properties above"
+                else
+                    expect_eq "fast query returns the same rows as the slow query for '${TERM}'" \
+                        "${FAST_ROWS}" "${ROWS}"
+                fi
+            fi
+        fi
 
         # First successful term always takes the slot, so the slowest term is
         # reported even when every timing clamps to zero.

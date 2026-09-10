@@ -33,8 +33,13 @@ What it checks:
       exist (they may legitimately be smaller, when the config restricts
       the dataset totals to in-bounds ROIs)
     - the store format is reported, since neo4j has no downgrade path
-    - neuPrintExplorer's search query executes, with its timing reported
-      (inputs derived deterministically, so runs are comparable)
+    - neuPrintExplorer's search queries (both the label-scanning one and
+      the fulltext-index one) execute, with their timings reported and
+      their row counts compared; inputs are derived deterministically, so
+      runs are comparable
+    - the FULLTEXT index is ONLINE and covers every search property the
+      dataset actually populates -- where it does not, the fast query
+      silently returns fewer rows than the slow one
     - the database name and pinned Cypher language version
 
 Environment overrides, all optional:
