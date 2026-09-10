@@ -188,9 +188,15 @@ does populate it (hemibrain) before relying on it.
 
 **Neither query has a `LIMIT`.** Both return every matched row.
 
-Measured on wasp, the fulltext index removes a fixed ~97 ms and nothing else —
-everything after the match is shared between the two forms, so the per-row cost
-is identical and swamps the fixed saving as rows grow:
+What the index removes is the label scan plus `CONTAINS` filtering. Everything
+after the match — the eleven `toLower()` calls, both `CASE` ladders, the
+`DISTINCT`, the `ORDER BY`, serialising fourteen columns — is shared, so the
+per-row cost is identical and grows with the result set either way.
+
+Two things follow, and they pull in opposite directions.
+
+**Within one dataset, the saving is a fixed amount that a large result set
+swamps.** Four term lengths on wasp:
 
 | term | rows | slow | fast | speedup |
 |---|---|---|---|---|
@@ -199,11 +205,24 @@ is identical and swamps the fixed saving as rows grow:
 | `lc10` | 7 | 193 ms | 103 ms | 1.87x |
 | `SNxx07` | 1 | 178 ms | 81 ms | 2.20x |
 
-An autocomplete field issues a short, common term on every keystroke, which is
-exactly the case where the index buys nothing — 2% for a single character. If
-the reported slowness is that case, **changing to the fulltext index will not
-fix it**; the cost is returning and serialising tens of thousands of rows that a
-dropdown cannot display. A `LIMIT` addresses what the index cannot.
+**Across datasets, that fixed amount scales with the scan being avoided** —
+label size times populated properties — so it is far from negligible on a large
+label:
+
+| dataset | neurons | slow | fast | speedup | saving |
+|---|---|---|---|---|---|
+| wasp | 50,564 | 498 ms | 504 ms | 0.99x | ~0 |
+| fish2 | 224,391 | 1247 ms | 428 ms | **2.91x** | **819 ms** |
+
+(fish2's row counts differ by 1, so that is very nearly like-for-like.)
+
+So the index is worth having, and more so as datasets grow. But an autocomplete
+field issues a short, common term on every keystroke, which maximises the
+result set — the part the index cannot help with. If the reported slowness is
+that case, the index will improve it by the fixed amount and no more, while the
+dominant cost remains returning and serialising tens of thousands of rows a
+dropdown cannot display. **A `LIMIT` addresses what the index cannot**, and the
+two are complementary rather than alternatives.
 
 This is a frontend design decision, not a defect, which is why it is listed
 separately.

@@ -285,9 +285,14 @@ info ":${DS}_ElementSet nodes: ${ELMSET_COUNT} (${NONSYN_ELMSET} non-synaptic)"
 # |Element AND Synapse| = Element - non-synaptic. If every synapse carries
 # :Element then that equals the Synapse count, i.e. Element - Synapse ==
 # non-synaptic. A synapse missing its :Element label breaks the identity.
-expect_eq "every :${DS}_Synapse is also an :${DS}_Element" \
+# Phrased as the identity being tested rather than "every X is also a Y",
+# because expect_eq prints the value it compared -- the non-synaptic count, not
+# a violation count. On a dataset with real elements the old wording rendered as
+# "every :fish2_Synapse is also an :fish2_Element (= 190774)", which reads as
+# 190,774 violations. It only surfaced on fish2; the other datasets print 0.
+expect_eq ":${DS}_Element minus :${DS}_Synapse equals the non-synaptic count" \
     "$(( ELM_COUNT - SYN_COUNT ))" "${NONSYN_ELM}"
-expect_eq "every :${DS}_SynapseSet is also an :${DS}_ElementSet" \
+expect_eq ":${DS}_ElementSet minus :${DS}_SynapseSet equals the non-synaptic count" \
     "$(( ELMSET_COUNT - SS_COUNT ))" "${NONSYN_ELMSET}"
 
 # Every node should carry one of the labels we know about. Nodes with several

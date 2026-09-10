@@ -639,12 +639,30 @@ Measured on wasp (50,564 neurons, warm):
 | `SNxx07` | 1 | 178 ms | 81 ms | 2.20x |
 
 Fitting a floor-plus-per-row model to the extremes gives slow ~178 ms + 15.6
-us/row and fast ~81 ms + 19.0 us/row. **The index removes a fixed ~97 ms and
-nothing else.** Everything after the match is shared between the two forms —
-the eleven `toLower()` calls building `props`, both `CASE` ladders, the
-`DISTINCT`, the `ORDER BY`, and serialising fourteen columns — so the
-per-row cost is the same and swamps the fixed saving as rows grow. Hence ~50%
-for selective terms and 2% for a single character.
+us/row and fast ~81 ms + 19.0 us/row. On wasp, then, the index removes ~97 ms
+of floor and nothing else: everything after the match is shared between the two
+forms — the eleven `toLower()` calls building `props`, both `CASE` ladders, the
+`DISTINCT`, the `ORDER BY`, and serialising fourteen columns — so the per-row
+cost is the same and swamps the fixed saving as rows grow. Hence ~50% for
+selective terms and 2% for a single character on wasp.
+
+**That ~97 ms is not a constant across datasets.** What the index removes is the
+label scan plus `CONTAINS` filtering, which scales with label size times the
+number of populated properties. Measured on the commonest-letter term for each:
+
+| dataset | neurons | populated props | slow | fast | speedup | rows slow/fast |
+|---|---|---|---|---|---|---|
+| wasp | 50,564 | 2 | 498 ms | 504 ms | 0.99x | 25,278 / 25,278 |
+| yakuba | 87,501 | 5 | 803 ms | 387 ms | 2.07x † | 21,158 / 12,228 |
+| fish2 | 224,391 | 3 | 1247 ms | 428 ms | **2.91x** | 12,247 / 12,246 |
+
+† yakuba's is not a like-for-like comparison — its fast query returns 42% fewer
+rows, for the index-coverage reason below.
+
+fish2 is the useful datapoint: the largest label, and a row difference of 1, so
+the two forms are doing the same work. There the index saves **819 ms**, against
+wasp's 97 ms. An earlier revision of this section generalised wasp's floor into
+a constant and thereby understated the index's value on large datasets.
 
 **This matters for the reported slowness.** An autocomplete field issues a
 short, common term on every keystroke, which is precisely the case where the
