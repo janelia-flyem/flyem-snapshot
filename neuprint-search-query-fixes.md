@@ -3,8 +3,8 @@
 Found while adding neuPrintExplorer's two FindNeurons search queries to
 `check-neuprint-snapshot`, validating against wasp, yakuba and fish2 on
 Neo4j 2026.07.1. Measurements and reasoning are in
-[`neo4j-upgrade.md`](neo4j-upgrade.md) under *The fulltext "fast" query saves a
-fixed cost, not a proportional one*.
+[`neo4j-upgrade.md`](neo4j-upgrade.md) under *What the fulltext "fast" query
+actually saves*.
 
 None of these are made by this branch. Changes 1 and 2 are the substantive
 ones; change 3 only matters if change 2 is done a particular way.

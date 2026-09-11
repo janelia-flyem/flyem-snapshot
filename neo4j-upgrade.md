@@ -621,7 +621,7 @@ server is fine in that direction. The reverse is not: neo4j has no downgrade
 path, which is why the production server must be upgraded before a database
 built by this branch is swapped in.
 
-#### The fulltext "fast" query saves a fixed cost, not a proportional one
+#### What the fulltext "fast" query actually saves
 
 neuPrintExplorer has two forms of the FindNeurons search, selected by a
 `useFastQuery` toggle in `NeuronInputField.jsx`: `buildSlowQuery` scans the
