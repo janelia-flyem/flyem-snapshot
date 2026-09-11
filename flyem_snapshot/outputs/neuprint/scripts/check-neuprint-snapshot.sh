@@ -450,8 +450,18 @@ expect_eq "no duplicate Segment bodyIds" \
 expect_eq "no Segment with a null bodyId" \
     "$(q "MATCH (n:\`${DS}_Segment\`) WHERE n.bodyId IS NULL RETURN count(n);")" "0"
 
-expect_gt "uniqueness constraints present" \
-    "$(q "SHOW CONSTRAINTS YIELD name RETURN count(name);")" 1
+# Counting constraints would pass with two constraints on the wrong thing.
+# This branch changed their syntax (ON ... ASSERT -> FOR ... REQUIRE) and named
+# them, so check the result is what was intended: UNIQUENESS on bodyId for both
+# the Segment and Neuron labels.
+for _lbl in Segment Neuron; do
+    expect_eq "UNIQUENESS constraint on :${DS}_${_lbl}(bodyId)" \
+        "$(q "SHOW CONSTRAINTS YIELD type, labelsOrTypes, properties
+              WHERE type = 'UNIQUENESS'
+                AND '${DS}_${_lbl}' IN labelsOrTypes
+                AND 'bodyId' IN properties
+              RETURN count(*);")" "1"
+done
 
 echo
 echo "=============================================================="
@@ -476,6 +486,34 @@ SEG_PROPS=$(q "MATCH (n:\`${DS}_Segment\`) UNWIND keys(n) AS k RETURN DISTINCT k
 IDX_PROPS=$(q "SHOW INDEXES YIELD labelsOrTypes, properties, entityType, type
                WHERE entityType = 'NODE' AND type = 'RANGE' AND '${DS}_Segment' IN labelsOrTypes
                RETURN properties[0];" | sort -u)
+
+# An index on a label no node carries is invisible by every other measure:
+# state ONLINE, populationPercent 100.0, and zero nodes behind it -- the same
+# shape as the ROI property-name mismatch this suite already guards against,
+# but on the label axis. It matters here because create-indexes.cypher builds
+# indexes on both dataset-prefixed labels (`${DS}_Segment`) and unprefixed ones
+# (:Segment, :Neuron, :Synapse), and nodes are expected to carry both. A wrong
+# prefix would produce a fully populated index over nothing.
+#
+# Few distinct labels are involved, so this is one cheap count-store lookup
+# each rather than a scan.
+IDX_LABELS=$(q "SHOW INDEXES YIELD labelsOrTypes, entityType
+                WHERE entityType = 'NODE' AND labelsOrTypes IS NOT NULL
+                RETURN labelsOrTypes[0];" | sort -u | sed '/^$/d')
+EMPTY_LABELS=""
+while IFS= read -r _lbl; do
+    [[ -z "${_lbl}" ]] && continue
+    _n=$(q "MATCH (n:\`${_lbl}\`) RETURN count(n);")
+    [[ "${_n}" =~ ^[0-9]+$ ]] && [[ "${_n}" -gt 0 ]] \
+        || EMPTY_LABELS="${EMPTY_LABELS}${EMPTY_LABELS:+, }${_lbl}"
+done <<< "${IDX_LABELS}"
+
+if [[ -z "${EMPTY_LABELS}" ]]; then
+    ok "every indexed label is carried by at least one node ($(grep -c . <<<"${IDX_LABELS}") labels)"
+else
+    bad "indexes on labels no node carries: ${EMPTY_LABELS}"
+    info "  such an index reports ONLINE at 100% while covering nothing"
+fi
 
 INERT=$(comm -23 <(echo "${IDX_PROPS}") <(echo "${SEG_PROPS}") | sed '/^$/d')
 if [[ -z "${INERT}" ]]; then
@@ -1158,6 +1196,37 @@ info "neo4j server version: $(q "CALL dbms.components() YIELD name, versions WHE
 # there is nothing to assert it against.
 STORE_FMT=$(q "SHOW DATABASES YIELD name, store WHERE name = '${NEO4J_DB}' RETURN store;" | head -1)
 info "store format: ${STORE_FMT:-unknown (server does not report it)}"
+
+# The conf persisted beside the database, which is what inspect- and
+# check-neuprint-snapshot read later. The ingest rewrites the memory settings
+# in *both* its own copy and this one, precisely so the two cannot disagree --
+# if only its own copy were rewritten, the conf shipped with the database would
+# still claim 31G/150G and would fail to start on anything smaller than a
+# cluster node. Nothing verified that rewrite until now.
+#
+# Read from /conf, the bind-mounted snapshot copy, not from ${NEO4J_HOME}/conf,
+# which this script's own startup may have rewritten.
+if [[ -r /conf/neo4j.conf ]]; then
+    CONF_HEAP=$(grep -oE '^server\.memory\.heap\.max_size=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
+    CONF_PC=$(grep -oE '^server\.memory\.pagecache\.size=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
+    CONF_LANG=$(grep -oE '^db\.query\.default_language=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
+    info "persisted conf: heap=${CONF_HEAP:-unset} pagecache=${CONF_PC:-unset} cypher=${CONF_LANG:-unset}"
+
+    # Both must be present and non-empty, or the snapshot is not portable: a
+    # missing value means the server falls back to a default that may not fit
+    # the machine reading it.
+    if [[ -n "${CONF_HEAP}" && -n "${CONF_PC}" ]]; then
+        ok "persisted neo4j.conf carries explicit memory sizing"
+    else
+        bad "persisted neo4j.conf is missing memory sizing (heap='${CONF_HEAP}' pagecache='${CONF_PC}')"
+    fi
+
+    # The language pin has to survive into the persisted copy too, otherwise a
+    # future server reading this conf could default to CYPHER_25.
+    expect_eq "persisted neo4j.conf pins the Cypher language" "${CONF_LANG}" "CYPHER_5"
+else
+    skip "no readable /conf/neo4j.conf to check"
+fi
 
 echo
 echo "=============================================================="

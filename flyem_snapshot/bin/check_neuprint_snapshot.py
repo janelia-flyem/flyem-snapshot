@@ -21,7 +21,13 @@ What it checks:
     - node and relationship counts, and that every node carries a known label
     - bodyId integrity (no duplicates, no nulls) and uniqueness constraints
     - every index is ONLINE and fully populated
-    - every index refers to a property that actually exists
+    - every index refers to a property that actually exists, and to a
+      label that at least one node carries
+    - the uniqueness constraints are UNIQUENESS on Segment/Neuron bodyId,
+      not merely present
+    - the neo4j.conf persisted beside the database carries explicit
+      memory sizing and the Cypher language pin, so the snapshot starts
+      on a machine other than the one that built it
     - every ROI in Meta.roiInfo has both a matching property and an index
     - every ROI index is usable when forced via an index hint
     - node and relationship totals match what the importer reported, and
