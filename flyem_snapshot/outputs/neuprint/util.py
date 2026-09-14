@@ -69,6 +69,45 @@ def check_roi_name(roi):
     return roi
 
 
+# A label is rendered into create-indexes.cypher inside backticks, as
+# `{dataset}_{label}`. These characters break that, each in a different way.
+INVALID_LABEL_CHARS = '`:\r\n'
+
+
+def check_element_label(label, config_name=''):
+    """
+    Verify that an element label can be used verbatim in a backtick-quoted
+    neo4j label, and return it unchanged.
+
+    Called at export/render time rather than left to the database, because the
+    consequences are invisible or late:
+
+    - A backtick ends the quoting early. `fish2_So`ma` is not valid Cypher, so
+      the ingest fails during index creation -- hours into a run.
+    - A colon is legal inside backticks but is Cypher punctuation, not part of
+      a label. It is how `fish2_:Soma` came about: element.py stripped the
+      leading colon from the configured ':Soma' while indexes.py did not, and
+      217 indexes were built on a label no node carried. Nothing detected it,
+      because an index over a label nothing carries reports ONLINE at
+      populationPercent 100.0.
+    - A newline would corrupt the generated .cypher file.
+
+    An empty label is rejected too, since it would render as `{dataset}_`.
+    """
+    where = f" (from element-labels entry {config_name!r})" if config_name else ""
+    if not label:
+        raise RuntimeError(f"Empty neuprint element label{where}; it would render as a bare dataset prefix.")
+    if (bad := set(label) & set(INVALID_LABEL_CHARS)):
+        msg = (
+            f"Element label {label!r}{where} contains character(s) {sorted(bad)} which cannot be "
+            "used in a backtick-quoted neo4j label. A leading ':' is stripped automatically "
+            "(configs conventionally write ':Soma'), so this is a ':' somewhere else in the name, "
+            "a backtick, or a line break."
+        )
+        raise RuntimeError(msg)
+    return label
+
+
 def append_neo4j_type_suffixes(df, exclude=(), drop_empty=True):
     """
     Return a renamed DataFrame wholes columns now have

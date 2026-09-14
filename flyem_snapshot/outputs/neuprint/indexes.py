@@ -1,6 +1,9 @@
 import logging
 from itertools import chain
+
 from jinja2 import Environment, PackageLoader
+
+from .util import check_element_label
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +176,8 @@ def _element_rois_to_index(cfg, element_roisets):
     # populationPercent 100.0, zero nodes behind it -- which is how it went
     # unnoticed. Found by check-neuprint-snapshot's indexed-label check on
     # fish2, the only dataset here with element tables.
-    def _label(raw):
-        return (raw or '').lstrip(':')
+    def _label(raw, config_name=''):
+        return check_element_label((raw or '').lstrip(':'), config_name)
 
     indexed_label_roisets = {
         _label(item['neuprint-label']): item['roisets']
@@ -188,7 +191,7 @@ def _element_rois_to_index(cfg, element_roisets):
 
     element_rois_to_index = {}
     for config_name, d in element_roisets.items():
-        label = _label(cfg['element-labels'].get(config_name))
+        label = _label(cfg['element-labels'].get(config_name), config_name)
         if label not in indexed_label_roisets:
             continue
         rois = element_rois_to_index.get(label, set())
