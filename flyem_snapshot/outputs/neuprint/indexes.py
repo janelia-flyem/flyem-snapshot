@@ -162,18 +162,33 @@ def _segment_rois_to_index(cfg, all_rois, synapse_roisets):
 
 
 def _element_rois_to_index(cfg, element_roisets):
+    # These labels are written in the config with a leading colon (the schema's
+    # own example is ':Mito'), but a colon is punctuation in Cypher, not part of
+    # the label. element.py strips it before exporting, so the nodes carry
+    # 'Soma' and '<dataset>_Soma'. Strip it here too.
+    #
+    # Without this, create-indexes.cypher renders `{{dataset}}_{{label}}` as
+    # `fish2_:Soma` and builds indexes on a label no node carries. Such an
+    # index is invisible by every other measure -- state ONLINE,
+    # populationPercent 100.0, zero nodes behind it -- which is how it went
+    # unnoticed. Found by check-neuprint-snapshot's indexed-label check on
+    # fish2, the only dataset here with element tables.
+    def _label(raw):
+        return (raw or '').lstrip(':')
+
     indexed_label_roisets = {
-        item['neuprint-label']: item['roisets']
+        _label(item['neuprint-label']): item['roisets']
         for item in cfg['indexes']['element-roisets-to-index']
     }
 
-    invalid_labels = {*indexed_label_roisets.keys()} - {*cfg['element-labels'].values()}
+    configured_labels = {_label(v) for v in cfg['element-labels'].values()}
+    invalid_labels = {*indexed_label_roisets.keys()} - configured_labels
     if invalid_labels:
         raise RuntimeError(f"Some requested Element indexes refer to non-existent neuprint labels: {invalid_labels}")
 
     element_rois_to_index = {}
     for config_name, d in element_roisets.items():
-        label = cfg['element-labels'].get(config_name)
+        label = _label(cfg['element-labels'].get(config_name))
         if label not in indexed_label_roisets:
             continue
         rois = element_rois_to_index.get(label, set())
