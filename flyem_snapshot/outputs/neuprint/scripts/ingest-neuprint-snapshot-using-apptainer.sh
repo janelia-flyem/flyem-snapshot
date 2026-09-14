@@ -111,9 +111,30 @@ else
         exit 1
     fi
 
-    # Now copy the database files from /scratch to the snapshot directory
+    # Now copy the database files from /scratch to the snapshot directory.
+    #
+    # rsync --delete rather than cp -R, because cp -R *merges* into an existing
+    # directory instead of replacing it. Re-ingesting into a snapshot dir that
+    # already held a neo4j/ left stale files behind whenever a filename changed
+    # between runs. That is how two apoc jars came to sit in plugins/ after the
+    # 2026.07.1 -> 2026.08.1 bump: the workspace correctly held only the new
+    # one, and the copy landed it beside the old. A mismatched apoc jar bundles
+    # its own ANTLR and stops the server booting at all.
+    #
+    # plugins/ is merely where it was noticed. data/ is the greater risk:
+    # stale transaction logs merging with a freshly imported store is a much
+    # worse failure than a spare jar, and nothing else guards it.
+    #
+    # --delete makes the destination match the workspace exactly. Unlike
+    # rm -rf'ing the destination first, there is no window in which the
+    # previous database is gone and the new one has not landed.
     echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
-    cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
+    if ! command -v rsync > /dev/null; then
+        echo "ERROR: rsync is required to copy the database into ${SNAPSHOT_DIR}." 1>&2
+        echo "       (cp -R would merge with any existing neo4j/ and leave stale files.)" 1>&2
+        exit 1
+    fi
+    rsync -a --delete ${WORKSPACE_DIR}/ ${SNAPSHOT_DIR}/$(basename ${WORKSPACE_DIR})/
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') Removing temporary workspace directory"
     rm -rf ${WORKSPACE_DIR}
