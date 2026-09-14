@@ -23,7 +23,7 @@
 ##                  NEO4J_DB=neo4j NEO4J_IMAGE=docker://neo4j:4.4.16 \
 ##                      check-neuprint-snapshot.sh <dir>
 ##
-##   NEO4J_IMAGE  Container image. Default docker://neo4j:2026.07.1. Must be
+##   NEO4J_IMAGE  Container image. Default docker://neo4j:2026.08.1. Must be
 ##                able to open the store you are pointing it at -- neo4j has
 ##                no downgrade path, so an older image cannot read a newer
 ##                store.
@@ -89,7 +89,7 @@ if [[ ! -d "$1" ]]; then
 fi
 
 NEO4J_DIR=$(cd -- "$1" && pwd)
-NEO4J_IMAGE=${NEO4J_IMAGE:-docker://neo4j:2026.07.1}
+NEO4J_IMAGE=${NEO4J_IMAGE:-docker://neo4j:2026.08.1}
 NEO4J_DB=${NEO4J_DB:-data}
 
 for d in conf data logs plugins; do
@@ -966,7 +966,7 @@ QRY
     # LIMIT.
     #
     # ONE DELIBERATE DEVIATION from the source. buildFastQuery as written does
-    # not compile on neo4j 2026.07.1:
+    # not compile on neo4j 5.x or later (verified on 5.26.30 and 2026.07.1):
     #
     #   WITH textMatches + collect(b) as allMatches, q, user_body
     #

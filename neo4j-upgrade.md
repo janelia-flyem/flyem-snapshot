@@ -1,4 +1,4 @@
-# Neo4j Upgrade: 4.4.16 → 2026.07.1
+# Neo4j Upgrade: 4.4.16 → 2026.08.1
 
 ## Background
 
@@ -93,7 +93,7 @@ so `apoc-core` is sufficient.
 ## What Additionally Changed for the CalVer Target
 
 The original target for this branch was `5.26.27`; it was retargeted to
-`2026.06.0`, and then to **`2026.07.1`** once that shipped.  Neo4j switched from
+`2026.06.0`, to `2026.07.1`, and then to **`2026.08.1`** once that shipped.  Neo4j switched from
 SemVer to calendar versioning (`YYYY.MM.Patch`) with the `2025.01` release, which
 is the first release after the `5.26` LTS checkpoint — so all of the 5.x-era
 changes above still apply, plus the following.
@@ -189,9 +189,9 @@ for the details and the deployment sequencing this implies.
 
 ### `flyem_snapshot/outputs/neuprint/scripts/ingest-neuprint-snapshot-using-apptainer.sh`
 
-- Docker image bumped: `neo4j:4.4.16` → `neo4j:2026.07.1`
+- Docker image bumped: `neo4j:4.4.16` → `neo4j:2026.08.1`
 - APOC download URL updated to the CalVer core jar:
-  `neo4j/apoc` `2026.07.1-core.jar` (replaces `neo4j-contrib` `4.4.0.7-all.jar`)
+  `neo4j/apoc` `2026.08.1-core.jar` (replaces `neo4j-contrib` `4.4.0.7-all.jar`)
 
 ### `flyem_snapshot/outputs/neuprint/scripts/ingest-neuprint-snapshot-within-neo4j-container.sh`
 
@@ -220,7 +220,7 @@ for the details and the deployment sequencing this implies.
 
 ### `flyem_snapshot/outputs/neuprint/scripts/inspect-neuprint-snapshot.sh` and `_launch_snapshot_and_bash_shell.sh`
 
-- Docker image bumped: `neo4j:4.4.16` → `neo4j:2026.07.1`
+- Docker image bumped: `neo4j:4.4.16` → `neo4j:2026.08.1`
 - `HEAP_SIZE` / `MAX_MEMORY` forwarded into the container as `APPTAINERENV_*`
 - **The inspect path has no memory defaults.** The snapshot's own `neo4j.conf`
   is authoritative — the ingestion records the sizing it actually used — so an
@@ -465,7 +465,7 @@ Check that neuprinthttp can connect to the resulting database and serve queries
   `logs/create-indexes.err.log`. The script checks for `database is unavailable`
   and an empty output log.
 - **APOC jar**: if APOC procedures are needed (e.g. during a debug session),
-  verify the jar is present at `$NEO4J_HOME/plugins/apoc-2026.07.1-core.jar` inside
+  verify the jar is present at `$NEO4J_HOME/plugins/apoc-2026.08.1-core.jar` inside
   the container.
 
 ---
@@ -522,6 +522,12 @@ indexes, 97 ROIs. The pipeline is reproducible across machines.
 
 Since then the pipeline has been validated end-to-end on two further datasets
 against `neo4j:2026.07.1`, each passing with zero failures:
+
+> **Re-validation on `2026.08.1` is pending.** The figures in this section were
+> produced on `2026.07.1`, before the bump. Nothing in the 2026.08 changelog
+> touches CSV import, index or constraint creation, fulltext indexes, or
+> CYPHER_5 semantics, so no behavioural change is expected — but these numbers
+> are not yet evidence for the version now shipped.
 
 | dataset | nodes | relationships | Neuron | indexes | ROIs |
 |---|---|---|---|---|---|
@@ -735,7 +741,7 @@ every search property a dataset populates.
 
 #### Two defects found in the fast query and its index
 
-1. **`buildFastQuery` does not compile on 2026.07.1.**
+1. **`buildFastQuery` does not compile on Neo4j 5.x or later.**
    `NeuronInputField.jsx:41` reads `WITH textMatches + collect(b) as
    allMatches, q, user_body`. `collect(b)` makes that `WITH` aggregating, so
    its grouping keys are `q` and `user_body`, and `textMatches` then appears
@@ -993,11 +999,11 @@ yakuba are both validated end-to-end.
      fixed handshake. `v5.28.4` is a drop-in upgrade.
 
      **But we have not verified that `5.27` actually fails against
-     `2026.07.1`.** It may negotiate a mutually supported Bolt version and work
+     `2026.08.1`.** It may negotiate a mutually supported Bolt version and work
      unchanged. This is the one requirement here taken from documentation
      rather than from a test, and it is the only part of the neuPrintHTTP work
      that needs a rebuild — the rest is deployed config. Settle it by pointing
-     the current, unmodified binary at a `2026.07.1` server holding a snapshot
+     the current, unmodified binary at a `2026.08.1` server holding a snapshot
      built by this branch, with the deployed config using the bolt engine
      against `data`. If it returns data, the bump is unnecessary.
   2. **Config change**, as before: `"database": "neo4j"` → `"data"`. This fails
@@ -1008,8 +1014,8 @@ yakuba are both validated end-to-end.
      the legacy HTTP transactional API removed in Neo4j 5.
 
   **Deployment sequencing:** the production Neo4j server must be upgraded to
-  `2026.07.1` *before* a database built by this branch is swapped in. A store
-  written by the 2026.07.1 importer cannot be read by an older server, and Neo4j
+  `2026.08.1` *before* a database built by this branch is swapped in. A store
+  written by the 2026.08.1 importer cannot be read by an older server, and Neo4j
   has no downgrade path.
 
 ---

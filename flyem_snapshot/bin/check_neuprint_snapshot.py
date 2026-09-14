@@ -52,7 +52,7 @@ Environment overrides, all optional:
 
     NEO4J_DB     Database to check (default 'data').  Use 'neo4j' for a
                  pre-upgrade 4.4-era database.
-    NEO4J_IMAGE  Container image (default docker://neo4j:2026.07.1).
+    NEO4J_IMAGE  Container image (default docker://neo4j:2026.08.1).
     CHECK_CSV_COUNTS
                  Set to 0 to skip reconciling label counts against the
                  exported CSV row counts.  On by default; it is the
