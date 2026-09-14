@@ -1,4 +1,4 @@
-# FindNeurons search: three changes needed
+# FindNeurons search: one change still needed
 
 Found while adding neuPrintExplorer's two FindNeurons search queries to
 `check-neuprint-snapshot`, validating against wasp, yakuba and fish2 on
@@ -6,8 +6,17 @@ Neo4j 2026.07.1. Measurements and reasoning are in
 [`neo4j-upgrade.md`](neo4j-upgrade.md) under *What the fulltext "fast" query
 actually saves*.
 
-None of these are made by this branch. Changes 1 and 2 are the substantive
-ones; change 3 only matters if change 2 is done a particular way.
+Three problems were found. **Two are now fixed in this repository** and are
+kept below for the record; the remaining one is in neuPrintExplorer and is
+still outstanding.
+
+| # | where | status |
+|---|---|---|
+| 1 | `neuPrintExplorer` — `buildFastQuery` does not compile on Neo4j 5+ | **outstanding** |
+| 2 | `flyem-snapshot` — fulltext index covered 3 of 11 searched properties | fixed, `644158a` |
+| 3 | `flyem-snapshot` — `itoLeeHl` misspelling | fixed with 2 |
+
+Change 1 is independent of the Neo4j upgrade and can be made at any time.
 
 ---
 
@@ -82,7 +91,7 @@ fast path; that copy is a stand-in, not the fix.
 
 ---
 
-## 2. The fulltext index does not cover the properties the query searches
+## 2. The fulltext index did not cover the properties the query searches — FIXED
 
 | | |
 |---|---|
@@ -145,13 +154,17 @@ self-maintaining as annotation coverage changes; per-dataset keeps each index
 smaller. Note that indexing an absent property is harmless — it simply
 contributes nothing.
 
-**Verify.** `check-neuprint-snapshot` asserts this directly and names any
-populated property missing from the index, so a rebuilt snapshot passing that
-check is the confirmation.
+**Fixed in `644158a`**, which sets the default to all eleven. Confirmed by
+rebuilding all three datasets: yakuba's slow and fast queries now return the
+same 21,163 rows where they previously differed by 8,930, and all three pass
+the coverage check.
+
+That also corrected the headline speedup. yakuba's apparent 2.07x was inflated
+by the 42% of rows the fast query was dropping; like-for-like it is 1.47x.
 
 ---
 
-## 3. `itoLeeHl` is misspelled in the commented-out eleven-property list
+## 3. `itoLeeHl` was misspelled in the eleven-property list — FIXED
 
 | | |
 |---|---|

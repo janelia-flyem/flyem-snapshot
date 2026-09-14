@@ -525,11 +525,12 @@ against `neo4j:2026.07.1`, each passing with zero failures:
 
 | dataset | nodes | relationships | Neuron | indexes | ROIs |
 |---|---|---|---|---|---|
-| wasp v0.8 | 5,278,783 | 10,702,773 | 50,564 | 232 | 97 |
-| yakuba-vnc | 137,632,747 | 261,841,354 | 87,627 | 132 | 25 |
-| fish2 | 77,830,526 | 128,491,329 | 224,391 | 697 | 210 |
+| wasp | 5,278,783 | 10,702,773 | 50,564 | 234 | 98 |
+| yakuba-vnc | 137,629,884 | 261,837,974 | 87,462 | 132 | 25 |
+| fish2 | 93,400,792 | 154,875,636 | 235,047 | 707 | 211 |
 
-All three pass **40 of 40** at default settings. Note that the total depends on
+All three pass **47 of 47** at default settings, each rebuilt from scratch and
+checked against the same revision of the suite. Note that the total depends on
 the flags: `CHECK_CSV_COUNTS=0` drops three checks and `MAX_QUERY_MS` adds one,
 so totals are only comparable between runs invoked the same way.
 
@@ -568,19 +569,22 @@ count of those:
 |---|---|---|---|
 | wasp | 2,336,820 | 2,336,820 | 0 |
 | yakuba | 51,824,503 | 51,824,503 | 0 |
-| fish2 | 41,916,590 | 41,725,816 | 190,774 |
+| fish2 | 50,238,672 | 50,047,898 | 190,774 |
 
 The labels are not disjoint, so the element counts are dominated by synapses:
 
 ```
-Element    41,916,590  -  Synapse     41,725,816  =  190,774 non-synaptic
-ElementSet 32,382,125  -  SynapseSet  32,192,910  =  189,215 non-synaptic
+Element    50,238,672  -  Synapse     50,047,898  =  190,774 non-synaptic
+ElementSet 39,128,127  -  SynapseSet  38,938,912  =  189,215 non-synaptic
                                             total =  379,989
 ```
 
 Only that 379,989 remainder is unaccounted for by `Segment + Synapse +
 SynapseSet + Meta`, and `Segment + Element + ElementSet + Meta` sums to
-77,830,526 exactly — the reported total.
+93,400,792 exactly — the reported total. (The non-synaptic total is 379,989 in
+both the earlier and the current fish2 build, despite every other count
+changing — it is a stable property of the data rather than a coincidence of one
+export.)
 
 The non-synaptic remainder is the population that `non-synaptic-bodies:
 element-presence` selects on in a report config, which fish2 uses. If it
@@ -647,22 +651,34 @@ cost is the same and swamps the fixed saving as rows grow. Hence ~50% for
 selective terms and 2% for a single character on wasp.
 
 **That ~97 ms is not a constant across datasets.** What the index removes is the
-label scan plus `CONTAINS` filtering, which scales with label size times the
-number of populated properties. Measured on the commonest-letter term for each:
+label scan plus `CONTAINS` filtering, which scales with the size of the label it
+no longer has to walk. Measured on the commonest-letter term for each, after the
+index was widened to all eleven properties so that every row count matches and
+all three are like-for-like:
 
-| dataset | neurons | populated props | slow | fast | speedup | rows slow/fast |
+| dataset | neurons | rows matched | slow | fast | speedup | saving |
 |---|---|---|---|---|---|---|
-| wasp | 50,564 | 2 | 498 ms | 504 ms | 0.99x | 25,278 / 25,278 |
-| yakuba | 87,501 | 5 | 803 ms | 387 ms | 2.07x † | 21,158 / 12,228 |
-| fish2 | 224,391 | 3 | 1247 ms | 428 ms | **2.91x** | 12,247 / 12,246 |
+| wasp | 50,564 | 25,278 | 661 ms | 570 ms | 1.16x | 91 ms |
+| yakuba-vnc | 87,462 | 21,163 | 995 ms | 679 ms | 1.47x | 316 ms |
+| fish2 | 235,047 | 12,536 | 2503 ms | 514 ms | **4.87x** | **1989 ms** |
 
-† yakuba's is not a like-for-like comparison — its fast query returns 42% fewer
-rows, for the index-coverage reason below.
+The benefit tracks label size, not result size — note fish2 has the *largest*
+label and the *fewest* matched rows, which is precisely the case the index is
+built for. An earlier revision of this section generalised wasp's floor into a
+constant and thereby badly understated the index's value on large datasets.
 
-fish2 is the useful datapoint: the largest label, and a row difference of 1, so
-the two forms are doing the same work. There the index saves **819 ms**, against
-wasp's 97 ms. An earlier revision of this section generalised wasp's floor into
-a constant and thereby understated the index's value on large datasets.
+Within a single dataset the picture is the opposite: the saving is a fixed
+amount that a large result set swamps. Fitting floor-plus-per-row to a
+four-term sweep on wasp gives slow ~340 ms + 15.0 us/row against fast ~45 ms +
+22.4 us/row — the index removes ~295 ms of floor **but costs ~7.5 us more per
+row**, predicting a crossover near **39,000 matched rows** beyond which the
+fulltext path would be slower. wasp's label is only 50,564 nodes so that cannot
+be greatly exceeded, but it is the reason a single-character term shows almost
+no gain while a selective one shows several-fold.
+
+Treat absolute timings as incomparable between runs. The slow query never
+touches the fulltext index, so it works as a built-in control: across runs on
+identical data it ranged 552-705 ms, a 28% spread from cache state alone.
 
 **This matters for the reported slowness.** An autocomplete field issues a
 short, common term on every keystroke, which is precisely the case where the
@@ -683,6 +699,39 @@ Two caveats on this evidence:
   not under `*term*`. The checker sanitizes terms to `[A-Za-z0-9]`, so it can
   never generate such a term and systematically cannot detect that class of
   divergence.
+
+#### Three name mismatches, one pattern
+
+Three separate bugs on this branch turned out to be the same shape: **two code
+paths disagreeing about a name, with nothing able to notice.**
+
+| what | index pointed at | nodes actually had | consequence |
+|---|---|---|---|
+| ROI properties | `BU(R)` | `BU_R_` | ~194 inert indexes |
+| fulltext properties | 3 of 11 searched | — | **42% of search results dropped on yakuba** |
+| element labels | `fish2_:Soma` | `fish2_Soma` | 217 inert indexes, 31% of fish2's set |
+
+What makes this class hard to see is that **Neo4j's own health metrics cannot
+distinguish "working" from "covering nothing."** An index over a property no
+node has, or a label no node carries, is trivially fully populated: `SHOW
+INDEXES` reports `state: ONLINE` and `populationPercent: 100.0` for all of
+them. An operator auditing index health sees a clean bill.
+
+Only one of the three was a correctness defect — the fulltext coverage gap,
+which silently returned 42% fewer search results on yakuba. The other two cost
+performance and produced misleading diagnostics, but never wrong data.
+
+The element-label case is instructive about test coverage. The labels are
+written in configs with a leading colon (the schema's own example is `':Mito'`),
+which is Cypher punctuation rather than part of the label. `element.py` stripped
+it; `indexes.py` did not. Only fish2 has element tables, so wasp and yakuba were
+green throughout and could never have caught it — and it surfaced on the very
+first run of the indexed-label check, against the only dataset able to expose
+it.
+
+`check-neuprint-snapshot` now guards all three axes: index properties must
+exist, index labels must be carried by nodes, and the fulltext index must cover
+every search property a dataset populates.
 
 #### Two defects found in the fast query and its index
 
@@ -726,11 +775,17 @@ Two caveats on this evidence:
 
 Warm timings for the neuPrintExplorer search query:
 
-| dataset | neurons | warm | vs `MAX_QUERY_MS=1500` |
+| dataset | neurons | warm (current builds) | vs `MAX_QUERY_MS=1500` |
 |---|---|---|---|
-| wasp | 50,564 | 502-611 ms | ~146% headroom |
-| yakuba | 87,627 | 766-808 ms | ~86% headroom |
-| fish2 | 224,391 | 1000-1347 ms | **~11% headroom** |
+| wasp | 50,564 | 570-718 ms | ~127% headroom |
+| yakuba-vnc | 87,462 | 679-1052 ms | ~51% headroom |
+| fish2 | 235,047 | 2503 ms | **would FAIL** |
+
+**fish2 now exceeds 1500 ms outright**, so that value cannot be used globally.
+Its label grew to 235,047 neurons and its slow query costs 2503 ms warm; a
+threshold with reasonable margin there is nearer **5000 ms** (100% headroom).
+This is the clearest argument for setting `MAX_QUERY_MS` per dataset rather
+than once: the same number that is generous for wasp is impossible for fish2.
 
 The fish2 spread is not random. Three consecutive runs on the same idle node
 were **monotonically decreasing in both columns**:
@@ -759,10 +814,11 @@ Two consequences for calibration:
    its slowest observed run, while being too loose to catch a 2x regression on
    wasp.
 
-Suggested starting points: **1500 ms for wasp and yakuba, 2000-2500 ms for
-fish2** (48% and 86% headroom respectively over fish2's slowest observed run).
-Treat these as provisional until a threshold has survived a few first-runs on
-cold nodes.
+Suggested starting points, against the current builds: **1500 ms for wasp,
+2000 ms for yakuba, 5000 ms for fish2**. fish2 needs far more room than the
+others — its slow query is 2503 ms warm, so the 2000-2500 ms suggested in an
+earlier revision of this section would fail outright. Treat these as
+provisional until a threshold has survived a few first-runs on cold nodes.
 
 ### Running on the cluster (LSF)
 
@@ -780,7 +836,7 @@ cold nodes.
 ### Validating a built database
 
 `check-neuprint-snapshot` launches a snapshot's database in a container, runs
-40 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
+47 checks and shuts it down, exiting 0/1 so it can gate a pipeline run. It
 covers
 node/relationship counts, node-label accounting, `bodyId` integrity, index state
 and population, that every index refers to a property that exists, that every
