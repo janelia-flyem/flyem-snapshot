@@ -523,20 +523,33 @@ indexes, 97 ROIs. The pipeline is reproducible across machines.
 Since then the pipeline has been validated end-to-end on two further datasets
 against `neo4j:2026.07.1`, each passing with zero failures:
 
-> **Re-validation on `2026.08.1` is pending.** The figures in this section were
-> produced on `2026.07.1`, before the bump. Nothing in the 2026.08 changelog
-> touches CSV import, index or constraint creation, fulltext indexes, or
-> CYPHER_5 semantics, so no behavioural change is expected — but these numbers
-> are not yet evidence for the version now shipped.
+All three were subsequently rebuilt and re-validated on `2026.08.1`, with
+identical results in every measured dimension apart from the annotation drift
+noted above — confirming what the 2026.08 changelog implied, that nothing in
+that release touches CSV import, index or constraint creation, fulltext indexes,
+or CYPHER_5 semantics.
 
 | dataset | nodes | relationships | Neuron | indexes | ROIs |
 |---|---|---|---|---|---|
 | wasp | 5,278,783 | 10,702,773 | 50,564 | 234 | 98 |
-| yakuba-vnc | 137,629,884 | 261,837,974 | 87,462 | 132 | 25 |
-| fish2 | 93,400,792 | 154,875,636 | 235,047 | 707 | 211 |
+| yakuba-vnc | 137,629,884 | 261,837,974 | 87,463 | 132 | 25 |
+| fish2 | 93,399,800 | 154,874,261 | 235,040 | 707 | 211 |
 
 All three pass **47 of 47** at default settings, each rebuilt from scratch and
-checked against the same revision of the suite. Note that the total depends on
+checked against the same revision of the suite on **`neo4j:2026.08.1`**.
+
+**Do not expect these counts to reproduce.** yakuba and fish2 are both under
+active annotation of EM results, so their totals drift between builds — a few
+dozen nodes at a time, and every rebuild in this work produced slightly
+different numbers. That is upstream data changing, not the pipeline. wasp is a
+frozen release and has been identical to the digit on every run, which makes it
+the useful control.
+
+The consequence is that **count stability is not the property to check; internal
+consistency is.** Every reconciliation — database against the importer's own
+report, and against the exported CSV row counts, for both nodes and all four
+relationship types — has been exact on every run regardless of how much the
+underlying data moved. That is the stronger guarantee anyway. Note that the total depends on
 the flags: `CHECK_CSV_COUNTS=0` drops three checks and `MAX_QUERY_MS` adds one,
 so totals are only comparable between runs invoked the same way.
 
@@ -664,9 +677,9 @@ all three are like-for-like:
 
 | dataset | neurons | rows matched | slow | fast | speedup | saving |
 |---|---|---|---|---|---|---|
-| wasp | 50,564 | 25,278 | 661 ms | 570 ms | 1.16x | 91 ms |
-| yakuba-vnc | 87,462 | 21,163 | 995 ms | 679 ms | 1.47x | 316 ms |
-| fish2 | 235,047 | 12,536 | 2503 ms | 514 ms | **4.87x** | **1989 ms** |
+| wasp | 50,564 | 25,278 | 700 ms | 629 ms | 1.11x | 71 ms |
+| yakuba-vnc | 87,463 | 21,167 | 960 ms | 627 ms | 1.53x | 333 ms |
+| fish2 | 235,040 | 12,613 | 2600 ms | 518 ms | **5.02x** | **2082 ms** |
 
 The benefit tracks label size, not result size — note fish2 has the *largest*
 label and the *fewest* matched rows, which is precisely the case the index is
