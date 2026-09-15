@@ -1,8 +1,9 @@
 # FindNeurons search: one change still needed
 
 Found while adding neuPrintExplorer's two FindNeurons search queries to
-`check-neuprint-snapshot`, validating against wasp, yakuba and fish2 on
-Neo4j 2026.07.1. Measurements and reasoning are in
+`check-neuprint-snapshot`, validating against wasp, yakuba and fish2 —
+originally on Neo4j 2026.07.1, and since re-validated on **2026.08.1**, the
+version this branch now targets. Measurements and reasoning are in
 [`neo4j-upgrade.md`](neo4j-upgrade.md) under *What the fulltext "fast" query
 actually saves*.
 
@@ -45,7 +46,8 @@ WITH textMatches + bodyMatches as allMatches, q, user_body
 UNWIND allMatches as n
 ```
 
-**Why.** The query fails outright from Neo4j 5 onward. On 2026.07.1:
+**Why.** The query fails outright from Neo4j 5 onward. On 2026.07.1 and
+identically on 2026.08.1:
 
 ```
 42I18: syntax error or access rule violation - reference to non-grouping
@@ -68,6 +70,10 @@ Verified by running `EXPLAIN` on both forms against stock containers:
 | 4.4.48 | compiles | compiles |
 | 5.26.30 | **fails** — "Aggregation column contains implicit grouping expressions ... Illegal expression(s): textMatches" | compiles |
 | 2026.07.1 | **fails** — `42I18` | compiles |
+| 2026.08.1 | **fails** — `42I18` | compiles |
+
+Each row is from running `EXPLAIN` on both forms against that version in a
+stock container, not from reading release notes.
 
 Cypher 4.4 accepted implicit grouping expressions; Cypher 5 rejects them, so
 this breaks as soon as you leave 4.4 rather than only on CalVer. 5.26's error
@@ -129,7 +135,8 @@ yakuba's best-populated searchable property, `class` at 24%, is not indexed.
 On both datasets the index also spends a slot on `synonyms`, which is null
 throughout.
 
-**Measured on yakuba, term `n`:**
+**Measured on yakuba, term `n`** (on 2026.07.1, before both the index fix and
+the version bump):
 
 | | rows | warm |
 |---|---|---|
@@ -155,12 +162,19 @@ smaller. Note that indexing an absent property is harmless — it simply
 contributes nothing.
 
 **Fixed in `644158a`**, which sets the default to all eleven. Confirmed by
-rebuilding all three datasets: yakuba's slow and fast queries now return the
-same 21,163 rows where they previously differed by 8,930, and all three pass
-the coverage check.
+rebuilding all three datasets, latterly on 2026.08.1: yakuba's slow and fast
+queries now return **identical row counts** where they previously differed by
+8,930, and all three pass the coverage check.
 
 That also corrected the headline speedup. yakuba's apparent 2.07x was inflated
-by the 42% of rows the fast query was dropping; like-for-like it is 1.47x.
+by the 42% of rows the fast query was dropping; like-for-like it measures
+**1.53x** (960 ms against 627 ms on 2026.08.1), and has held between 1.47x and
+1.57x across rebuilds.
+
+Note the before and after row counts are not directly comparable — 21,158 then,
+21,167 now. yakuba is under active annotation, so its totals drift between
+builds. What matters is that the two queries *disagreed by 8,930* before and
+agree exactly after.
 
 ---
 
