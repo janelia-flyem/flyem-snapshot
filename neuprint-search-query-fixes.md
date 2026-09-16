@@ -16,11 +16,13 @@ outstanding.
 | 1 | `neuPrintExplorer` — `buildFastQuery` does not compile on Neo4j 5+ | **outstanding**; fix verified equivalent on 4.4 |
 | 2 | `flyem-snapshot` — fulltext index covered 3 of 11 searched properties | fixed, `644158a` |
 | 3 | `flyem-snapshot` — `itoLeeHl` misspelling | fixed with 2 |
-| 4 | `neuPrintExplorer` — fast query cannot run on hemibrain at all | **outstanding**, and not fixed by 1 |
+| 4 | `neuPrintExplorer` — fast query cannot run on 10 of 16 production datasets | **outstanding**, and not fixed by 1 |
 
 Change 1 is independent of the Neo4j upgrade and can be made at any time.
 Change 4 is a deployment constraint rather than a code defect, and it is not
-resolved by change 1.
+resolved by change 1 — it is also the largest of the four in scope, since it
+means `useFastQuery` cannot be turned on without a per-dataset capability
+check.
 
 ---
 
@@ -176,27 +178,31 @@ is a single clause and does not otherwise interact with row count.
 
 The synthetic fixture tests semantics; real data tests shapes nobody invented —
 apostrophes and unicode in type names, very long strings, realistic null
-patterns across the eleven properties. Both forms were run against four live
-datasets via `/api/custom/custom`, with
-their full result sets compared — two search terms each, with and without a
-sampled bodyId, so the `collect(b)` path is genuinely exercised:
+patterns across the eleven properties. Both forms were run against **every
+dataset on all four production servers**, enumerated from
+`/api/dbmeta/datasets` rather than hand-listed, with their full result sets
+compared — two search terms each, with and without a sampled bodyId, so the
+`collect(b)` path is genuinely exercised. Six of the 16 datasets can run the
+query at all (see item 4); those six are:
 
-| dataset | rows compared | result |
-|---|---|---|
-| `male-cns:v1.0` | 5,138 / 5,139 / 67,449 / 67,449 | identical |
-| `wasp3:v0.8` | 178 / 179 / 51,883 / 51,884 | identical |
-| `yakuba-vnc` | 0 / 1 / 5,929 / 5,929 | identical |
-| `fish2` | 235 / 236 / 4,133 / 4,134 | identical |
+| server | dataset | rows compared | result |
+|---|---|---|---|
+| `neuprint` | `male-cns:v1.0` | 5,138 / 5,139 / 67,449 / 67,449 | identical |
+| `neuprint` | `banc:v888` | 4,200 / 4,201 / 29,131 / 29,132 | identical |
+| `neuprint-pre` | `wasp3:v0.8` | 178 / 179 / 51,883 / 51,884 | identical |
+| `neuprint-yakuba` | `yakuba-vnc` | 0 / 1 / 5,929 / 5,929 | identical |
+| `neuprint-fish2` | `fish2` | 235 / 236 / 4,133 / 4,134 | identical |
+| `neuprint-fish2` | `fish2:v0.6` | 157 / 158 / 3,916 / 3,917 | identical |
 
-**16 comparisons, all identical in content *and* row order**, the largest at
+**24 comparisons, all identical in content *and* row order**, the largest at
 67,449 rows. Note the pairs where adding a bodyId does not change the count —
 `yakuba-vnc` at 5,929 and `male-cns` at 67,449 — those are cases where the
 sampled body was already among the text matches, so `DISTINCT` collapsed the
 duplicate. That is the behaviour most at risk from the change, and it held.
 
 So the evidence stands at: 8 semantic cases and 3,000 fully-tied rows on a
-synthetic fixture, plus 16 comparisons on four production datasets up to 67,449
-rows — none of the 24 showing any difference.
+synthetic fixture, plus 24 comparisons across six production datasets on four
+servers, up to 67,449 rows — none of the 32 showing any difference.
 
 **What this does not establish.** Every comparison is on a 4.4 server, because
 the original does not compile on 5.x or later and so cannot be compared against
@@ -325,48 +331,111 @@ does populate it (hemibrain) before relying on it.
 
 ---
 
-## 4. The fast query cannot run on hemibrain at all
+## 4. The fast query cannot run on 10 of the 16 production datasets
 
-| | |
-|---|---|
-| **Where** | `https://neuprint.janelia.org`, dataset `hemibrain:v1.2.1` |
-| **Cause** | its backing Neo4j is **3.5.3**, which has no `CALL {}` subqueries |
+Every dataset on all four production servers was enumerated from
+`/api/dbmeta/datasets` and probed individually. **Only 6 of 16 can run the fast
+query at all.** Two independent causes, in both cases an error rather than a
+slower or smaller result:
 
-`buildFastQuery` wraps its fulltext search in a `CALL { ... }` subquery.
-Subquery support arrived in the 4.x line, so on 3.5 the parser rejects it
-outright — **in both the original and the fixed form**:
-
-```
-Invalid input '{': expected whitespace, comment, namespace of a procedure
-or a procedure name
-```
-
-This is not the aggregation defect and the fix does not address it. The
-query's structure is unsupported.
-
-**The fleet, measured:**
-
-| dataset | Neo4j | fast query |
+| cause | datasets | detail |
 |---|---|---|
-| `hemibrain:v1.2.1` | **3.5.3** † | cannot run |
-| `male-cns:v1.0` | 4.4.16 † | runs |
-| `wasp3:v0.8` | 4.4.16 | runs |
-| `yakuba-vnc` | 4.4.16 | runs |
-| `fish2` | 4.4.16 | runs |
+| Neo4j **3.5.3** — no `CALL {}` subqueries | 3 | parser rejects the query outright |
+| **no fulltext index exists** | 7 | `queryNodes` throws on an unknown index name |
 
-† measured with `CALL dbms.components()`. The other three are inferred from the
-deployment config and from queries succeeding, not directly measured.
+The two errors, as the servers report them. On 3.5.3 the parser never gets past
+the subquery — in **both** the original and the fixed form, so item 1 does not
+help here:
 
-Uniformly 4.4.16 with hemibrain as the sole outlier — and note two datasets on
-the *same hostname* sit on different backends, since neuPrintHTTP's `MasterDB`
-fronts several stores and `/api/custom/custom` routes per dataset.
+```
+Neo.ClientError.Statement.SyntaxError (Invalid input '{': expected whitespace,
+comment, namespace of a procedure or a procedure name (line 2, column 6))
+"CALL { WITH q CALL db.index.fulltext.queryNodes('find_neurons_fulltext_...
+       ^
+```
 
-**Consequence: `useFastQuery` cannot be enabled globally.** Turning it on for
-all datasets gives hemibrain a syntax error, not a slow result. It needs to be
-gated per dataset, or hemibrain's server upgraded first — and hemibrain is the
-least likely candidate for upgrading, being a published frozen dataset that
-this pipeline does not re-ingest. Per-dataset gating is probably the only
-practical answer.
+On the seven 4.4.16 datasets the query parses and then fails at the procedure
+call:
+
+```
+Neo.ClientError.Procedure.ProcedureCallFailed (Failed to invoke procedure
+`db.index.fulltext.queryNodes`: Caused by: java.lang.IllegalArgumentException:
+There is no such fulltext schema index: find_neurons_fulltext_properties_index)
+```
+
+That is the server naming the exact index the query hardcodes, so the diagnosis
+does not rest on interpretation.
+
+### The fleet, fully measured
+
+Versions from `CALL dbms.components()`, index presence from `SHOW INDEXES`.
+Nothing here is inferred from deployment config:
+
+| server | dataset | Neo4j | fulltext index | fast query |
+|---|---|---|---|---|
+| `neuprint` | `banc:v888` | 4.4.16 | yes | **runs** |
+| `neuprint` | `hemibrain:v1.2.1` | **3.5.3** | n/a | no — 3.5 |
+| `neuprint` | `male-cns:v0.9` | 4.4.16 | **missing** | no — no index |
+| `neuprint` | `male-cns:v1.0` | 4.4.16 | yes | **runs** |
+| `neuprint` | `manc:v1.0` | 4.4.16 | **missing** | no — no index |
+| `neuprint` | `manc:v1.2.1` | 4.4.16 | **missing** | no — no index |
+| `neuprint` | `manc:v1.2.3` | 4.4.16 | **missing** | no — no index |
+| `neuprint` | `mushroombody` | **3.5.3** | n/a | no — 3.5 |
+| `neuprint` | `optic-lobe:v1.0.1` | 4.4.16 | **missing** | no — no index |
+| `neuprint` | `optic-lobe:v1.1` | 4.4.16 | **missing** | no — no index |
+| `neuprint-pre` | `hemibrain` | **3.5.3** | n/a | no — 3.5 |
+| `neuprint-pre` | `vnc` | 4.4.16 | **missing** | no — no index |
+| `neuprint-pre` | `wasp3:v0.8` | 4.4.16 | yes | **runs** |
+| `neuprint-yakuba` | `yakuba-vnc` | 4.4.16 | yes | **runs** |
+| `neuprint-fish2` | `fish2` | 4.4.16 | yes | **runs** |
+| `neuprint-fish2` | `fish2:v0.6` | 4.4.16 | yes | **runs** |
+
+Two observations on the versions. The fleet is only **two** Neo4j versions, not
+a spread — 4.4.16 on 13 datasets and 3.5.3 on 3 — and every instance is
+**community** edition, which independently settles the store-format question in
+[`neo4j-upgrade.md`](neo4j-upgrade.md): `block` format is Enterprise-only, so
+`record-aligned-1.1` is the only option available here, a constraint rather
+than a preference. Note also that `neuprint.janelia.org` alone serves both
+versions, since neuPrintHTTP's `MasterDB` fronts several stores and
+`/api/custom/custom` routes per dataset — so a capability check cannot be made
+per hostname.
+
+### Why 7 datasets have no fulltext index
+
+Not a naming mismatch — `SHOW INDEXES` reports *no fulltext index of any name*
+on those 7. The index is created by `create-indexes.cypher`, which gained it on
+**2026-04-15** in `cca880d`. Index presence therefore just tracks whether a
+dataset was ingested after that commit: `manc`, `optic-lobe`, `vnc` and
+`male-cns:v0.9` predate it, and the six that work postdate it.
+
+Two consequences follow, and the second is easy to miss:
+
+- The missing indexes are **not** a defect in the current pipeline. Any dataset
+  re-ingested from this branch gets one.
+- The property-list fix in item 2 above only reaches a dataset **when it is next
+  re-ingested**. On the 7 datasets with no index at all, item 2 is moot; on the
+  6 that have one, the index was built by whichever pipeline version ingested
+  them, so a dataset can have an `ONLINE` fulltext index that still covers only
+  3 of the 11 searched properties. Presence in the table above means the fast
+  query *runs*, not that it returns complete results.
+
+### Consequence: `useFastQuery` needs a per-dataset capability check
+
+The earlier reading of this — "hemibrain is old, gate it per dataset" — was too
+narrow. Enabling `useFastQuery` globally breaks searches on `manc` and
+`optic-lobe`, which are current, actively-used datasets on a supported Neo4j,
+not legacy corners. And the failure is a hard error, so users would see search
+break rather than run slowly.
+
+Neither a version check nor a hostname check is sufficient: the requirement is
+4.4+ **and** the named index. The honest check is capability-based — attempt the
+fast path and fall back to `buildSlowQuery` on error, or consult a
+per-dataset capability flag published by neuPrintHTTP. Upgrading servers does
+not help the 7; only re-ingesting them does.
+
+**Measured by** `compare-fastquery-forms.sh` with `LIST_ONLY=1`, which
+enumerates every dataset on every server and reports version and index presence
+in one pass.
 
 ---
 

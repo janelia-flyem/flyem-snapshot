@@ -999,20 +999,40 @@ yakuba are both validated end-to-end.
 
 ### Related component findings
 
-- **The production fleet is not all one version.** Measured with
-  `CALL dbms.components()`: `hemibrain:v1.2.1` is served from **Neo4j 3.5.3**,
-  while `male-cns:v1.0` is on **4.4.16** — *on the same hostname*, since
-  neuPrintHTTP's `MasterDB` fronts several stores and `/api/custom/custom`
-  routes per dataset. `wasp3:v0.8`, `yakuba-vnc` and `fish2` are 4.4.16 per
-  their deployment config.
+- **The production fleet is two Neo4j versions, all Community.** Every dataset
+  on all four servers was enumerated from `/api/dbmeta/datasets` and probed with
+  `CALL dbms.components()` — 16 datasets, and the result is narrower than
+  "skew" suggests:
 
-  This matters for two reasons. Guidance that holds for the 4.4 servers may not
-  hold for hemibrain: multi-database support arrived in Neo4j 4.0, so 3.5 has no
-  `data` database to point at, and the advice to set `"database"` explicitly is
+  | version | edition | datasets |
+  |---|---|---|
+  | 4.4.16 | community | 13 |
+  | 3.5.3 | community | 3 — `hemibrain:v1.2.1`, `mushroombody`, `neuprint-pre/hemibrain` |
+
+  The three 3.5.3 datasets are all legacy; every actively-grown dataset
+  (`male-cns`, `manc`, `optic-lobe`, `banc`, `wasp3`, `yakuba-vnc`, `fish2`) is
+  4.4.16. Note that `neuprint.janelia.org` serves *both* versions, since
+  neuPrintHTTP's `MasterDB` fronts several stores and `/api/custom/custom`
+  routes per dataset — so a version cannot be assumed from a hostname.
+
+  Two consequences. Guidance that holds for the 4.4 servers may not hold on
+  3.5: multi-database support arrived in Neo4j 4.0, so 3.5 has no `data`
+  database to point at, and the advice to set `"database"` explicitly is
   meaningless there. And 3.5.3 to a modern release is a multi-hop migration far
-  larger than the 4.4 → 2026.08.1 work on this branch — though hemibrain is a
-  published frozen dataset this pipeline does not re-ingest, so it may simply
+  larger than the 4.4 → 2026.08.1 work on this branch — though these are
+  published frozen datasets this pipeline does not re-ingest, so they may simply
   never need to move.
+
+  **Every instance is Community edition.** That turns the store-format choice
+  discussed above from a preference into a constraint: `block` is
+  Enterprise-only, so `record-aligned-1.1` is the only format available
+  anywhere on this fleet.
+
+  Measured by `compare-fastquery-forms.sh` with `LIST_ONLY=1`; the per-dataset
+  table is in
+  [`neuprint-search-query-fixes.md`](neuprint-search-query-fixes.md) under item
+  4, together with the finding that 7 of the 13 4.4.16 datasets have no
+  fulltext index and so cannot run neuPrintExplorer's fast search query.
 
 - **neuprint-python** — no changes needed (HTTP only, no direct Neo4j/Bolt connection)
 - **neuPrintExplorer** — no changes needed (React frontend, HTTP only)
