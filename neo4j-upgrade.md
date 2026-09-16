@@ -999,6 +999,21 @@ yakuba are both validated end-to-end.
 
 ### Related component findings
 
+- **The production fleet is not all one version.** Measured with
+  `CALL dbms.components()`: `hemibrain:v1.2.1` is served from **Neo4j 3.5.3**,
+  while `male-cns:v1.0` is on **4.4.16** — *on the same hostname*, since
+  neuPrintHTTP's `MasterDB` fronts several stores and `/api/custom/custom`
+  routes per dataset. `wasp3:v0.8`, `yakuba-vnc` and `fish2` are 4.4.16 per
+  their deployment config.
+
+  This matters for two reasons. Guidance that holds for the 4.4 servers may not
+  hold for hemibrain: multi-database support arrived in Neo4j 4.0, so 3.5 has no
+  `data` database to point at, and the advice to set `"database"` explicitly is
+  meaningless there. And 3.5.3 to a modern release is a multi-hop migration far
+  larger than the 4.4 → 2026.08.1 work on this branch — though hemibrain is a
+  published frozen dataset this pipeline does not re-ingest, so it may simply
+  never need to move.
+
 - **neuprint-python** — no changes needed (HTTP only, no direct Neo4j/Bolt connection)
 - **neuPrintExplorer** — no changes needed (React frontend, HTTP only)
 - **neuPrintHTTP** — re-reviewed against a CalVer server. The earlier conclusion

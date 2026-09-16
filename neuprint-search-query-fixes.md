@@ -1,4 +1,4 @@
-# FindNeurons search: one change still needed
+# FindNeurons search: two items still outstanding
 
 Found while adding neuPrintExplorer's two FindNeurons search queries to
 `check-neuprint-snapshot`, validating against wasp, yakuba and fish2 —
@@ -7,17 +7,20 @@ version this branch now targets. Measurements and reasoning are in
 [`neo4j-upgrade.md`](neo4j-upgrade.md) under *What the fulltext "fast" query
 actually saves*.
 
-Three problems were found. **Two are now fixed in this repository** and are
-kept below for the record; the remaining one is in neuPrintExplorer and is
-still outstanding.
+Four problems were found. **Two are now fixed in this repository** and are kept
+below for the record; the other two are in neuPrintExplorer and remain
+outstanding.
 
 | # | where | status |
 |---|---|---|
 | 1 | `neuPrintExplorer` — `buildFastQuery` does not compile on Neo4j 5+ | **outstanding**; fix verified equivalent on 4.4 |
 | 2 | `flyem-snapshot` — fulltext index covered 3 of 11 searched properties | fixed, `644158a` |
 | 3 | `flyem-snapshot` — `itoLeeHl` misspelling | fixed with 2 |
+| 4 | `neuPrintExplorer` — fast query cannot run on hemibrain at all | **outstanding**, and not fixed by 1 |
 
 Change 1 is independent of the Neo4j upgrade and can be made at any time.
+Change 4 is a deployment constraint rather than a code defect, and it is not
+resolved by change 1.
 
 ---
 
@@ -135,11 +138,35 @@ unmatched `OPTIONAL MATCH` yields `[]` in both forms; and `textMatches` is a
 single value from the `CALL` subquery, so making it a grouping key produces
 exactly one group — the same grouping the original had implicitly.
 
-**What this does not establish.** It is equivalence on one version with a
-seven-node fixture, not a proof. It cannot be repeated on 5.x or 2026.x for
-comparison, because the original does not compile there, so equivalence on the
-versions that actually matter rests on this 4.4 result together with the
-mechanical argument above.
+#### And on real production data
+
+The synthetic fixture tests semantics; real data tests shapes nobody invented.
+Both forms were run against four live datasets via `/api/custom/custom`, with
+their full result sets compared — two search terms each, with and without a
+sampled bodyId, so the `collect(b)` path is genuinely exercised:
+
+| dataset | rows compared | result |
+|---|---|---|
+| `male-cns:v1.0` | 5,138 / 5,139 / 67,449 / 67,449 | identical |
+| `wasp3:v0.8` | 178 / 179 / 51,883 / 51,884 | identical |
+| `yakuba-vnc` | 0 / 1 / 5,929 / 5,929 | identical |
+| `fish2` | 235 / 236 / 4,133 / 4,134 | identical |
+
+**16 comparisons, all identical in content *and* row order**, the largest at
+67,449 rows. Note the pairs where adding a bodyId does not change the count —
+`yakuba-vnc` at 5,929 and `male-cns` at 67,449 — those are cases where the
+sampled body was already among the text matches, so `DISTINCT` collapsed the
+duplicate. That is the behaviour most at risk from the change, and it held.
+
+So the evidence stands at: 8 semantic cases and 3,000 fully-tied rows on a
+synthetic fixture, plus 16 comparisons on four production datasets up to 67,449
+rows.
+
+**What this does not establish.** Every comparison is on a 4.4 server, because
+the original does not compile on 5.x or later and so cannot be compared against
+there. Equivalence on the versions that actually matter rests on these results
+together with the mechanical argument above — that `collect()` skips nulls, and
+that `textMatches` is a single value so grouping on it yields one group.
 
 **Verify.** Any snapshot built by the `neo4j-5-upgrade` branch will exercise
 it — `check-neuprint-snapshot` runs the query and fails if it does not execute.
@@ -262,7 +289,52 @@ does populate it (hemibrain) before relying on it.
 
 ---
 
-## Related, and probably more impactful than any of the three
+## 4. The fast query cannot run on hemibrain at all
+
+| | |
+|---|---|
+| **Where** | `https://neuprint.janelia.org`, dataset `hemibrain:v1.2.1` |
+| **Cause** | its backing Neo4j is **3.5.3**, which has no `CALL {}` subqueries |
+
+`buildFastQuery` wraps its fulltext search in a `CALL { ... }` subquery.
+Subquery support arrived in the 4.x line, so on 3.5 the parser rejects it
+outright — **in both the original and the fixed form**:
+
+```
+Invalid input '{': expected whitespace, comment, namespace of a procedure
+or a procedure name
+```
+
+This is not the aggregation defect and the fix does not address it. The
+query's structure is unsupported.
+
+**The fleet, measured:**
+
+| dataset | Neo4j | fast query |
+|---|---|---|
+| `hemibrain:v1.2.1` | **3.5.3** † | cannot run |
+| `male-cns:v1.0` | 4.4.16 † | runs |
+| `wasp3:v0.8` | 4.4.16 | runs |
+| `yakuba-vnc` | 4.4.16 | runs |
+| `fish2` | 4.4.16 | runs |
+
+† measured with `CALL dbms.components()`. The other three are inferred from the
+deployment config and from queries succeeding, not directly measured.
+
+Uniformly 4.4.16 with hemibrain as the sole outlier — and note two datasets on
+the *same hostname* sit on different backends, since neuPrintHTTP's `MasterDB`
+fronts several stores and `/api/custom/custom` routes per dataset.
+
+**Consequence: `useFastQuery` cannot be enabled globally.** Turning it on for
+all datasets gives hemibrain a syntax error, not a slow result. It needs to be
+gated per dataset, or hemibrain's server upgraded first — and hemibrain is the
+least likely candidate for upgrading, being a published frozen dataset that
+this pipeline does not re-ingest. Per-dataset gating is probably the only
+practical answer.
+
+---
+
+## Related, and probably more impactful than any of the four
 
 **Neither query has a `LIMIT`.** Both return every matched row.
 
