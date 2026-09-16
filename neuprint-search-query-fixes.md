@@ -95,15 +95,24 @@ work on any 5.x or later server. It arrived in `a2edf26` and was extended by
 
 ### The fix returns identical results
 
-Compiling is not the same as being equivalent, so the two forms were run
-against real data and their full outputs compared. This is only possible on
-**4.4.16** — the original does not compile on 5.x or later, so there is no
-version where both can be run *and* compared except the one where the original
-still works.
+Compiling is not the same as being equivalent, so the two forms were run and
+their full outputs compared. Any such comparison is only possible on **4.4** —
+the original does not compile on 5.x or later, so the version where the
+original still works is the only one where both can be run *and* compared.
 
-Fixture: seven `:Neuron` nodes with a spread of the eleven searched properties,
-and a `find_neurons_fulltext_properties_index` over all eleven. Eight cases,
-chosen for where the two forms could plausibly diverge:
+This was done twice: first on a synthetic fixture, then against real
+production datasets. Both are below, and the distinction matters — the
+synthetic tests were designed to hit specific edge cases, the real ones to
+catch data shapes nobody would think to invent.
+
+#### First, on a synthetic fixture
+
+**Not one of the Janelia databases.** Seven `:Neuron` nodes hand-written into a
+throwaway `neo4j:4.4.16` container, with invented values (`LC10`, `SNxx`,
+`MBON01`) and a `find_neurons_fulltext_properties_index` over all eleven
+searched properties. The property *names* are real; the data is not.
+
+Eight cases, chosen for where the two forms could plausibly diverge:
 
 | term / bodyId | rows | what it exercises |
 |---|---|---|
@@ -138,10 +147,29 @@ unmatched `OPTIONAL MATCH` yields `[]` in both forms; and `textMatches` is a
 single value from the `CALL` subquery, so making it a grouping key produces
 exactly one group — the same grouping the original had implicitly.
 
-#### And on real production data
+**A second synthetic test, for tie-breaking at scale.** Seven distinct nodes
+cannot tie, and the query ends `ORDER BY priority, type_priority, n.type,
+n.instance` — where tied rows have *unspecified* order. At realistic scale ties
+are near-certain, since many neurons share a null `type` and null `instance`, so
+the two forms could in principle return the same rows in different orders.
 
-The synthetic fixture tests semantics; real data tests shapes nobody invented.
-Both forms were run against four live datasets via `/api/custom/custom`, with
+3,000 nodes were created that tie on **every** sort key — `class` matching the
+term, `type` and `instance` both null. Output was byte-identical, with and
+without a bodyId, and with a bodyId both inside and outside the tied set; the
+promoted body came first in both forms. Tie order is stable because both build
+`allMatches` in the same order (`textMatches`, then `collect(b)`) and the sort
+preserves it.
+
+That was the one plausible volume-dependent failure, which is why a still
+larger synthetic population would add little — the difference between the forms
+is a single clause and does not otherwise interact with row count.
+
+#### Then, on real production data
+
+The synthetic fixture tests semantics; real data tests shapes nobody invented —
+apostrophes and unicode in type names, very long strings, realistic null
+patterns across the eleven properties. Both forms were run against four live
+datasets via `/api/custom/custom`, with
 their full result sets compared — two search terms each, with and without a
 sampled bodyId, so the `collect(b)` path is genuinely exercised:
 
@@ -160,7 +188,7 @@ duplicate. That is the behaviour most at risk from the change, and it held.
 
 So the evidence stands at: 8 semantic cases and 3,000 fully-tied rows on a
 synthetic fixture, plus 16 comparisons on four production datasets up to 67,449
-rows.
+rows — none of the 24 showing any difference.
 
 **What this does not establish.** Every comparison is on a 4.4 server, because
 the original does not compile on 5.x or later and so cannot be compared against
