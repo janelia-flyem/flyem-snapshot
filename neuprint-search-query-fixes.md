@@ -13,7 +13,7 @@ still outstanding.
 
 | # | where | status |
 |---|---|---|
-| 1 | `neuPrintExplorer` — `buildFastQuery` does not compile on Neo4j 5+ | **outstanding** |
+| 1 | `neuPrintExplorer` — `buildFastQuery` does not compile on Neo4j 5+ | **outstanding**; fix verified equivalent on 4.4 |
 | 2 | `flyem-snapshot` — fulltext index covered 3 of 11 searched properties | fixed, `644158a` |
 | 3 | `flyem-snapshot` — `itoLeeHl` misspelling | fixed with 2 |
 
@@ -89,6 +89,57 @@ The query is selected by a `useFastQuery` toggle (line 213). Since it works on
 4.4, it may well have been exercised there; what is certain is that it cannot
 work on any 5.x or later server. It arrived in `a2edf26` and was extended by
 `5e1d77c`, so this is current work rather than legacy.
+
+### The fix returns identical results
+
+Compiling is not the same as being equivalent, so the two forms were run
+against real data and their full outputs compared. This is only possible on
+**4.4.16** — the original does not compile on 5.x or later, so there is no
+version where both can be run *and* compared except the one where the original
+still works.
+
+Fixture: seven `:Neuron` nodes with a spread of the eleven searched properties,
+and a `find_neurons_fulltext_properties_index` over all eleven. Eight cases,
+chosen for where the two forms could plausibly diverge:
+
+| term / bodyId | rows | what it exercises |
+|---|---|---|
+| `lc` / 0 | 4 | no bodyId — `OPTIONAL MATCH` yields null, `collect` must give `[]` |
+| `lc` / 300 | 5 | bodyId **not** among the text matches → appended, gets `priority 0` |
+| `lc` / 100 | 4 | bodyId **is** among the text matches → `DISTINCT` must dedupe, not 5 rows |
+| `lc` / 999 | 4 | nonexistent bodyId → no phantom row |
+| `zzz` / 0 | 0 | no text matches, no bodyId |
+| `zzz` / 300 | 1 | no text matches *but* a bodyId — the empty-`textMatches` case the source comment is about |
+| `l` / 0 | 5 | single-character term |
+| `mbon` / 400 | 1 | bodyId identical to the sole text match |
+
+**All eight produced byte-identical output**, compared as whole result sets so
+that row content and ordering counted too — including the `priority` and
+`type_priority` columns the frontend sorts on.
+
+The `lc` / 100 case is the one worth singling out: body 100 appears in
+`textMatches` *and* in `collect(b)`, so the concatenated list contains a
+duplicate and both forms depend on `WITH DISTINCT` to collapse it. Both return
+4 rows, with body 100 promoted to `priority 0`:
+
+```
+bodyId, type, priority, type_priority
+"100", "LC10", 0, 0
+"200", "LC10b", 2, 0
+"500", "(LC)paren", 3, 1
+"600", NULL, 4, 2
+```
+
+Mechanically the agreement is expected. `collect()` skips nulls, so an
+unmatched `OPTIONAL MATCH` yields `[]` in both forms; and `textMatches` is a
+single value from the `CALL` subquery, so making it a grouping key produces
+exactly one group — the same grouping the original had implicitly.
+
+**What this does not establish.** It is equivalence on one version with a
+seven-node fixture, not a proof. It cannot be repeated on 5.x or 2026.x for
+comparison, because the original does not compile there, so equivalence on the
+versions that actually matter rests on this 4.4 result together with the
+mechanical argument above.
 
 **Verify.** Any snapshot built by the `neo4j-5-upgrade` branch will exercise
 it — `check-neuprint-snapshot` runs the query and fails if it does not execute.
