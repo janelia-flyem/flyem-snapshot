@@ -13,6 +13,10 @@ version in production today. The results are identical, which is the most
 consequential finding here: this is a pre-existing defect rather than something
 the upgrade introduces.
 
+That conclusion has since been **confirmed against the live production fish2
+database**: 217 inert indexes, 30% of its node indexes — see
+*Confirmed on the live production database* below.
+
 ---
 
 ## The defect
@@ -159,11 +163,58 @@ the same DbHits, the same misleading `ONLINE` / `100.0`. Neo4j's behaviour here
 is unchanged between the two, across the whole 4.4 → 5.x → CalVer span.
 
 So the colon mismatch has been producing inert element ROI indexes since element
-indexing was added, and **any dataset with element tables currently served from
-4.4.16 is carrying them right now**, reporting them as healthy. The Neo4j
+indexing was added, and any dataset with element tables currently served from
+4.4.16 is carrying them right now, reporting them as healthy. The Neo4j
 upgrade did not cause this; the upgrade work is simply what surfaced it, because
 it is what prompted building a checker that compares index labels against the
 labels nodes actually carry.
+
+### Confirmed on the live production database
+
+Audited `https://neuprint-fish2.janelia.org` — the running 4.4 service, not a
+snapshot — via `audit-inert-indexes-http.sh`:
+
+```
+  INERT  fish2_:Soma                         217 index(es)             0 nodes
+  ok     Neuron                                1 index(es)       235,024 nodes
+  ok     Segment                               1 index(es)     4,033,261 nodes
+  ok     Synapse                               1 index(es)    50,047,898 nodes
+  ok     fish2_Element                         1 index(es)    50,238,672 nodes
+  ok     fish2_Neuron                        242 index(es)       235,024 nodes
+  ok     fish2_Segment                       241 index(es)     4,033,261 nodes
+  ok     fish2_Synapse                         1 index(es)    50,047,898 nodes
+
+  node indexes total : 705
+  on live labels     : 488
+  INERT              : 217  = 30% of node indexes
+```
+
+**217 inert indexes, 30% of the node indexes — the same count the snapshot
+carried.** Matching magnitude in an independently built database is about as
+firm as this kind of diagnosis gets.
+
+Two incidental observations from that output:
+
+- Production's counts track the snapshot closely (235,024 against 235,040
+  `:Neuron`; 4,033,261 against 4,033,687 `:Segment`) — a day or two of
+  annotation drift, and evidence the pipeline reproduces what production holds.
+- The unprefixed `Neuron` / `Segment` / `Synapse` labels each carry one index
+  and are genuinely populated in production too, not just in our builds. Those
+  come from `create-indexes.cypher` lines 37-41, which use unprefixed labels
+  while everything else is dataset-prefixed.
+
+### What to do about the live indexes
+
+Probably nothing surgical. They are useless but harmless, and fish2 is
+re-snapshotted regularly under active annotation, so the next ingest carrying
+the fixed `indexes.py` replaces them with correctly-labelled ones on its own.
+Dropping and recreating 217 indexes on a live server buys only the interval
+until that happens.
+
+It is worth doing if something is actually querying Soma elements by ROI and
+feeling the ~2000x read amplification measured above. In that case, drop the
+indexes on the colon-bearing label and recreate them against the real one; they
+repopulate in the background over 190,774 nodes, which is quick.
 
 That matters for sequencing. The fix is worth applying independently of the
 Neo4j rollout:
