@@ -1,6 +1,9 @@
 import logging
 from itertools import chain
+
 from jinja2 import Environment, PackageLoader
+
+from .util import check_element_label
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +59,45 @@ IndexesSettingsSchema = {
             "description": "Properties to include in the fulltext index, used in the FindNeurons autocomplete query.",
             "type": "array",
             "items": {"type": "string"},
+
+            # These must cover every property neuPrintExplorer's FindNeurons
+            # query searches, which is all eleven below. That query finds
+            # candidates through this index and then ranks them on all eleven,
+            # so a neuron whose only match is in a property missing from here
+            # is never returned as a candidate at all -- the search silently
+            # yields fewer rows, with no error anywhere.
+            #
+            # The previous default listed only type/instance/synonyms. Measured
+            # consequence: on yakuba, where `class` is 24% populated and was
+            # not indexed, the fulltext search returned 12,228 rows where a
+            # label scan returned 21,158 -- 42% of results missing. On fish2
+            # (`class` <1%) it was 1 row, and on wasp, which populates only
+            # indexed properties, none. So the damage is dataset-dependent and
+            # a dataset can easily look fine while another is badly wrong.
+            #
+            # Indexing a property no node carries is harmless; it simply
+            # contributes nothing. So listing all eleven is preferable to
+            # tracking each dataset's annotation coverage by hand.
+            #
+            # Note `itoleeHl` is lowercase-l: the FindNeurons queries read
+            # `n.itoleeHl` and alias it for display as `itoLeeHl`. The
+            # commented-out list this replaces used the display alias, which
+            # would have indexed a property that does not exist. No dataset
+            # here populates it, so that spelling is taken from those queries
+            # rather than confirmed against data.
             "default": [
                 "type",
                 "instance",
+                "hemibrainType",
+                "flywireType",
+                "systematicType",
+                "itoleeHl",
+                "trumanHl",
                 "synonyms",
+                "class",
+                "entryNerve",
+                "exitNerve",
             ]
-            # "default": [
-            #     "type", "instance", "hemibrainType", "flywireType", "systematicType",
-            #     "itoLeeHl", "trumanHl", "synonyms", "class", "entryNerve", "exitNerve"
-            # ]
         }
     }
 }
@@ -132,18 +165,33 @@ def _segment_rois_to_index(cfg, all_rois, synapse_roisets):
 
 
 def _element_rois_to_index(cfg, element_roisets):
+    # These labels are written in the config with a leading colon (the schema's
+    # own example is ':Mito'), but a colon is punctuation in Cypher, not part of
+    # the label. element.py strips it before exporting, so the nodes carry
+    # 'Soma' and '<dataset>_Soma'. Strip it here too.
+    #
+    # Without this, create-indexes.cypher renders `{{dataset}}_{{label}}` as
+    # `fish2_:Soma` and builds indexes on a label no node carries. Such an
+    # index is invisible by every other measure -- state ONLINE,
+    # populationPercent 100.0, zero nodes behind it -- which is how it went
+    # unnoticed. Found by check-neuprint-snapshot's indexed-label check on
+    # fish2, the only dataset here with element tables.
+    def _label(raw, config_name=''):
+        return check_element_label((raw or '').lstrip(':'), config_name)
+
     indexed_label_roisets = {
-        item['neuprint-label']: item['roisets']
+        _label(item['neuprint-label']): item['roisets']
         for item in cfg['indexes']['element-roisets-to-index']
     }
 
-    invalid_labels = {*indexed_label_roisets.keys()} - {*cfg['element-labels'].values()}
+    configured_labels = {_label(v) for v in cfg['element-labels'].values()}
+    invalid_labels = {*indexed_label_roisets.keys()} - configured_labels
     if invalid_labels:
         raise RuntimeError(f"Some requested Element indexes refer to non-existent neuprint labels: {invalid_labels}")
 
     element_rois_to_index = {}
     for config_name, d in element_roisets.items():
-        label = cfg['element-labels'].get(config_name)
+        label = _label(cfg['element-labels'].get(config_name), config_name)
         if label not in indexed_label_roisets:
             continue
         rois = element_rois_to_index.get(label, set())

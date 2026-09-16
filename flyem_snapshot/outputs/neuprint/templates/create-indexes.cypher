@@ -9,13 +9,10 @@
 #}
 
 // These uniqueness constraints implicitly create indexes, too.
-// https://neo4j.com/docs/cypher-manual/4.4/constraints/
-
-// This syntax appears to be for neo4j 3.5, with newer versions using a different syntax.
-// But this seems to still work for now, at least in neo4j 4.4.
+// https://neo4j.com/docs/cypher-manual/current/constraints/
 RETURN datetime() as time, "Creating uniqueness constraint on bodyId" as message;
-CREATE CONSTRAINT ON ( `{{dataset}}segment`:`{{dataset}}_Segment` ) ASSERT `{{dataset}}segment`.bodyId IS UNIQUE;
-CREATE CONSTRAINT ON ( `{{dataset}}neuron`:`{{dataset}}_Neuron` ) ASSERT `{{dataset}}neuron`.bodyId IS UNIQUE;
+CREATE CONSTRAINT `{{dataset}}segment_bodyId_unique` FOR ( `{{dataset}}segment`:`{{dataset}}_Segment` ) REQUIRE `{{dataset}}segment`.bodyId IS UNIQUE;
+CREATE CONSTRAINT `{{dataset}}neuron_bodyId_unique` FOR ( `{{dataset}}neuron`:`{{dataset}}_Neuron` ) REQUIRE `{{dataset}}neuron`.bodyId IS UNIQUE;
 
 // We used to enforce a uniqueness constraint on Element.location, but there is technically no need for
 // that if the Synapse/Element point_id was provided directly by the user (via their feather files).
@@ -25,6 +22,7 @@ CREATE CONSTRAINT ON ( `{{dataset}}neuron`:`{{dataset}}_Neuron` ) ASSERT `{{data
 
 // Create spatial index for Element (including Synapse) location.
 CREATE POINT INDEX `{{dataset}}ElementLocation` FOR (n:`{{dataset}}_Element`) ON (n.location);
+
 RETURN datetime() as time, ":Element.location: Initiated index creation" as message;
 
 // I have no idea what this DataModel node is, so it's possible this line
@@ -36,25 +34,25 @@ RETURN datetime() as time, ":Element.location: Initiated index creation" as mess
 
 // I'm not sure why we index `type` separately here
 // for the bare :Segment/:Neuron/:Synapse labels.
-CREATE INDEX ON :Segment(`type`);
+CREATE INDEX FOR (n:Segment) ON (n.`type`);
 RETURN datetime() as time, "Initiated index creation: :Segment(`type`)" as message;
-CREATE INDEX ON :Neuron(`type`);
+CREATE INDEX FOR (n:Neuron) ON (n.`type`);
 RETURN datetime() as time, "Initiated index creation: :Neuron(`type`)" as message;
-CREATE INDEX ON :Synapse(`type`);
+CREATE INDEX FOR (n:Synapse) ON (n.`type`);
 RETURN datetime() as time, "Initiated index creation: :Synapse(`type`)" as message;
 
-CREATE INDEX ON :`{{dataset}}_Synapse`(`bodyId`);
+CREATE INDEX FOR (n:`{{dataset}}_Synapse`) ON (n.`bodyId`);
 RETURN datetime() as time, "Initiated index creation: `{{dataset}}_Synapse`(`bodyId`)" as message;
 
 //
 // Element properties
 //
 {% for label, rois in element_rois_to_index.items() %}
-CREATE INDEX ON :`{{dataset}}_{{label}}`(`bodyId`);
+CREATE INDEX FOR (n:`{{dataset}}_{{label}}`) ON (n.`bodyId`);
 RETURN datetime() as time, "Initiated index creation: `{{dataset}}_{{label}}`(`bodyId`)" as message;
 
 {% for roi in rois %}
-CREATE INDEX ON :`{{dataset}}_{{label}}`(`{{roi}}`);
+CREATE INDEX FOR (n:`{{dataset}}_{{label}}`) ON (n.`{{roi}}`);
 RETURN datetime() as time, ":{{label}} annotation property {{loop.index}}/{{rois|count}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 {% endfor %}
@@ -63,8 +61,8 @@ RETURN datetime() as time, ":{{label}} annotation property {{loop.index}}/{{rois
 // Segment/Neuron properties (other than ROIs)
 //
 {% for prop in segment_properties %}
-CREATE INDEX ON :`{{dataset}}_Segment`(`{{prop}}`);
-CREATE INDEX ON :`{{dataset}}_Neuron`(`{{prop}}`);
+CREATE INDEX FOR (n:`{{dataset}}_Segment`) ON (n.`{{prop}}`);
+CREATE INDEX FOR (n:`{{dataset}}_Neuron`) ON (n.`{{prop}}`);
 RETURN datetime() as time, ":Segment/:Neuron annotation property {{loop.index}}/{{segment_properties|count}}: Initiated index creation for '{{prop}}'" as message;
 {% endfor %}
 
@@ -72,8 +70,8 @@ RETURN datetime() as time, ":Segment/:Neuron annotation property {{loop.index}}/
 // Segment/Neuron ROI properties
 //
 {% for roi in segment_rois %}
-CREATE INDEX ON :`{{dataset}}_Segment`(`{{roi}}`);
-CREATE INDEX ON :`{{dataset}}_Neuron`(`{{roi}}`);
+CREATE INDEX FOR (n:`{{dataset}}_Segment`) ON (n.`{{roi}}`);
+CREATE INDEX FOR (n:`{{dataset}}_Neuron`) ON (n.`{{roi}}`);
 RETURN datetime() as time, ":Segment/:Neuron ROI property {{loop.index}}/{{segment_rois|count}}: Initiated index creation for '{{roi}}'" as message;
 {% endfor %}
 
