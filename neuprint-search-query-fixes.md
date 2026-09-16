@@ -70,13 +70,21 @@ Verified by running `EXPLAIN` on both forms against stock containers:
 
 | server | as written | with the fix |
 |---|---|---|
-| 4.4.48 | compiles | compiles |
+| **4.4.16** — the production version | compiles | compiles |
+| 4.4.48 — latest 4.4 patch | compiles | compiles |
 | 5.26.30 | **fails** — "Aggregation column contains implicit grouping expressions ... Illegal expression(s): textMatches" | compiles |
 | 2026.07.1 | **fails** — `42I18` | compiles |
 | 2026.08.1 | **fails** — `42I18` | compiles |
 
 Each row is from running `EXPLAIN` on both forms against that version in a
 stock container, not from reading release notes.
+
+Both 4.4 patches are listed because 4.4.48 was tested first by accident — the
+`neo4j:4.4` tag resolves to the latest patch, not to the version actually
+deployed. 4.4.16 was then tested explicitly. The production version is also
+covered far more strongly by the real-data comparisons below: every one of
+those 16 runs executed **both** forms successfully against live 4.4.16 servers,
+which is direct evidence of compilation rather than an `EXPLAIN` on a stand-in.
 
 Cypher 4.4 accepted implicit grouping expressions; Cypher 5 rejects them, so
 this breaks as soon as you leave 4.4 rather than only on CalVer. 5.26's error
