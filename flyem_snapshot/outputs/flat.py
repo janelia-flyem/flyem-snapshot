@@ -45,6 +45,14 @@ FlatConnectomeSchema = {
             "type": "string",
             "default": ""
         },
+        "celltype-columns": {
+            "description": "The names of columns from the body annotations table to include in the 'significant' connectome weights table.\n",
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": ["type"]
+        },
         "restrict-connectivity-to-roiset": {
             "description":
                 "Discard synapses that fall outside the given roiset, i.e. they are <unspecified> in this roiset.\n"
@@ -289,16 +297,22 @@ def _export_significant_weighted_connectome(cfg, ann, significant_partner_export
         )
         significant_connectome = _add_compartment_weights(significant_connectome, significant_partner_export_df)
 
-        if 'type' in ann.columns:
+        for col in cfg['celltype-columns']:
+            if col not in ann.columns:
+                raise RuntimeError(
+                    f"Your config lists celltype-column '{col}' in 'celltype-columns', "
+                    "but it is not present in the body annotations table."
+                )
+
             significant_connectome = (
-                    significant_connectome
+                significant_connectome
                 .merge(
-                    ann['type'].rename('type_pre').rename_axis('body_pre'),
+                    ann[col].rename(f'{col}_pre').rename_axis('body_pre'),
                     'left',
                     on='body_pre'
                 )
                 .merge(
-                    ann['type'].rename('type_post').rename_axis('body_post'),
+                    ann[col].rename(f'{col}_post').rename_axis('body_post'),
                     'left',
                     on='body_post'
                 )
