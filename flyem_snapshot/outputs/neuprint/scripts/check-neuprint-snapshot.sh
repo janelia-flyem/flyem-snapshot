@@ -211,8 +211,14 @@ q() {
 
 PASSES=0
 FAILURES=0
+WARNINGS=0
+WARNING_LINES=""
 ok()   { printf '  PASS  %s\n' "$1"; PASSES=$((PASSES+1)); }
 bad()  { printf '  FAIL  %s\n' "$1"; FAILURES=$((FAILURES+1)); }
+# A quality signal rather than a broken snapshot: something worth a human
+# looking at, but not a reason to fail the ingest gate. Counted and repeated
+# in the summary so it cannot be lost in the scroll.
+warn() { printf '  WARN  %s\n' "$1"; WARNINGS=$((WARNINGS+1)); WARNING_LINES="${WARNING_LINES}${WARNING_LINES:+$'\n'}  ${1}"; }
 skip() { printf '  SKIP  %s\n' "$1"; }
 info() { printf '  ....  %s\n' "$1"; }
 
@@ -889,32 +895,38 @@ else
         FT_OK=1
         ok "FULLTEXT index ${FT_NAME} is ONLINE (${FT_PROP_COUNT} properties)"
         info "  indexed: $(echo ${FT_PROPS} | tr ' ' ',' | sed 's/,/, /g')"
+        # An empty property list means the query failed, not that the index
+        # covers nothing. Comparing against it would report every populated
+        # property as unindexed and advise a config edit that would not help,
+        # so say what actually went wrong and stop there.
         if [[ "${FT_PROP_COUNT}" -eq 0 ]]; then
             bad "could not read the FULLTEXT index's property list"
-        fi
-
-        # Populated but unindexed: what the fast query would miss.
-        FT_MISSING=""
-        for _pair in ${PROP_POP_PAIRS}; do
-            _p="${_pair%%=*}"; _pct="${_pair##*=}"
-            grep -qx -- "${_p}" <<<"${FT_PROPS}" || FT_MISSING="${FT_MISSING}${FT_MISSING:+, }${_p} (${_pct}%)"
-        done
-
-        # Indexed but empty: harmless, but it means a slot is doing nothing.
-        FT_WASTED=""
-        while IFS= read -r _p; do
-            [[ -z "${_p}" ]] && continue
-            case " ${PROP_POP_PAIRS}" in *" ${_p}="*) ;; *) FT_WASTED="${FT_WASTED}${FT_WASTED:+, }${_p}";; esac
-        done <<< "${FT_PROPS}"
-
-        if [[ -z "${FT_MISSING}" ]]; then
-            ok "every populated search property is in the FULLTEXT index"
         else
-            bad "populated search properties missing from the FULLTEXT index: ${FT_MISSING}"
-            info "  the fast search query cannot match on these, so it returns fewer rows"
-            info "  fix by listing them in the 'find-neurons-fulltext-index-properties' config"
+            # Populated but unindexed: what the fast query would miss.
+            FT_MISSING=""
+            for _pair in ${PROP_POP_PAIRS}; do
+                _p="${_pair%%=*}"; _pct="${_pair##*=}"
+                grep -qx -- "${_p}" <<<"${FT_PROPS}" || FT_MISSING="${FT_MISSING}${FT_MISSING:+, }${_p} (${_pct}%)"
+            done
+
+            # Indexed but empty: harmless, but it means a slot is doing nothing.
+            FT_WASTED=""
+            while IFS= read -r _p; do
+                [[ -z "${_p}" ]] && continue
+                case " ${PROP_POP_PAIRS}" in *" ${_p}="*) ;; *) FT_WASTED="${FT_WASTED}${FT_WASTED:+, }${_p}";; esac
+            done <<< "${FT_PROPS}"
+
+            if [[ -z "${FT_MISSING}" ]]; then
+                ok "every populated search property is in the FULLTEXT index"
+            else
+                warn "populated search properties missing from the FULLTEXT index: ${FT_MISSING}"
+                info "  the fast search query cannot match on these, so it returns fewer rows"
+                info "  this is a config choice, not a broken snapshot: the default indexes"
+                info "  type/instance/synonyms, and a dataset that annotates more should list"
+                info "  them under 'find-neurons-fulltext-index-properties' in its config"
+            fi
+            [[ -n "${FT_WASTED}" ]] && info "  indexed but null throughout, so contributing nothing: ${FT_WASTED}"
         fi
-        [[ -n "${FT_WASTED}" ]] && info "  indexed but null throughout, so contributing nothing: ${FT_WASTED}"
     fi
 
     # Built per term, so a sweep can vary the term without re-booting.
@@ -1234,6 +1246,10 @@ echo " Summary"
 echo "=============================================================="
 echo "  passed: ${PASSES}"
 echo "  failed: ${FAILURES}"
+if [[ "${WARNINGS}" -gt 0 ]]; then
+    echo "  warnings: ${WARNINGS}"
+    printf '%s\n' "${WARNING_LINES}"
+fi
 echo
 
 # The verdict is written to the bind-mounted work dir as well as returned as

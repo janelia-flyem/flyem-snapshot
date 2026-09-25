@@ -43,9 +43,14 @@ What it checks:
       the fulltext-index one) execute, with their timings reported and
       their row counts compared; inputs are derived deterministically, so
       runs are comparable
-    - the FULLTEXT index is ONLINE and covers every search property the
-      dataset actually populates -- where it does not, the fast query
-      silently returns fewer rows than the slow one
+    - the FULLTEXT index is ONLINE, and whether it covers every search
+      property the dataset actually populates.  A gap here is reported as
+      a WARNING rather than a failure: the default indexes three
+      properties, and a dataset that annotates more is expected to list
+      them under 'find-neurons-fulltext-index-properties' in its own
+      config.  Where it does not, the fast search query silently returns
+      fewer rows than the slow one, so the warning is worth acting on --
+      but the snapshot itself is sound.
     - the database name and pinned Cypher language version
 
 Environment overrides, all optional:

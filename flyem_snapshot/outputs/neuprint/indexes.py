@@ -60,43 +60,45 @@ IndexesSettingsSchema = {
             "type": "array",
             "items": {"type": "string"},
 
-            # These must cover every property neuPrintExplorer's FindNeurons
-            # query searches, which is all eleven below. That query finds
+            # Three by default, extended per dataset in its snapshot config.
+            #
+            # neuPrintExplorer's FindNeurons query searches eleven properties:
+            # the three below plus hemibrainType, flywireType, systematicType,
+            # itoleeHl, trumanHl, class, entryNerve and exitNerve. It finds
             # candidates through this index and then ranks them on all eleven,
-            # so a neuron whose only match is in a property missing from here
-            # is never returned as a candidate at all -- the search silently
-            # yields fewer rows, with no error anywhere.
+            # so a neuron whose only match is in a property missing from the
+            # index is never a candidate -- the search silently yields fewer
+            # rows, with no error anywhere.
             #
-            # The previous default listed only type/instance/synonyms. Measured
-            # consequence: on yakuba, where `class` is 24% populated and was
-            # not indexed, the fulltext search returned 12,228 rows where a
-            # label scan returned 21,158 -- 42% of results missing. On fish2
-            # (`class` <1%) it was 1 row, and on wasp, which populates only
-            # indexed properties, none. So the damage is dataset-dependent and
-            # a dataset can easily look fine while another is badly wrong.
+            # That is a reason to list a property here, not a reason to index
+            # all eleven everywhere. Indexing a property no node carries costs
+            # build time and index size for nothing, and most datasets populate
+            # only a few. So the default stays narrow and a dataset that
+            # annotates more says so in its own config, e.g.
             #
-            # Indexing a property no node carries is harmless; it simply
-            # contributes nothing. So listing all eleven is preferable to
-            # tracking each dataset's annotation coverage by hand.
+            #     find-neurons-fulltext-index-properties:
+            #       - type
+            #       - instance
+            #       - synonyms
+            #       - class
             #
-            # Note `itoleeHl` is lowercase-l: the FindNeurons queries read
-            # `n.itoleeHl` and alias it for display as `itoLeeHl`. The
-            # commented-out list this replaces used the display alias, which
-            # would have indexed a property that does not exist. No dataset
-            # here populates it, so that spelling is taken from those queries
-            # rather than confirmed against data.
+            # Getting that wrong is a quiet cost rather than a failure. Measured
+            # on yakuba, where `class` is 24% populated and was not indexed: the
+            # fulltext search returned 12,228 rows where a label scan returned
+            # 21,158, 42% of results missing. On fish2 (`class` <1%) it was one
+            # row, and on wasp, which populates only indexed properties, none.
+            # So the damage tracks how heavily the unlisted properties are
+            # annotated, and one dataset can look fine while another is badly
+            # wrong. check-neuprint-snapshot reports the gap.
+            #
+            # When listing hemilineage, note `itoleeHl` is lowercase-l: the
+            # FindNeurons queries read `n.itoleeHl` and alias it for display as
+            # `itoLeeHl`. Writing the display alias would index a property that
+            # does not exist.
             "default": [
                 "type",
                 "instance",
-                "hemibrainType",
-                "flywireType",
-                "systematicType",
-                "itoleeHl",
-                "trumanHl",
                 "synonyms",
-                "class",
-                "entryNerve",
-                "exitNerve",
             ]
         }
     }
