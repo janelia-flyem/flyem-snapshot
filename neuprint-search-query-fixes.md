@@ -198,7 +198,7 @@ query at all (see item 4); those six are:
 67,449 rows. Note the pairs where adding a bodyId does not change the count —
 `yakuba-vnc` at 5,929 and `male-cns` at 67,449 — those are cases where the
 sampled body was already among the text matches, so `DISTINCT` collapsed the
-duplicate. That is the behaviour most at risk from the change, and it held.
+duplicate. That is the behavior most at risk from the change, and it held.
 
 So the evidence stands at: 8 semantic cases and 3,000 fully-tied rows on a
 synthetic fixture, plus 24 comparisons across six production datasets on four
@@ -445,7 +445,7 @@ in one pass.
 
 What the index removes is the label scan plus `CONTAINS` filtering. Everything
 after the match — the eleven `toLower()` calls, both `CASE` ladders, the
-`DISTINCT`, the `ORDER BY`, serialising fourteen columns — is shared, so the
+`DISTINCT`, the `ORDER BY`, serializing fourteen columns — is shared, so the
 per-row cost is identical and grows with the result set either way.
 
 Two things follow, and they pull in opposite directions.
@@ -472,10 +472,10 @@ label:
 (fish2's row counts differ by 1, so that is very nearly like-for-like.)
 
 So the index is worth having, and more so as datasets grow. But an autocomplete
-field issues a short, common term on every keystroke, which maximises the
+field issues a short, common term on every keystroke, which maximizes the
 result set — the part the index cannot help with. If the reported slowness is
 that case, the index will improve it by the fixed amount and no more, while the
-dominant cost remains returning and serialising tens of thousands of rows a
+dominant cost remains returning and serializing tens of thousands of rows a
 dropdown cannot display. **A `LIMIT` addresses what the index cannot**, and the
 two are complementary rather than alternatives.
 

@@ -48,7 +48,7 @@ pointed at nothing.
 
 ## Why nothing noticed
 
-This is the part worth internalising. Neo4j's health metrics cannot distinguish
+This is the part worth internalizing. Neo4j's health metrics cannot distinguish
 an index that works from one that covers nothing:
 
 ```
@@ -125,7 +125,7 @@ versions: different containers, different cache states, single measurements.
 elapsed time — and it is identical. And on 4.4.16 the older
 `CREATE INDEX ON :Label(prop)` syntax was used, matching what the pre-branch
 template actually emitted, so this exercises the real production code path
-rather than a modernised equivalent.
+rather than a modernized equivalent.
 
 ### The same comparison, with and without the colon
 
@@ -159,7 +159,7 @@ with only the broken index present. That is what the table above measures.
 ## This is a pre-existing production defect, not an upgrade regression
 
 The measurements above are identical on 4.4.16 and 2026.08.1 — the same plan,
-the same DbHits, the same misleading `ONLINE` / `100.0`. Neo4j's behaviour here
+the same DbHits, the same misleading `ONLINE` / `100.0`. Neo4j's behavior here
 is unchanged between the two, across the whole 4.4 → 5.x → CalVer span.
 
 So the colon mismatch has been producing inert element ROI indexes since element
@@ -207,7 +207,7 @@ Two incidental observations from that output:
 
 Probably nothing surgical. They are useless but harmless, and fish2 is
 re-snapshotted regularly under active annotation, so the next ingest carrying
-the fixed `indexes.py` replaces them with correctly-labelled ones on its own.
+the fixed `indexes.py` replaces them with correctly-labeled ones on its own.
 Dropping and recreating 217 indexes on a live server buys only the interval
 until that happens.
 

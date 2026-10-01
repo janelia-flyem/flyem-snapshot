@@ -162,7 +162,7 @@ bump.  `create-indexes.cypher` is Cypher 5 syntax.
 `2025.12` changed the default `--bad-tolerance` from `1000` to `-1` (unlimited).
 That means a malformed CSV row would be **skipped and logged instead of failing
 the import** — silent row loss in a connectome export.  The script now passes
-`--bad-tolerance` explicitly (default `1000`, matching pre-CalVer behaviour,
+`--bad-tolerance` explicitly (default `1000`, matching pre-CalVer behavior,
 overridable via the `BAD_TOLERANCE` environment variable; set `0` to fail on the
 first bad record).
 
@@ -216,7 +216,7 @@ for the details and the deployment sequencing this implies.
   bind-mounted one that is persisted next to the database. Writing only the
   former left the shipped conf claiming 31G/150G, which then broke
   `inspect-neuprint-snapshot` on any machine smaller than a cluster node.
-  Defaults remain 31G/150G, so cluster behaviour is unchanged.
+  Defaults remain 31G/150G, so cluster behavior is unchanged.
 
 ### `flyem_snapshot/outputs/neuprint/scripts/inspect-neuprint-snapshot.sh` and `_launch_snapshot_and_bash_shell.sh`
 
@@ -267,7 +267,7 @@ for the details and the deployment sequencing this implies.
 
 An earlier commit on this branch (`2c88ad9`) introduced `sanitize_roi_name()`,
 which rewrote ROI names when building CSV headers — `BU(R)` became `BU_R_` —
-on the premise that Neo4j rejects parenthesised property names in CSV headers
+on the premise that Neo4j rejects parenthesized property names in CSV headers
 and collapses similar names into duplicates.
 
 **That premise is wrong, and the rewrite caused a real bug.** It was reverted in
@@ -451,7 +451,7 @@ Check that neuprinthttp can connect to the resulting database and serve queries
   errors. The script already checks for `import failed` in the logs.
 - **Config problems are NOT fatal here.** Neo4j would normally refuse to start
   on an unknown or renamed setting, but we set
-  `server.config.strict_validation.enabled=false`, so unrecognised keys are
+  `server.config.strict_validation.enabled=false`, so unrecognized keys are
   downgraded to `Unrecognized setting` **warnings** and otherwise ignored. Read
   the validation block that `neo4j start` prints — `N issues found` with a list
   — rather than assuming a clean startup means a correct config. This is exactly
@@ -665,7 +665,7 @@ Fitting a floor-plus-per-row model to the extremes gives slow ~178 ms + 15.6
 us/row and fast ~81 ms + 19.0 us/row. On wasp, then, the index removes ~97 ms
 of floor and nothing else: everything after the match is shared between the two
 forms — the eleven `toLower()` calls building `props`, both `CASE` ladders, the
-`DISTINCT`, the `ORDER BY`, and serialising fourteen columns — so the per-row
+`DISTINCT`, the `ORDER BY`, and serializing fourteen columns — so the per-row
 cost is the same and swamps the fixed saving as rows grow. Hence ~50% for
 selective terms and 2% for a single character on wasp.
 
@@ -683,7 +683,7 @@ all three are like-for-like:
 
 The benefit tracks label size, not result size — note fish2 has the *largest*
 label and the *fewest* matched rows, which is precisely the case the index is
-built for. An earlier revision of this section generalised wasp's floor into a
+built for. An earlier revision of this section generalized wasp's floor into a
 constant and thereby badly understated the index's value on large datasets.
 
 Within a single dataset the picture is the opposite: the saving is a fixed
@@ -964,7 +964,7 @@ config validation stops at the *first* unknown key, so a cherry-pick of that one
 commit would only have revealed the next gap; merging closes them all at once.
 
 **Merged `origin/master` into the branch** (merge commit `7940dcc`). Two
-conflicts, both resolved in favour of this branch:
+conflicts, both resolved in favor of this branch:
 
 - **`pixi.toml` — keep ours.** Upstream `7e37c92` ("Update pixi (use arm on mac,
   not x64)") narrowed `platforms` to `["osx-arm64"]` and dropped the

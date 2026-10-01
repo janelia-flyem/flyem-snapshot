@@ -303,7 +303,7 @@ expect_eq ":${DS}_ElementSet minus :${DS}_SynapseSet equals the non-synaptic cou
 
 # Every node should carry one of the labels we know about. Nodes with several
 # labels (a :Neuron is also a :Segment) are counted once by the single MATCH,
-# so this catches stray or mislabelled nodes without double-counting.
+# so this catches stray or mislabeled nodes without double-counting.
 TOTAL_NODES=$(q "MATCH (n) RETURN count(n);")
 ACCOUNTED=$(q "MATCH (n)
                WHERE n:\`${DS}_Segment\` OR n:\`${DS}_Synapse\` OR n:\`${DS}_SynapseSet\`
