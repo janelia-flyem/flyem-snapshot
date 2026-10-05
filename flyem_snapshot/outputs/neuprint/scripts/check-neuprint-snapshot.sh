@@ -1300,7 +1300,24 @@ if [[ -r /conf/neo4j.conf ]]; then
     CONF_HEAP=$(grep -oE '^server\.memory\.heap\.max_size=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
     CONF_PC=$(grep -oE '^server\.memory\.pagecache\.size=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
     CONF_LANG=$(grep -oE '^db\.query\.default_language=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
-    info "persisted conf: heap=${CONF_HEAP:-unset} pagecache=${CONF_PC:-unset} cypher=${CONF_LANG:-unset}"
+
+    # A 4.4-era conf spells these dbms.memory.* and has no language setting at
+    # all, since db.query.default_language only exists from 2025.06. Asserting
+    # the CalVer names against such a conf reports two failures that say
+    # nothing about the snapshot -- which is what happened when this was first
+    # pointed at a nightly-built yakuba database. Detect the era and check the
+    # names that era actually uses.
+    CONF_HEAP_LEGACY=$(grep -oE '^dbms\.memory\.heap\.max_size=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
+    CONF_PC_LEGACY=$(grep -oE '^dbms\.memory\.pagecache\.size=.*' /conf/neo4j.conf | head -1 | cut -d= -f2)
+    if [[ -z "${CONF_HEAP}${CONF_PC}" && -n "${CONF_HEAP_LEGACY}${CONF_PC_LEGACY}" ]]; then
+        CONF_ERA=legacy
+        CONF_HEAP="${CONF_HEAP_LEGACY}"
+        CONF_PC="${CONF_PC_LEGACY}"
+    else
+        CONF_ERA=calver
+    fi
+
+    info "persisted conf: heap=${CONF_HEAP:-unset} pagecache=${CONF_PC:-unset} cypher=${CONF_LANG:-unset} (${CONF_ERA} key names)"
 
     # Both must be present and non-empty, or the snapshot is not portable: a
     # missing value means the server falls back to a default that may not fit
@@ -1312,8 +1329,13 @@ if [[ -r /conf/neo4j.conf ]]; then
     fi
 
     # The language pin has to survive into the persisted copy too, otherwise a
-    # future server reading this conf could default to CYPHER_25.
-    expect_eq "persisted neo4j.conf pins the Cypher language" "${CONF_LANG}" "CYPHER_5"
+    # future server reading this conf could default to CYPHER_25. Only
+    # applicable to a conf written for a server that has the setting.
+    if [[ "${CONF_ERA}" == "legacy" ]]; then
+        info "no Cypher language pin expected: this conf predates neo4j 2025.06"
+    else
+        expect_eq "persisted neo4j.conf pins the Cypher language" "${CONF_LANG}" "CYPHER_5"
+    fi
 else
     skip "no readable /conf/neo4j.conf to check"
 fi
