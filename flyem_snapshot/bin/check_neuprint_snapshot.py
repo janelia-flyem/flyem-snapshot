@@ -34,6 +34,21 @@ What it checks:
       the import skipped no bad entries
     - Segment/Synapse/SynapseSet counts match the exported CSV row counts,
       as do the ConnectsTo/SynapsesTo/Contains/CloseTo relationship counts
+    - the two tables exported as both feather and CSV (Neuprint_Neurons and
+      Neuprint_Neuron_Connections) have matching row counts.  Both are
+      written from one DataFrame, so this checks the CSV batching rather
+      than the data -- an error upstream of that DataFrame appears in both
+      and passes
+    - every Neuron's type agrees with tables/body-annotations-*.feather,
+      the annotations as fetched from DVID before they were merged into the
+      neuron table.  Row counts are not comparable (the table covers every
+      annotated body, most of which are not exported as Neurons), so this is
+      a subset check over the bodies the graph carries a type for.  A type
+      with no row in that table is a WARNING, not a failure: a dataset may
+      draw annotations from a config-supplied table or from point
+      annotations as well as from DVID.
+      These three need pyarrow importable on the host, so run via 'pixi run';
+      without it they are skipped with a notice and the total drops by three
     - every relationship carries one of the known types
     - Meta.totalPreCount/totalPostCount do not exceed the synapses that
       exist (they may legitimately be smaller, when the config restricts

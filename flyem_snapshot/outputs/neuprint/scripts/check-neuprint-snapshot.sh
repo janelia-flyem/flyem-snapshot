@@ -34,6 +34,26 @@
 ##                check here, but reads every CSV, which is slow on a large
 ##                dataset over network storage.
 ##
+##                This setting also gates three further reconciliations, which
+##                need pyarrow on the HOST (not in the container) to read the
+##                snapshot's feather files:
+##
+##                  * Neuprint_Neurons.feather vs its CSVs
+##                  * Neuprint_Neuron_Connections.feather vs its CSV
+##                      Both tables are written twice from one DataFrame, so
+##                      this checks the CSV batching rather than the data: an
+##                      error upstream of that DataFrame lands in both.
+##                  * every Neuron's type vs tables/body-annotations-*.feather
+##                      This one does span a transformation -- the annotations
+##                      are fetched from DVID and written out before being
+##                      merged into the neuron table -- so a type lost or
+##                      altered in that merge is caught here.
+##
+##                If pyarrow is not importable, the three are skipped with a
+##                notice on stderr and the total drops by three. Run this via
+##                'pixi run' so the environment's python is used; a bare
+##                python3 on PATH generally will not have pyarrow.
+##
 ##   MAX_QUERY_MS Turn the complex-query timing into an assertion instead of
 ##                an informational line. Milliseconds, because the whole
 ##                plausible range at snapshot scale sits under one second.
@@ -394,6 +414,64 @@ if [[ -n "${CSV_SEGMENTS:-}" ]]; then
     expect_eq "SynapsesTo count matches CSV rows" "${REL_SYNAPSESTO}" "${CSV_SYNAPSESTO}"
     expect_eq "Contains count matches CSV rows"   "${REL_CONTAINS}"   "${CSV_CONTAINS}"
     expect_eq "CloseTo count matches CSV rows"    "${REL_CLOSETO}"    "${CSV_CLOSETO}"
+fi
+
+# Two tables are exported twice over, as feather and as CSV, from one
+# DataFrame. Comparing them checks the CSV batching in segment.py rather than
+# the data: an error upstream of that DataFrame lands in both and passes here.
+# Weaker than the CSV-vs-graph checks above, which span a different program.
+if [[ -n "${FEATHER_NEURONS:-}" ]]; then
+    expect_eq "Neuprint_Neurons.feather rows match its CSVs" \
+        "${CSV_SEGMENTS}" "${FEATHER_NEURONS}"
+fi
+if [[ -n "${FEATHER_CONNECTIONS:-}" ]]; then
+    expect_eq "Neuprint_Neuron_Connections.feather rows match its CSV" \
+        "${CSV_NEURON_CONNECTIONS}" "${FEATHER_CONNECTIONS}"
+fi
+
+# Every type in the graph against the annotation table it came from. Unlike the
+# feather/CSV comparison above, this spans a real transformation: the
+# annotations are fetched from DVID and written to tables/ before being merged
+# into neuron_df, so a type lost or altered in that merge shows up here.
+#
+# Row counts are NOT comparable -- the annotation table covers every annotated
+# body, most of which are not exported as Neurons -- so this is a subset check
+# over the bodies the graph actually carries a type for.
+if [[ -n "${ANN_TYPES:-}" && -r "${ANN_TYPES}" ]]; then
+    q "MATCH (n:\`${DS}_Neuron\`) WHERE n.type IS NOT NULL
+       RETURN toString(n.bodyId) + '\t' + n.type;" \
+        | sed '/^$/d' | sort -t"$(printf '\t')" -k1,1 > /checks/graph-types.tsv
+    sort -t"$(printf '\t')" -k1,1 "${ANN_TYPES}" > /checks/ann-types.tsv
+
+    GRAPH_TYPED=$(wc -l < /checks/graph-types.tsv | tr -d ' ')
+    if [[ "${GRAPH_TYPED}" -eq 0 ]]; then
+        skip "no Neuron carries a type, so there is nothing to reconcile"
+    else
+        join -t"$(printf '\t')" -j 1 -o 1.1,1.2,2.2 \
+            /checks/graph-types.tsv /checks/ann-types.tsv > /checks/joined-types.tsv
+        PAIRED=$(wc -l < /checks/joined-types.tsv | tr -d ' ')
+        DISAGREE=$(awk -F"\t" '$2 != $3' /checks/joined-types.tsv | wc -l | tr -d ' ')
+        # A type in the graph for a body the annotation fetch never returned.
+        ABSENT=$(join -t"$(printf '\t')" -j 1 -v 1 \
+            /checks/graph-types.tsv /checks/ann-types.tsv | wc -l | tr -d ' ')
+
+        info "${GRAPH_TYPED} Neurons carry a type; ${PAIRED} found in the annotation table"
+        if [[ "${DISAGREE}" -eq 0 ]]; then
+            ok "every Neuron type agrees with the annotation table it came from"
+        else
+            bad "${DISAGREE} Neuron type(s) disagree with the annotation table"
+            awk -F"\t" '$2 != $3 {printf "          body %s: graph %s, annotations %s\n", $1, $2, $3}' \
+                /checks/joined-types.tsv | head -5
+        fi
+        # Not a failure: a dataset can take annotations from a config-supplied
+        # table or from point annotations as well as from DVID, in which case a
+        # type legitimately has no row here.
+        if [[ "${ABSENT}" -gt 0 ]]; then
+            warn "${ABSENT} Neuron type(s) have no row in the annotation table"
+            info "  expected only if this dataset draws annotations from another"
+            info "  source (body-annotations-table, or point-annotations)"
+        fi
+    fi
 fi
 
 # Meta.totalPreCount / totalPostCount are what neuPrintExplorer displays as the
@@ -1334,8 +1412,93 @@ if [[ "${CHECK_CSV_COUNTS}" != "0" ]]; then
         export APPTAINERENV_CSV_CLOSETO=$(csv_rows \
             "${CSV_DIR}"/Neuprint_Elements_CloseTo_*.csv)
 
+        # Neuprint_Neuron_Connections on its own, for the feather comparison
+        # below. CSV_CONNECTSTO above is the SUM of two files, so it cannot be
+        # compared against a single feather table.
+        export APPTAINERENV_CSV_NEURON_CONNECTIONS=$(csv_rows \
+            "${CSV_DIR}"/Neuprint_Neuron_Connections.csv)
+
         echo "  segments=${APPTAINERENV_CSV_SEGMENTS} synapses=${APPTAINERENV_CSV_SYNAPSES} synapsesets=${APPTAINERENV_CSV_SYNAPSESETS}"
         echo "  connectsto=${APPTAINERENV_CSV_CONNECTSTO} synapsesto=${APPTAINERENV_CSV_SYNAPSESTO} contains=${APPTAINERENV_CSV_CONTAINS} closeto=${APPTAINERENV_CSV_CLOSETO}"
+
+        # Two tables are written both as feather and as CSV, from the same
+        # in-memory DataFrame (segment.py's _export_neuron_csvs writes the
+        # feather first, then sorts and batches the rows into CSVs). So their
+        # row counts must agree, and comparing them guards that batching --
+        # roiset_hash sorting, the batch_size arithmetic and the singleton-batch
+        # adjustment -- against dropping or duplicating rows.
+        #
+        # Note what this does NOT do: both artifacts come from one DataFrame, so
+        # an error upstream of it appears identically in both and passes. It is
+        # a weaker check than CSV-vs-graph, which spans a different program.
+        #
+        # Reading feather needs pyarrow, which lives in the host's pixi env,
+        # not in the neo4j container -- hence counted here and forwarded in.
+        #
+        # Say so when it is unavailable. An earlier version swallowed the
+        # ImportError and skipped in silence, so the suite quietly reported
+        # three checks fewer with no indication why -- which is the failure
+        # mode this script exists to prevent.
+        if ! python3 -c "import pyarrow" 2>/dev/null; then
+            echo "NOTE: pyarrow is not importable by $(command -v python3 || echo python3)," 1>&2
+            echo "      so the feather and annotation reconciliations are skipped." 1>&2
+            echo "      Invoke via 'pixi run check-neuprint-snapshot ...' to use the" 1>&2
+            echo "      environment's python, which has it." 1>&2
+            FEATHER_AVAILABLE=0
+        else
+            FEATHER_AVAILABLE=1
+        fi
+
+        feather_rows() {
+            python3 -c "
+import sys
+import pyarrow.feather as f
+print(f.read_feather(sys.argv[1]).shape[0])
+" "$1" 2>/dev/null
+        }
+
+        if [[ "${FEATHER_AVAILABLE}" == "1" ]]; then
+        NEURONS_FEATHER="${CSV_DIR}/Neuprint_Neurons.feather"
+        CONNS_FEATHER="${CSV_DIR}/Neuprint_Neuron_Connections.feather"
+        if [[ -f "${NEURONS_FEATHER}" ]]; then
+            export APPTAINERENV_FEATHER_NEURONS=$(feather_rows "${NEURONS_FEATHER}")
+        fi
+        if [[ -f "${CONNS_FEATHER}" ]]; then
+            export APPTAINERENV_FEATHER_CONNECTIONS=$(feather_rows "${CONNS_FEATHER}")
+        fi
+        if [[ -n "${APPTAINERENV_FEATHER_NEURONS:-}${APPTAINERENV_FEATHER_CONNECTIONS:-}" ]]; then
+            echo "  feather rows: neurons=${APPTAINERENV_FEATHER_NEURONS:-n/a} connections=${APPTAINERENV_FEATHER_CONNECTIONS:-n/a}"
+        fi
+
+        # The body annotations as fetched from DVID, before they were merged
+        # into neuron_df. Dumped as a sorted bodyId/type table so the container
+        # can check the graph's type values against their source -- the one
+        # transformation in this pipeline that silently produced a wrong answer
+        # in practice (a body losing its type between nodes went unnoticed
+        # until a user reported a missing search result).
+        ANN_FEATHER=$(ls "$(dirname "${NEO4J_DIR}")"/tables/body-annotations-*.feather 2>/dev/null | head -1)
+        if [[ -n "${ANN_FEATHER}" && -f "${ANN_FEATHER}" ]]; then
+            python3 -c "
+import sys
+try:
+    import pyarrow.feather as f
+    t = f.read_feather(sys.argv[1])
+    if 'type' not in t.columns:
+        raise SystemExit
+    t = t[t['type'].notnull()]
+    rows = sorted((str(int(b)), str(v)) for b, v in zip(t['body'], t['type']))
+    with open(sys.argv[2], 'w') as out:
+        for b, v in rows:
+            out.write(b + '\t' + v + '\n')
+except Exception:
+    pass
+" "${ANN_FEATHER}" "${WORK}/annotation-types.tsv" 2>/dev/null
+            if [[ -s "${WORK}/annotation-types.tsv" ]]; then
+                export APPTAINERENV_ANN_TYPES=/checks/annotation-types.tsv
+                echo "  annotation types from $(basename "${ANN_FEATHER}"): $(wc -l < "${WORK}/annotation-types.tsv") bodies"
+            fi
+        fi
+        fi
     fi
 fi
 
