@@ -123,6 +123,22 @@ def load_elements(cfg, pointlabeler):
 
         if not table_cfg['permit-body-0']:
             point_df = point_df.loc[point_df['body'] != 0].copy()
+            if distance_df is not None:
+                logger.info(f"Filtering out distance table for body 0 for element table '{name}'")
+                orig_len = len(distance_df)
+                # Since the pointlabeler operates in-place and assumes columns x,y,z,
+                # we need to do this in two steps and rename/delete columns.
+                distance_df[[*'zyx']] = distance_df[['source_z', 'source_y', 'source_x']]
+                pointlabeler.update_bodies_for_points(distance_df, cfg['processes'])
+                distance_df = distance_df.rename(columns={'body': 'source_body', 'sv': 'source_sv'})
+
+                distance_df[[*'zyx']] = distance_df[['target_z', 'target_y', 'target_x']]
+                pointlabeler.update_bodies_for_points(distance_df, cfg['processes'])
+                distance_df = distance_df.rename(columns={'body': 'target_body', 'sv': 'target_sv'})
+
+                distance_df = distance_df.query('source_body != 0 and target_body != 0')
+                distance_df = distance_df.drop(columns=[*'zyx', 'source_sv', 'source_body', 'target_sv', 'target_body'])
+                logger.info(f"Filtered out {orig_len - len(distance_df)} rows from distance table for element table '{name}'")
 
         # FIXME: This would be more convenient to mutate if it were a DataClass.
         element_dfs[name] = (point_df, distance_df)

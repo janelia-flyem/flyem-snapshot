@@ -129,8 +129,9 @@ class SkeletonSerializer(SerializerBase):
         return f'{snapshot_tag}-seg-{mutid}-ann-{ann_body_hash}-{self.name}-{cfg_hash}.csv'
 
     def save_to_file(self, results, path):
-        if results is None and os.path.exists(path):
-            os.remove(path)
+        if results is None:
+            if os.path.exists(path):
+                os.remove(path)
             return
 
         results.to_csv(path, index=True, header=True)

@@ -26,6 +26,8 @@ from .util import append_neo4j_type_suffixes
 # in the column names and written as semicolon-delimited lists.
 NEUPRINT_META_LIST_PROPERTIES = {
     'voxelSize': 'float[]',
+    'skeletonCoordinateResolutionNm': 'float[]',
+    'synapseCoordinateResolutionNm': 'float[]',
     'primaryRois': 'string[]',
     'superLevelRois': 'string[]',
     'nonHierarchicalROIs': 'string[]',
@@ -250,9 +252,18 @@ NeuprintMetaSchema = {
             "type": "string",
             "default": "nanometers"
         },
+        "skeletonCoordinateResolutionNm": {
+            "type": "array",
+            "items": {"type": "number"},
+            "default": [8.0, 8.0, 8.0]
+        },
+        "synapseCoordinateResolutionNm": {
+            "type": "array",
+            "items": {"type": "number"},
+            "default": [8.0, 8.0, 8.0]
+        },
         "info": {
             "type": "string",
-            # "default": "https://www.janelia.org/project-team/flyem"
             "default": "https://www.janelia.org/project-team/flyem"
         },
         "logo": {
@@ -541,6 +552,7 @@ def construct_neuprint_roi_hierarchy(rh):
 META_PROPERTIES = [
     'dataset', 'tag', 'hideDataSet',
     'voxelSize', 'voxelUnits',
+    'skeletonCoordinateResolutionNm', 'synapseCoordinateResolutionNm',
     'info', 'logo', 'description', 'meshHost',
     'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
     'totalPreCount', 'totalPostCount',
@@ -570,6 +582,7 @@ def export_neuprint_meta(cfg, last_mutation, ann_timestamp, neuron_df, dataset_t
     verbatim_keys = (
         'dataset', 'tag', 'hideDataSet',
         'voxelSize', 'voxelUnits',
+        'skeletonCoordinateResolutionNm', 'synapseCoordinateResolutionNm',
         'info', 'logo', 'description',
         'postHighAccuracyThreshold', 'preHPThreshold', 'postHPThreshold',
         # 'totalPreCount', 'totalPostCount',
