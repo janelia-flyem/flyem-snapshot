@@ -16,11 +16,19 @@ def dataframe_checksum(df):
 
 def series_checksum(s):
     if s.dtype == 'category':
-        return CityHash64(s.cat.codes.values)
+        return CityHash64(s.cat.codes.to_numpy())
     if s.dtype == 'object':
-        return CityHash64(s.astype(str).values.astype(str))
+        # An object array holds pointers, so it can't be hashed directly.
+        # Stringify it first to get a real contiguous buffer.
+        return CityHash64(s.astype(str).to_numpy().astype(str))
+    if not isinstance(s.dtype, np.dtype):
+        # A pandas extension dtype (Int64, boolean, string, ...).
+        # CityHash64 can't consume the extension array itself, and to_numpy()
+        # may hand back an object array (i.e. pointers), which would hash
+        # differently on every process. Stringify, as with object dtype.
+        return CityHash64(s.astype(str).to_numpy().astype(str))
     else:
-        return CityHash64(s.values)
+        return CityHash64(s.to_numpy())
 
 
 def checksum(data):
