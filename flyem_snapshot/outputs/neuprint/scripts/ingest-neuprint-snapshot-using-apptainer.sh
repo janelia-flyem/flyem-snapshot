@@ -49,6 +49,16 @@ fi
 
 export APPTAINER_BIND="${SNAPSHOT_DIR}/neuprint:/snapshot"
 
+# Forward the ingestion tuning knobs into the container explicitly.
+# (The defaults live in the within-container script and are sized for a
+# large cluster node; override these when running somewhere smaller.)
+for v in HEAP_SIZE MAX_MEMORY BAD_TOLERANCE LSB_MAX_NUM_PROCESSORS
+do
+    if [[ -n "${!v}" ]]; then
+        export APPTAINERENV_${v}="${!v}"
+    fi
+done
+
 # Create these directories in our workspace and
 # mount them into the container.
 mount_dirs=(data logs scripts conf plugins)
@@ -68,7 +78,7 @@ touch ${WORKSPACE_DIR}/logs/neo4j.log
 
 # Note: The plugins still need to be installed into ${NEO4J_HOME}/plugins once the container is launched.
 # cp /groups/flyem/data/neo4j-plugins/apoc-4.4.0.7-all.jar ${WORKSPACE_DIR}/plugins/
-APOC_PLUGINS_URL=https://github.com/neo4j-contrib/neo4j-apoc-procedures/releases/download/4.4.0.7/apoc-4.4.0.7-all.jar
+APOC_PLUGINS_URL=https://github.com/neo4j/apoc/releases/download/2026.08.1/apoc-2026.08.1-core.jar
 wget -q ${APOC_PLUGINS_URL} -P ${WORKSPACE_DIR}/plugins/
 
 cp ${SCRIPTS_DIR}/* ${WORKSPACE_DIR}/scripts/
@@ -84,10 +94,10 @@ cp ${SCRIPTS_DIR}/neo4j.conf ${WORKSPACE_DIR}/conf/
 
 if [[ ! -z "${DEBUG_SHELL}" ]]
 then
-    apptainer exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
+    apptainer exec --writable-tmpfs docker://neo4j:2026.08.1 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh --debug-shell
     exit $?
 else
-    apptainer exec --writable-tmpfs docker://neo4j:4.4.16 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
+    apptainer exec --writable-tmpfs docker://neo4j:2026.08.1 /scripts/ingest-neuprint-snapshot-within-neo4j-container.sh
     if [[ "$?" != "0" ]]
     then
         exit $?
@@ -101,9 +111,30 @@ else
         exit 1
     fi
 
-    # Now copy the database files from /scratch to the snapshot directory
+    # Now copy the database files from /scratch to the snapshot directory.
+    #
+    # rsync --delete rather than cp -R, because cp -R *merges* into an existing
+    # directory instead of replacing it. Re-ingesting into a snapshot dir that
+    # already held a neo4j/ left stale files behind whenever a filename changed
+    # between runs. That is how two apoc jars came to sit in plugins/ after the
+    # 2026.07.1 -> 2026.08.1 bump: the workspace correctly held only the new
+    # one, and the copy landed it beside the old. A mismatched apoc jar bundles
+    # its own ANTLR and stops the server booting at all.
+    #
+    # plugins/ is merely where it was noticed. data/ is the greater risk:
+    # stale transaction logs merging with a freshly imported store is a much
+    # worse failure than a spare jar, and nothing else guards it.
+    #
+    # --delete makes the destination match the workspace exactly. Unlike
+    # rm -rf'ing the destination first, there is no window in which the
+    # previous database is gone and the new one has not landed.
     echo "$(date '+%Y-%m-%d %H:%M:%S') Copying database to ${SNAPSHOT_DIR}"
-    cp -R ${WORKSPACE_DIR} ${SNAPSHOT_DIR}/
+    if ! command -v rsync > /dev/null; then
+        echo "ERROR: rsync is required to copy the database into ${SNAPSHOT_DIR}." 1>&2
+        echo "       (cp -R would merge with any existing neo4j/ and leave stale files.)" 1>&2
+        exit 1
+    fi
+    rsync -a --delete ${WORKSPACE_DIR}/ ${SNAPSHOT_DIR}/$(basename ${WORKSPACE_DIR})/
 
     echo "$(date '+%Y-%m-%d %H:%M:%S') Removing temporary workspace directory"
     rm -rf ${WORKSPACE_DIR}

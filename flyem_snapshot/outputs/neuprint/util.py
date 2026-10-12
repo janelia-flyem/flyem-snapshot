@@ -31,6 +31,83 @@ NEUPRINT_TYPE_OVERRIDES = {
 }
 
 
+# Characters which cannot appear in a CSV header's property name, because
+# they would break the 'name:type' header format itself:
+#   ',' separates fields, ':' separates the name from the type,
+#   '"' begins a quoted field, and a newline ends the header row.
+# Note that parentheses and hyphens are NOT a problem -- see check_roi_name().
+INVALID_ROI_NAME_CHARS = ',:"\r\n'
+
+
+def check_roi_name(roi):
+    """
+    Verify that an ROI name can be used verbatim as a neo4j property name in a
+    CSV header, and return it unchanged.
+
+    We deliberately do NOT sanitize these names. Verified against
+    neo4j 2026.07.1: 'neo4j-admin database import full' accepts property names
+    containing parentheses and hyphens and stores them verbatim, keeping
+    e.g. "VLNP(-AOTU)(R)" and "VLNP(R)" as distinct properties.
+
+    Sanitizing them would be actively harmful, because the Meta node's roiInfo,
+    the indexes created by create-indexes.cypher, and therefore every client
+    query all refer to ROIs by their real names. Rewriting only the CSV headers
+    left the node properties as the odd one out: the indexes and Meta said
+    'BU(R)' while the data said 'BU_R_', so the ROI indexes matched nothing.
+
+    Only the handful of characters that would break the 'name:type' header
+    syntax are rejected, and we raise rather than silently rewriting so that a
+    new ROI name from DVID can't quietly corrupt the export.
+    """
+    if (bad := set(roi) & set(INVALID_ROI_NAME_CHARS)):
+        msg = (
+            f"ROI name {roi!r} contains character(s) {sorted(bad)} which cannot be used "
+            "in a neo4j CSV header property name. Note that parentheses and hyphens are "
+            "fine; only characters which break the 'name:type' header format are rejected."
+        )
+        raise RuntimeError(msg)
+    return roi
+
+
+# A label is rendered into create-indexes.cypher inside backticks, as
+# `{dataset}_{label}`. These characters break that, each in a different way.
+INVALID_LABEL_CHARS = '`:\r\n'
+
+
+def check_element_label(label, config_name=''):
+    """
+    Verify that an element label can be used verbatim in a backtick-quoted
+    neo4j label, and return it unchanged.
+
+    Called at export/render time rather than left to the database, because the
+    consequences are invisible or late:
+
+    - A backtick ends the quoting early. `fish2_So`ma` is not valid Cypher, so
+      the ingest fails during index creation -- hours into a run.
+    - A colon is legal inside backticks but is Cypher punctuation, not part of
+      a label. It is how `fish2_:Soma` came about: element.py stripped the
+      leading colon from the configured ':Soma' while indexes.py did not, and
+      217 indexes were built on a label no node carried. Nothing detected it,
+      because an index over a label nothing carries reports ONLINE at
+      populationPercent 100.0.
+    - A newline would corrupt the generated .cypher file.
+
+    An empty label is rejected too, since it would render as `{dataset}_`.
+    """
+    where = f" (from element-labels entry {config_name!r})" if config_name else ""
+    if not label:
+        raise RuntimeError(f"Empty neuprint element label{where}; it would render as a bare dataset prefix.")
+    if (bad := set(label) & set(INVALID_LABEL_CHARS)):
+        msg = (
+            f"Element label {label!r}{where} contains character(s) {sorted(bad)} which cannot be "
+            "used in a backtick-quoted neo4j label. A leading ':' is stripped automatically "
+            "(configs conventionally write ':Soma'), so this is a ':' somewhere else in the name, "
+            "a backtick, or a line break."
+        )
+        raise RuntimeError(msg)
+    return label
+
+
 def append_neo4j_type_suffixes(df, exclude=(), drop_empty=True):
     """
     Return a renamed DataFrame wholes columns now have
