@@ -4,6 +4,55 @@ channels = ["flyem-forge", "conda-forge"]
 name = "flyem-snapshot"
 platforms = ["osx-arm64"]
 version = "0.1.0"
+preview = ["pixi-build"]
+
+# The [package] section allows flyem-snapshot to be used as a pixi source dependency, e.g.
+#
+#   [dependencies]
+#   flyem-snapshot = { path = "/path/to/flyem-snapshot" }
+#
+# The run-dependencies are generated from conda-recipe/meta.yaml; keep them in sync.
+[package]
+name = "flyem-snapshot"
+version = "0.1.15"
+
+[package.build]
+backend = { name = "pixi-build-python", version = "*" }
+
+[package.build.config]
+noarch = true
+# The default installer (uv) crashes on rattler-build's placeholder prefix; pip works.
+installer = "pip"
+
+[package.host-dependencies]
+python = ">=3.10"
+setuptools = ">=61.0"
+wheel = "*"
+versioneer = "*"
+pip = "*"
+
+[package.run-dependencies]
+python = ">=3.10"
+bokeh = "*"
+confiddler = ">=0.1.5"
+holoviews = "*"
+hvplot = "*"
+jinja2 = "*"
+neuclease = ">=0.7.3"
+neuprint-python = ">=0.5.1"
+# Not in conda-recipe/meta.yaml, but imported by flyem_snapshot.
+ngsidekick = "*"
+pyarrow = "*"
+requests = "*"
+ujson = "*"
+python-cityhash = "*"
+google-api-python-client = "*"
+google-cloud-sdk = "*"
+google-cloud-storage = "*"
+# Required by bokeh for making PNGs
+selenium = "*"
+firefox = "*"
+geckodriver = "*"
 
 [tasks]
 
