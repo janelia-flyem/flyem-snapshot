@@ -8,6 +8,7 @@ from abc import abstractmethod
 from itertools import chain
 
 import numpy as np
+import pandas as pd
 import pyarrow.feather as feather
 
 from neuclease.util import Timer
@@ -149,13 +150,17 @@ def cache_dataframe(df, path):
     """
     # Standardize on None as the null value (instead of NaN or "").
     # https://stackoverflow.com/questions/46283312/how-to-proceed-with-none-value-in-pandas-fillna
-    FAKENULL = '__cache_dataframe_nullval__'
     bad_columns = []
     for col, dtype in df.dtypes.items():
         if dtype != object:
             continue
 
-        if (df[col].replace([np.nan], [FAKENULL]) != df[col].replace([None], FAKENULL)).any():
+        # Among the null values, are any of them something other than None (e.g. NaN)?
+        # (This is vectorized, since the DataFrame may be large.  Note that we can't use
+        # Series.replace([None], ...) for this check, since it replaces NaN, too.)
+        values = df[col].to_numpy()
+        isnull = pd.isna(values)
+        if isnull.any() and (values[isnull] != None).any():  # noqa: E711
             bad_columns.append(col)
     if bad_columns:
         msg = (

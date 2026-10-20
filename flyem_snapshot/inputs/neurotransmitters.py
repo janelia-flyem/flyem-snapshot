@@ -736,7 +736,11 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
     body_df.loc[body_df['cell_type'].isnull(), 'consensus_nt'] = body_df.loc[body_df['cell_type'].isnull(), 'predicted_nt']
 
     # Apply user-provided overrides (e.g. replace 'octopamine' with 'unclear').
-    body_df['consensus_nt'].update(body_df['consensus_nt'].map(cfg['override-celltype-before-consensus']))
+    # Note: With pandas copy-on-write, body_df['consensus_nt'].update(...) would not modify body_df,
+    # so we update a separate Series and then assign it.
+    consensus_nt = body_df['consensus_nt'].copy()
+    consensus_nt.update(consensus_nt.map(cfg['override-celltype-before-consensus']))
+    body_df['consensus_nt'] = consensus_nt
 
     # Overwrite cases where experimental groundtruth is available.
     exp_df = pd.read_csv(path)
@@ -750,7 +754,9 @@ def _set_body_exp_gt_based_columns(cfg, body_df):
     exp_df = exp_df.rename(columns={c: camelcase_to_snakecase(c) for c in exp_df.columns})
     exp_df = exp_df.set_index('cell_type')
 
-    body_df['consensus_nt'].update(body_df['cell_type'].map(exp_df['consensus_nt']))
+    consensus_nt = body_df['consensus_nt'].copy()
+    consensus_nt.update(body_df['cell_type'].map(exp_df['consensus_nt']))
+    body_df['consensus_nt'] = consensus_nt
 
     if 'nt_reference' in exp_df.columns:
         ref_map = exp_df['nt_reference'].dropna()
