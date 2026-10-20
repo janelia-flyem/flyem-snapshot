@@ -74,7 +74,8 @@ def neo4j_type_suffix(series):
     if isinstance(series.dtype, pd.CategoricalDtype):
         return 'string'
 
-    if series.dtype == 'string[python]':
+    # Any pandas string dtype, including 'string[python]' and the default string dtype in pandas 3.
+    if isinstance(series.dtype, pd.StringDtype):
         return 'string'
 
     if series.dtype == bool:
@@ -88,13 +89,14 @@ def neo4j_type_suffix(series):
         )
         raise RuntimeError(msg)
 
-    if np.issubdtype(series.dtype, np.integer):
+    # Note: Use pandas (not numpy) to inspect the dtype, since it may be a pandas extension dtype.
+    if pd.api.types.is_integer_dtype(series.dtype):
         if series.abs().max() < 2**31:
             return 'int'
         else:
             return 'long'
 
-    if np.issubdtype(series.dtype, np.floating):
+    if pd.api.types.is_float_dtype(series.dtype):
         return 'float'
 
     assert series.dtype == object, \

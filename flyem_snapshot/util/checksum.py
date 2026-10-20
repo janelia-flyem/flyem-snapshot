@@ -17,8 +17,12 @@ def dataframe_checksum(df):
 def series_checksum(s):
     if s.dtype == 'category':
         return CityHash64(s.cat.codes.values)
-    if s.dtype == 'object':
-        return CityHash64(s.astype(str).values.astype(str))
+    # (In pandas 3, string columns have a dedicated string dtype, not object,
+    # and astype(str) produces a pandas array, so convert explicitly to a numpy array.
+    # For object columns, this produces the same result as s.astype(str).values.astype(str)
+    # did in pandas 2, so their checksums are unchanged.)
+    if s.dtype == 'object' or isinstance(s.dtype, pd.StringDtype):
+        return CityHash64(s.astype(object).map(str).to_numpy(dtype=str))
     else:
         return CityHash64(s.values)
 
