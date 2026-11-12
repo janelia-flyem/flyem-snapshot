@@ -81,7 +81,7 @@ def _export_neuprint_elements(cfg, point_df, roisets, *, config_name):
         if not pd.api.types.is_float_dtype(point_df[col]):
             continue
         not_null = point_df[col].notnull()
-        all_int = (point_df[col].dropna() % 1).all()
+        all_int = not (point_df[col].dropna() % 1).any()
         if not_null.all() and all_int:
             point_df[col] = point_df[col].astype(int)
         elif all_int:
