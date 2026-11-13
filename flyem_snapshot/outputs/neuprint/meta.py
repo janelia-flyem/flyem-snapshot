@@ -243,6 +243,11 @@ NeuprintMetaSchema = {
             "type": "boolean",
             "default": False
         },
+        "default": {
+            "description": "Whether this dataset should be the default dataset in neuprintExplorer.\n",
+            "type": "boolean",
+            "default": False
+        },
         "voxelSize": {
             "type": "array",
             "items": {"type": "number"},
@@ -550,7 +555,7 @@ def construct_neuprint_roi_hierarchy(rh):
 # This is the complete list of :Meta properties.
 # See assert statement below.
 META_PROPERTIES = [
-    'dataset', 'tag', 'hideDataSet',
+    'dataset', 'tag', 'hideDataSet', 'default',
     'voxelSize', 'voxelUnits',
     'skeletonCoordinateResolutionNm', 'synapseCoordinateResolutionNm',
     'info', 'logo', 'description', 'meshHost',
@@ -580,7 +585,7 @@ def export_neuprint_meta(cfg, last_mutation, ann_timestamp, neuron_df, dataset_t
 
     # Copy this subset directly from the config
     verbatim_keys = (
-        'dataset', 'tag', 'hideDataSet',
+        'dataset', 'tag', 'hideDataSet', 'default',
         'voxelSize', 'voxelUnits',
         'skeletonCoordinateResolutionNm', 'synapseCoordinateResolutionNm',
         'info', 'logo', 'description',
@@ -744,7 +749,9 @@ def _export_meta_as_csv(meta):
     # Convert to string.
     # https://neo4j.com/docs/operations-manual/4.4/tools/neo4j-admin/neo4j-admin-import/#import-tool-header-format-properties
     meta['hideDataSet:boolean'] = str(meta['hideDataSet']).lower()
+    meta['default:boolean'] = str(meta['default']).lower()
     del meta['hideDataSet']
+    del meta['default']
 
     # One column per key, with exactly one row.
     meta_df = pd.DataFrame({k: [v] for k,v in meta.items()})
