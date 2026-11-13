@@ -261,7 +261,12 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
         instance,
         format='pandas'
     )
+
+    # We sort here to ensure deterministic behavior when we drop duplicates below.
+    # In the case of multiple points on some bodies, repeated snapshots of the same data
+    # should choose the same points, regardless of the order returned by fetch_all_elements().
     df = df.sort_values([*'zyx'])
+
     df['body'] = fetch_labels_batched(
         *pointlabeler.dvidseg,
         df[[*'zyx']].values,
@@ -296,6 +301,8 @@ def _append_dvid_point_annotations(pa_cfg, instance, ann, pointlabeler, processe
         # otherwise leave as string.
         try:
             col = prop.lower()
+
+            # this works for strings like 'nan', too.
             s = pd.to_numeric(df[col], errors="coerce")
 
             nonnan = s.dropna()
