@@ -69,6 +69,18 @@ RoiSetSchema = {
                 }
             ]
         },
+        "omit-rois": {
+            "description":
+                "Optional. ROIs (by name, before any rename-rois) to omit from this roiset entirely.\n"
+                "Their segments are erased (set to 0) immediately after the ROI volume is read,\n"
+                "so points within them are treated as '<unspecified>' (or as '<parent>-unspecified').\n"
+                "Only supported for source: dvid-labelmap or source: dvid-rois.\n"
+                "(For a labelmap, every segment ID in the volume must have a name in 'rois',\n"
+                "including the omitted ROIs.)\n",
+            "type": "array",
+            "items": {"type": "string"},
+            "default": []
+        },
         "rename-rois": {
             "description": "Optionally rename a subset of the ROIs after loading them from disk/dvid.",
             "type": "object",
@@ -306,6 +318,12 @@ def _load_columns_for_roiset_impl(roiset_name, roiset_cfg, point_df, dvid_cfg, p
         if eval_0 == eval_1:
             raise RuntimeError("ROI ID expression should not produce the same output for ID 0 and ID 1.")
 
+    if roiset_cfg['omit-rois'] and roiset_cfg['source'] not in ("dvid-labelmap", "dvid-rois"):
+        raise RuntimeError(
+            f"Config for roi-set '{roiset_name}' is not valid: "
+            "omit-rois is only supported for source: dvid-labelmap or source: dvid-rois"
+        )
+
     if roiset_cfg['source'] == "point-table":
         roi_ids = _load_roi_col(roiset_name, roi_ids, point_df)
         return roi_ids
@@ -319,6 +337,8 @@ def _load_columns_for_roiset_impl(roiset_name, roiset_cfg, point_df, dvid_cfg, p
         raise RuntimeError("Please supply a labelmap for your ROIs IFF you selected source: dvid-labelmap")
 
     roi_vol, roi_box, roi_ids = _load_roi_vol_from_cache_or_dvid(roiset_name, roi_ids, roiset_cfg['labelmap'], dvid_cfg, processes)
+    _check_roi_vol_names(roiset_name, roi_vol, roi_ids)
+    roi_ids = _omit_rois(roiset_name, roi_vol, roi_ids, roiset_cfg['omit-rois'])
     try:
         extract_labels_from_volume(point_df, roi_vol, roi_box, 5, roi_ids, roiset_name, skip_index_check=False)
     except IncompleteLabelNamesError as ex:
@@ -607,6 +627,44 @@ def _load_roi_vol_from_dvid(roiset_name, roi_ids, roi_labelmap_name, dvid_cfg, p
         )
     roi_vol, roi_box, _ = fetch_combined_roi_volume(*dvid_node, roi_ids, processes=processes)
     return roi_vol, roi_box
+
+
+def _check_roi_vol_names(roiset_name, roi_vol, roi_ids):
+    """
+    Verify that every (non-zero) segment ID in the ROI volume has a name in roi_ids.
+    Otherwise, an unnamed segment would either cause an error when labeling points,
+    or (if no points happen to fall within it) be silently ignored.
+    """
+    vol_ids = set()
+    for vol_slice in roi_vol:  # (slice by slice, to avoid a full-size temporary)
+        vol_ids.update(pd.unique(vol_slice.reshape(-1)).tolist())
+    vol_ids.discard(0)
+
+    if missing := sorted(vol_ids - set(roi_ids.values())):
+        raise RuntimeError(
+            f"The ROI volume for roiset '{roiset_name}' contains {len(missing)} segment IDs "
+            f"which aren't named in the config's 'rois': {missing[:20]}{' ...' if len(missing) > 20 else ''}\n"
+            "Please name them all (and list any you don't want in 'omit-rois')."
+        )
+
+
+def _omit_rois(roiset_name, roi_vol, roi_ids, omit_rois):
+    """
+    Erase (set to 0, IN-PLACE) the segments of the omitted ROIs in roi_vol,
+    and return roi_ids without them.
+    """
+    if not omit_rois:
+        return roi_ids
+
+    if unknown := set(omit_rois) - set(roi_ids):
+        raise RuntimeError(f"omit-rois for roiset '{roiset_name}' lists ROIs which aren't in 'rois': {sorted(unknown)}")
+
+    omit_ids = [roi_ids[name] for name in omit_rois]
+    with Timer(f"Erasing {len(omit_ids)} omitted ROIs", logger):
+        for vol_slice in roi_vol:
+            vol_slice[np.isin(vol_slice, omit_ids)] = 0
+
+    return {name: roi_id for name, roi_id in roi_ids.items() if name not in omit_rois}
 
 
 def _apply_roi_renames(point_df, roiset_name, roi_ids, renames):
